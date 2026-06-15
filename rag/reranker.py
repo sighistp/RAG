@@ -1,4 +1,4 @@
-"""Re-ranking module using Bailian Rerank API."""
+"""Re-ranking module using SiliconFlow Rerank API."""
 
 import logging
 
@@ -11,6 +11,9 @@ from rag.resilience import CircuitBreaker, retry
 logger = logging.getLogger(__name__)
 
 _breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+
+RERANK_URL = "https://api.siliconflow.cn/v1/rerank"
+RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 
 
 class Reranker:
@@ -35,21 +38,17 @@ class Reranker:
     )
     def _call_rerank_api(self, query: str, texts: list[str], top_k: int) -> list[dict]:
         client = self._get_client()
-        url = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
         payload = {
-            "model": settings.bailian_rerank_model,
-            "input": {
-                "query": query,
-                "documents": texts,
-            },
-            "parameters": {
-                "top_n": top_k,
-            },
+            "model": RERANK_MODEL,
+            "query": query,
+            "documents": texts,
+            "top_n": top_k,
+            "return_documents": False,
         }
-        resp = client.post(url, json=payload, timeout=5)
+        resp = client.post(RERANK_URL, json=payload, timeout=10)
         resp.raise_for_status()
         try:
-            return resp.json()["output"]["results"]
+            return resp.json()["results"]
         except (KeyError, TypeError) as e:
             raise RuntimeError(f"Unexpected rerank API response: {e}") from e
 
