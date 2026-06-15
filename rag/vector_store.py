@@ -93,7 +93,7 @@ def _ensure_collection_name(collection_name: str):
         )
 
 
-def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: list[list[float]]):
+def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: list[list[float]], tags: list[str] = None):
     with _write_lock.write():
         client = _get_client()
         if not client.collection_exists(collection_name):
@@ -106,6 +106,7 @@ def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: lis
                     "text": chunks[i].text,
                     "doc_name": chunks[i].doc_name,
                     "chunk_index": chunks[i].chunk_index,
+                    "tags": tags or [],
                 },
             )
             for i in range(len(chunks))
@@ -113,16 +114,22 @@ def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: lis
         client.upsert(collection_name=collection_name, points=points)
 
 
-def search_collection(collection_name: str, query_embedding: list[float], top_k: int = 5, doc_name: str = None) -> list[Chunk]:
+def search_collection(collection_name: str, query_embedding: list[float], top_k: int = 5, doc_name: str = None, tags: list[str] = None) -> list[Chunk]:
     with _write_lock.read():
         client = _get_client()
         if not client.collection_exists(collection_name):
             return []
 
-        search_filter = None
+        conditions = []
         if doc_name:
             from qdrant_client.models import FieldCondition, MatchValue
-            search_filter = Filter(must=[FieldCondition(key="doc_name", match=MatchValue(value=doc_name))])
+            conditions.append(FieldCondition(key="doc_name", match=MatchValue(value=doc_name)))
+        if tags:
+            from qdrant_client.models import FieldCondition, MatchValue
+            for tag in tags:
+                conditions.append(FieldCondition(key="tags", match=MatchValue(value=tag)))
+
+        search_filter = Filter(must=conditions) if conditions else None
 
         hits = client.query_points(
             collection_name=collection_name,

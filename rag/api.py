@@ -72,6 +72,7 @@ class QueryRequest(BaseModel):
     session_id: str | None = Field(default=None, description="会话 ID（用于多轮对话记忆）")
     conversation_id: int | None = Field(default=None, description="对话 ID")
     doc_name: str | None = Field(default=None, description="限定检索的文档名称")
+    tags: list[str] | None = Field(default=None, description="按标签过滤文档")
 
 
 class QueryResponse(BaseModel):
@@ -85,6 +86,7 @@ class StreamQueryRequest(BaseModel):
     session_id: str | None = None
     conversation_id: int | None = None
     doc_name: str | None = None
+    tags: list[str] | None = None
 
 
 class SuggestRequest(BaseModel):
@@ -386,6 +388,72 @@ def delete_file(filename: str, authorization: str = Header(...)):
     return {"status": "deleted", "filename": safe_name}
 
 
+@app.post("/files/{filename}/tags", summary="为文档添加标签", description="为指定文档的所有分块添加标签")
+def add_tags_to_file(filename: str, tags: list[str], authorization: str = Header(...)):
+    from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList, UpdateOperation
+    from rag.vector_store import _get_client, COLLECTION_NAME
+
+    safe_name = Path(filename).name
+    client = _get_client()
+    if not client.collection_exists(COLLECTION_NAME):
+        raise HTTPException(status_code=404, detail="集合不存在")
+
+    # Find all points for this document
+    search_filter = Filter(must=[FieldCondition(key="doc_name", match=MatchValue(value=safe_name))])
+    results = client.scroll(
+        collection_name=COLLECTION_NAME,
+        limit=10000,
+        scroll_filter=search_filter,
+        with_payload=False,
+    )
+    points = results[0] if isinstance(results, tuple) else results
+    if not points:
+        raise HTTPException(status_code=404, detail=f"文档 {safe_name} 不存在")
+
+    point_ids = [p.id for p in points]
+    # Merge with existing tags
+    for pid in point_ids:
+        existing = client.retrieve(collection_name=COLLECTION_NAME, ids=[pid], with_payload=True)
+        if existing and existing[0].payload:
+            existing_tags = existing[0].payload.get("tags", [])
+        else:
+            existing_tags = []
+        merged = list(set(existing_tags + tags))
+        client.set_payload(
+            collection_name=COLLECTION_NAME,
+            payload={"tags": merged},
+            points=[pid],
+        )
+
+    return {"status": "updated", "filename": safe_name, "tags": tags, "points_updated": len(point_ids)}
+
+
+@app.get("/tags", summary="获取所有标签", description="获取当前知识库中所有已使用的标签")
+def list_tags():
+    from rag.vector_store import _get_client, COLLECTION_NAME
+
+    client = _get_client()
+    if not client.collection_exists(COLLECTION_NAME):
+        return {"tags": []}
+
+    all_tags = set()
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10000,
+            offset=offset,
+            with_payload=True,
+        )
+        for p in points:
+            if p.payload and "tags" in p.payload:
+                all_tags.update(p.payload["tags"])
+        if offset is None:
+            break
+
+    return {"tags": sorted(all_tags)}
+
+
 @app.post("/index-all", summary="索引全部文件", description="索引 data/upload/ 目录下的所有文件")
 async def index_all(user_id: str = Security(verify_api_key)):
     from rag.folder_indexer import index_folder
@@ -472,6 +540,7 @@ async def query(req: QueryRequest, user_id: str = Security(verify_api_key), auth
         top_k=req.top_k,
         session_id=session_id,
         doc_name=req.doc_name,
+        tags=req.tags,
     )
 
     # Save messages to chat_messages if user and conversation_id are provided
@@ -509,7 +578,7 @@ async def query_stream(
     async def event_generator():
         answer_buffer = ""
         async for event in current_pipeline.query_stream(
-            req.question, top_k=req.top_k, session_id=session_id, doc_name=req.doc_name
+            req.question, top_k=req.top_k, session_id=session_id, doc_name=req.doc_name, tags=req.tags
         ):
             # 从 token 事件中提取 answer 用于持久化
             if '"type": "token"' in event:

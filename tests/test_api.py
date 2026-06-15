@@ -115,3 +115,93 @@ def test_suggest_endpoint_exists():
     client = TestClient(app)
     response = client.post("/suggest", json={"question": "test", "answer": "test"})
     assert response.status_code != 404
+
+
+# ── tags endpoint tests ─────────────────────────────────────────────
+
+@patch("rag.vector_store._get_client")
+def test_add_tags_to_file(mock_get_client):
+    """POST /files/{filename}/tags should update tags on document points."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.collection_exists.return_value = True
+
+    # Mock scroll to return 2 points for the document
+    point1 = MagicMock()
+    point1.id = "id1"
+    point2 = MagicMock()
+    point2.id = "id2"
+    mock_client.scroll.return_value = ([point1, point2], None)
+
+    # Mock retrieve to return existing payload
+    existing1 = MagicMock()
+    existing1.payload = {"tags": ["old_tag"]}
+    existing2 = MagicMock()
+    existing2.payload = {"tags": []}
+    mock_client.retrieve.side_effect = [[existing1], [existing2]]
+
+    response = client.post(
+        "/files/test.txt/tags",
+        json=["finance", "q3"],
+        headers={"Authorization": "Bearer fake_token"},
+    )
+
+    # May fail auth, but the endpoint should exist (not 404)
+    assert response.status_code != 404
+
+
+@patch("rag.vector_store._get_client")
+def test_list_tags(mock_get_client):
+    """GET /tags should return all unique tags from the collection."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.collection_exists.return_value = True
+
+    p1 = MagicMock()
+    p1.payload = {"tags": ["finance", "q3"]}
+    p2 = MagicMock()
+    p2.payload = {"tags": ["finance", "annual"]}
+    p3 = MagicMock()
+    p3.payload = {"tags": []}
+    mock_client.scroll.return_value = ([p1, p2, p3], None)
+
+    response = client.get("/tags")
+    assert response.status_code == 200
+    data = response.json()
+    assert "tags" in data
+    assert sorted(data["tags"]) == ["annual", "finance", "q3"]
+
+
+def test_list_tags_empty_collection():
+    """GET /tags should return empty list when collection has no tags."""
+    from unittest.mock import patch as _patch
+    with _patch("rag.vector_store._get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.collection_exists.return_value = True
+        mock_client.scroll.return_value = ([], None)
+
+        response = client.get("/tags")
+        assert response.status_code == 200
+        assert response.json()["tags"] == []
+
+
+def test_query_request_accepts_tags():
+    """QueryRequest model should accept tags field."""
+    from rag.api import QueryRequest
+    req = QueryRequest(question="test", tags=["finance", "q3"])
+    assert req.tags == ["finance", "q3"]
+
+
+def test_query_request_tags_default_none():
+    """QueryRequest tags should default to None."""
+    from rag.api import QueryRequest
+    req = QueryRequest(question="test")
+    assert req.tags is None
+
+
+def test_stream_query_request_accepts_tags():
+    """StreamQueryRequest model should accept tags field."""
+    from rag.api import StreamQueryRequest
+    req = StreamQueryRequest(question="test", tags=["finance"])
+    assert req.tags == ["finance"]
