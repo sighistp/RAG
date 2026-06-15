@@ -2033,9 +2033,49 @@ plt.rcParams["axes.unicode_minus"] = False
 
 ---
 
+## Phase 1：流式输出 + 追问建议 + 重新生成（2026-06-15）✅
+
+**来源：** docs/plans/2026-06-15-phase1-streaming-plan.md（9 个 Task，Subagent-Driven）
+
+**新增功能：**
+
+| 功能 | 文件 | 说明 |
+|------|------|------|
+| 流式生成器 | `rag/generator.py` | `generate_stream()` — AsyncOpenAI 异步迭代器，逐 token yield |
+| temperature 参数 | `rag/generator.py` | `generate()` 新增 `temperature` 参数，默认 0.3 |
+| 公共逻辑提取 | `rag/pipeline.py` | `_prepare_context()` — guard/cache/route/retrieve/rerank/build_messages |
+| 流式查询 | `rag/pipeline.py` | `query_stream()` — SSE 格式事件流 |
+| 流式 API | `rag/api.py` | `POST /query/stream` — StreamingResponse + JWT 认证 |
+| 追问建议 | `rag/suggest.py` | `suggest_questions()` — LLM 生成 3 个推荐追问 |
+| 追问 API | `rag/api.py` | `POST /suggest` — 独立端点，异步获取 |
+| 重新生成 | `rag/api.py` | `POST /regenerate` — 覆盖原消息，复用 `_prepare_context()` |
+| 消息更新 | `rag/user_db.py` | `update_message()` — UPDATE 原消息内容 |
+
+**设计决策：**
+- POST + ReadableStream（非 GET + EventSource），支持 JWT + 长问题
+- 追问建议独立端点（非内嵌 SSE），避免阻塞流式输出
+- 重新生成用覆盖模式（非新增 + 标记），避免矛盾消息
+- `_async_client` 用 `threading.Lock()`（非 `asyncio.Lock()`），避免无 event loop 报错
+
+**测试：** 265 个全过（原 248 + 新 17）
+
+**8 个提交：**
+```
+2ca5f14 feat: add temperature parameter to generate()
+9b1a07b feat: add generate_stream() async generator for SSE streaming
+a14030a refactor: extract _prepare_context() shared method from query()
+54d53f0 feat: add suggest_questions() for follow-up suggestions
+b532713 feat: add POST /regenerate with _prepare_context reuse
+7481d59 feat: add query_stream() for SSE streaming
+67130be fix: reset _async_client and _breaker state in conftest.py
+e469427 feat: add POST /query/stream and POST /suggest endpoints
+```
+
+---
+
 ## 下一步计划
 
-- Docker 容器化
-- CI/CD（GitHub Actions）
-- 流式输出（改 generator 支持 streaming）
-- 前端组件化（拆分 1690 行 index.html）
+- Phase 2：反馈驱动优化 + 检索空白分析 + 标签管理
+- Phase 3：Vue 3 前端重写
+- Phase 4：后端异步化 + Docker + CI/CD
+- Phase 5：批量导入 + 数据源集成
