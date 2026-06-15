@@ -2107,8 +2107,33 @@ f86c4e7 feat: add weights parameter to retriever RRF fusion
 
 ---
 
+---
+
+## Phase 5：批量导入（2026-06-15）✅
+
+**新增模块：**
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 批量导入器 | `rag/batch_importer.py` | CSV/Excel 解析，3 种模式：qa_pair / document / table |
+
+**新增端点：**
+
+| 端点 | 说明 |
+|------|------|
+| `POST /batch-import` | 上传 CSV/Excel，按模式解析并索引到知识库 |
+
+**导入模式：**
+- `qa_pair` — 每行一个问答对，配置 question_col + answer_col
+- `document` — 每行一个文档片段，配置 content_col
+- `table` — 整张表转为结构化文本（tab 分隔）
+
+**测试：** 304 个全过（原 298 + 新 6）
+
+---
+
 ## 下一步计划
 
 - Phase 3：Vue 3 前端重写
 - Phase 4：后端异步化 + Docker + CI/CD
-- Phase 5：批量导入 + 数据源集成
+- Phase 5（剩余）：数据源集成（RSS/数据库/API，可选）
