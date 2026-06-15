@@ -2132,6 +2132,34 @@ f86c4e7 feat: add weights parameter to retriever RRF fusion
 
 ---
 
+## Embedding + Reranker 切换到硅基流动（2026-06-15）✅
+
+**背景：** 百炼（阿里云 DashScope）欠费，Embedding 和 Rerank API 均返回 401。
+
+**方案：** 切换到硅基流动（SiliconFlow），API 兼容 OpenAI 格式，免费额度。
+
+| 组件 | 原方案 | 新方案 |
+|------|--------|--------|
+| Embedding | 百炼 `text-embedding-v4` | 硅基流动 `BAAI/bge-m3`（1024 维） |
+| Reranker | 百炼 `gte-rerank-v2` | 硅基流动 `BAAI/bge-reranker-v2-m3` |
+
+**改动文件：**
+- `config.py` — 默认 base_url 改为 `https://api.siliconflow.cn/v1`，模型改为 `BAAI/bge-m3`
+- `rag/reranker.py` — 端点从 `dashscope.aliyuncs.com` 改为 `api.siliconflow.cn/v1/rerank`，响应格式从 `output.results` 改为 `results`
+- `.env` — 更新 API Key 和 base_url
+- `.env.example` — 更新配置模板
+- `tests/test_reranker.py` — 适配新的 API 响应格式
+
+**踩坑：**
+- 硅基流动 rerank 端点是 `/v1/rerank`（不是 `/v1/reranking`），404 试出来的
+- 旧的 Qdrant 向量数据需要重建（不同模型生成的向量不兼容）
+
+**向量重建：** 删除 `qdrant_data/` + `data/bm25_index.db`，重新索引 3 文件 31 分块。
+
+**测试：** 304 个全过
+
+---
+
 ## 下一步计划
 
 - Phase 3：Vue 3 前端重写
