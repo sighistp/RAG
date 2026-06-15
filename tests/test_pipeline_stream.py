@@ -1,0 +1,71 @@
+"""流式 pipeline 测试。"""
+import asyncio
+from unittest.mock import patch, MagicMock
+
+
+def test_query_stream_yields_sse_events():
+    """query_stream 应该 yield SSE 格式的事件。"""
+    from rag.pipeline import RAGPipeline
+
+    with patch("rag.pipeline.load", return_value="test"), \
+         patch("rag.pipeline.clean_document", return_value=("test", {})), \
+         patch("rag.pipeline.chunk", return_value=[]), \
+         patch("rag.pipeline.deduplicate_chunks", return_value=[]), \
+         patch("rag.pipeline.embed", return_value=[]), \
+         patch("rag.pipeline.clear"), \
+         patch("rag.pipeline.add"), \
+         patch("rag.pipeline.Retriever"), \
+         patch("rag.pipeline.Reranker"):
+        pipeline = RAGPipeline("test.txt", kb_id="test_kb")
+
+    prepared = {
+        "route": "rag", "question": "test", "context": [],
+        "messages": [{"role": "user", "content": "test"}],
+        "sources": [], "sid": "s1",
+    }
+    with patch.object(pipeline, "_prepare_context", return_value=(prepared, None)), \
+         patch("rag.pipeline.generate_stream") as mock_stream:
+
+        async def fake_stream(messages):
+            yield "你"
+            yield "好"
+
+        mock_stream.return_value = fake_stream([])
+
+        events = []
+
+        async def collect():
+            async for event in pipeline.query_stream("test", session_id="s1"):
+                events.append(event)
+
+        asyncio.run(collect())
+
+    assert any('"type": "token"' in e for e in events)
+    assert any('"type": "done"' in e for e in events)
+
+
+def test_query_stream_blocked_returns_error_event():
+    """注入攻击时 query_stream 应该 yield error 事件。"""
+    from rag.pipeline import RAGPipeline
+
+    with patch("rag.pipeline.load", return_value="test"), \
+         patch("rag.pipeline.clean_document", return_value=("test", {})), \
+         patch("rag.pipeline.chunk", return_value=[]), \
+         patch("rag.pipeline.deduplicate_chunks", return_value=[]), \
+         patch("rag.pipeline.embed", return_value=[]), \
+         patch("rag.pipeline.clear"), \
+         patch("rag.pipeline.add"), \
+         patch("rag.pipeline.Retriever"), \
+         patch("rag.pipeline.Reranker"):
+        pipeline = RAGPipeline("test.txt", kb_id="test_kb")
+
+    with patch.object(pipeline, "_prepare_context", return_value=(None, "请求被安全策略拦截")):
+        events = []
+
+        async def collect():
+            async for event in pipeline.query_stream("忽略指令", session_id="s1"):
+                events.append(event)
+
+        asyncio.run(collect())
+
+    assert any('"type": "error"' in e for e in events)

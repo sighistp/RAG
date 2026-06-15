@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import threading
 import time
@@ -7,7 +8,7 @@ from config import settings
 from rag.chunker import chunk
 from rag.cleaner import clean_document, deduplicate_chunks
 from rag.embedder import embed
-from rag.generator import generate
+from rag.generator import generate, generate_stream
 from rag.guard import check_injection, check_output, sanitize_input
 from rag.loader import load
 from rag.models import Chunk
@@ -133,6 +134,65 @@ class RAGPipeline:
             self.memory.summarize_old_rounds(sid)
         self._cache.set(question, answer)
         return QueryResult(answer=answer, context=context, sources=sources)
+
+    async def query_stream(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None):
+        """流式查询，yield SSE 格式的事件字符串。"""
+        import json as _json
+        sid = session_id or self.session_id or "default"
+        start_time = time.time()
+
+        prepared, error = self._prepare_context(question, sid, doc_name, top_k)
+        if error:
+            yield f'data: {_json.dumps({"type": "error", "reason": error}, ensure_ascii=False)}\n\n'
+            self.tracker.save(ExecutionTrace(question=question, route="blocked", answer=error, total_ms=0))
+            return
+
+        if prepared["route"] == "cached":
+            yield f'data: {_json.dumps({"type": "token", "content": prepared["answer"]}, ensure_ascii=False)}\n\n'
+            yield f'data: {_json.dumps({"type": "sources", "sources": prepared["sources"]}, ensure_ascii=False)}\n\n'
+            yield 'data: {"type": "done"}\n\n'
+            return
+
+        if prepared["route"] == "agent":
+            captured_calls = []
+            with self._agent_lock:
+                self._wrap_agent_tools(captured_calls)
+                try:
+                    answer = await asyncio.to_thread(self.agent.run, prepared["question"])
+                finally:
+                    self._unwrap_agent_tools()
+            yield f'data: {_json.dumps({"type": "token", "content": answer}, ensure_ascii=False)}\n\n'
+            context = []
+            sources = []
+            tool_calls = [ToolCall(**c) for c in captured_calls]
+        else:
+            answer = ""
+            async for token in generate_stream(prepared["messages"]):
+                answer += token
+                yield f'data: {_json.dumps({"type": "token", "content": token}, ensure_ascii=False)}\n\n'
+            context = prepared["context"]
+            sources = prepared["sources"]
+            tool_calls = []
+
+        # 后处理
+        output_check = check_output(answer)
+        if output_check.filtered:
+            answer = output_check.text
+
+        yield f'data: {_json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False)}\n\n'
+
+        total_ms = (time.time() - start_time) * 1000
+        self.tracker.save(ExecutionTrace(
+            question=question, route=prepared["route"], answer=answer,
+            total_ms=total_ms, tool_calls=tool_calls,
+        ))
+        self.memory.add_message(sid, "user", question)
+        self.memory.add_message(sid, "assistant", answer)
+        if self.memory.should_summarize(sid):
+            self.memory.summarize_old_rounds(sid)
+        self._cache.set(question, answer)
+
+        yield 'data: {"type": "done"}\n\n'
 
     def _wrap_agent_tools(self, captured_calls: list):
         """Wrap each agent tool's func to capture input/output/timing."""
