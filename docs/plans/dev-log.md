@@ -1986,11 +1986,56 @@ plt.rcParams["axes.unicode_minus"] = False
 
 ---
 
+## 技术债修复（第二批）（2026-06-15）
+
+**实现方式：** 4 个子代理并行执行（2 组避免文件冲突），全部 TDD。
+
+### 4. SQLite 统一目录
+
+**问题：** memory.db 在项目根目录，与其他 .db 文件分散。
+
+**修复：**
+- `config.py` — 新增 `memory_db_path` 配置，默认 `data/memory.db`
+- `rag/memory.py`、`rag/tracker.py`、`rag/pipeline.py` — 默认路径改为 `settings.memory_db_path`
+
+**测试：** 3 个新测试
+
+### 5. pipeline.py 集成 clean_document()
+
+**问题：** 数据清洗管道（cleaner.py）从未被调用，编码检测/特殊字符清理/元数据提取全部跳过。
+
+**修复：**
+- `rag/pipeline.py` — 在 `load()` 和 `chunk()` 之间插入 `clean_document()` 调用
+
+**测试：** 2 个新测试
+
+### 6. generator.py 熔断降级
+
+**问题：** 熔断时 `raise RuntimeError`，用户看到 500 错误。
+
+**修复：**
+- `rag/generator.py` — 熔断时 `return "系统繁忙，请稍后重试。"`
+
+**测试：** 3 个新测试
+
+### 7. BM25 SQLite 持久化
+
+**问题：** 每次查询都从 Qdrant 全量 scroll 构建 BM25 索引，数据量大时是性能瓶颈。
+
+**修复：**
+- 新建 `rag/bm25_store.py` — `BM25Store` 类，SQLite 存储 chunks，`save_chunks`/`load_chunks`/`has_chunks`
+- `rag/retriever.py` — 优先从 SQLite 加载，无数据时走 Qdrant scroll 并存入 SQLite
+- `config.py` — 新增 `bm25_db_path` 配置，默认 `data/bm25_index.db`
+
+**测试：** 8 个新测试（6 个 BM25Store + 2 个 Retriever 集成）
+
+**统计：** 248 个测试全过（原 232 + 新 16）
+
+---
+
 ## 下一步计划
 
-- SQLite 统一目录（memory.db 移到 data/）
-- pipeline.py 集成 clean_document()（数据清洗未被调用）
-- generator.py 熔断降级（返回友好提示而非抛异常）
-- BM25 持久化（避免每次查询全量加载）
 - Docker 容器化
 - CI/CD（GitHub Actions）
+- 流式输出（改 generator 支持 streaming）
+- 前端组件化（拆分 1690 行 index.html）
