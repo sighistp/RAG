@@ -63,60 +63,67 @@ class RAGPipeline:
         self._cache = ResultCache()
         self._agent_lock = threading.Lock()
 
-    def query(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None) -> QueryResult:
-        sid = session_id or self.session_id or "default"
-        start_time = time.time()
-        # 安全检查
+    def _prepare_context(self, question: str, session_id: str, doc_name: str, top_k: int = 8):
+        """公共逻辑：guard -> cache -> route -> retrieve -> rerank -> build_messages。"""
         question = sanitize_input(question)
         guard = check_injection(question)
         if guard.blocked:
-            self.tracker.save(
-                ExecutionTrace(
-                    question=question,
-                    route="blocked",
-                    answer=guard.reason,
-                    total_ms=0,
-                )
-            )
-            return QueryResult(answer=f"请求被安全策略拦截：{guard.reason}", context=[], sources=[])
-        # 缓存命中
+            return None, f"请求被安全策略拦截：{guard.reason}"
+
         cached = self._cache.get(question)
         if cached:
-            return QueryResult(answer=cached, context=[], sources=[{"doc_name": "缓存", "chunk_index": 0}])
-        from rag.agent import route_question
+            return {"route": "cached", "answer": cached, "context": [], "sources": [{"doc_name": "缓存", "chunk_index": 0}]}, None
 
+        from rag.agent import route_question
         route = route_question(question)
+
         if route == "agent":
+            return {"route": "agent", "question": question}, None
+
+        rewritten = rewrite_query(question)
+        context = self.retriever.retrieve(rewritten, top_k=top_k, doc_name=doc_name)
+        context = self.reranker.rerank(rewritten, context)
+        sid = session_id or self.session_id or "default"
+        messages = self.memory.build_messages(sid, question, context)
+        sources = [
+            {"doc_name": c.doc_name, "chunk_index": c.chunk_index, "text_preview": c.text[:100]} for c in context
+        ]
+        return {"route": "rag", "question": question, "context": context, "messages": messages, "sources": sources, "sid": sid}, None
+
+    def query(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None) -> QueryResult:
+        sid = session_id or self.session_id or "default"
+        start_time = time.time()
+
+        prepared, error = self._prepare_context(question, sid, doc_name, top_k)
+        if error:
+            self.tracker.save(ExecutionTrace(question=question, route="blocked", answer=error, total_ms=0))
+            return QueryResult(answer=error, context=[], sources=[])
+
+        if prepared["route"] == "cached":
+            return QueryResult(answer=prepared["answer"], context=[], sources=prepared["sources"])
+
+        if prepared["route"] == "agent":
             captured_calls = []
             with self._agent_lock:
                 self._wrap_agent_tools(captured_calls)
                 try:
-                    answer = self.agent.run(question)
+                    answer = self.agent.run(prepared["question"])
                 finally:
                     self._unwrap_agent_tools()
             context = []
             sources = []
+            tool_calls = [ToolCall(**c) for c in captured_calls]
         else:
-            rewritten = rewrite_query(question)
-            context = self.retriever.retrieve(rewritten, top_k=top_k, doc_name=doc_name)
-            context = self.reranker.rerank(rewritten, context)
-            messages = self.memory.build_messages(sid, question, context)
-            answer = generate(messages)
-            sources = [
-                {"doc_name": c.doc_name, "chunk_index": c.chunk_index, "text_preview": c.text[:100]} for c in context
-            ]
+            answer = generate(prepared["messages"])
+            context = prepared["context"]
+            sources = prepared["sources"]
+            tool_calls = []
+
         total_ms = (time.time() - start_time) * 1000
-        tool_calls = [ToolCall(**c) for c in captured_calls] if route == "agent" else []
-        self.tracker.save(
-            ExecutionTrace(
-                question=question,
-                route=route,
-                answer=answer,
-                total_ms=total_ms,
-                tool_calls=tool_calls,
-            )
-        )
-        # 输出审查
+        self.tracker.save(ExecutionTrace(
+            question=question, route=prepared["route"], answer=answer,
+            total_ms=total_ms, tool_calls=tool_calls,
+        ))
         output_check = check_output(answer)
         if output_check.filtered:
             answer = output_check.text
