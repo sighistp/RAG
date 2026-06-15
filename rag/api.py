@@ -156,9 +156,9 @@ def health():
 
 
 @app.post("/register", response_model=TokenResponse, summary="用户注册")
-def register(req: RegisterRequest):
+async def register(req: RegisterRequest):
     try:
-        user_id = user_db.create_user(req.username, req.password)
+        user_id = await asyncio.to_thread(user_db.create_user, req.username, req.password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     token = create_token({"user_id": user_id, "username": req.username})
@@ -166,8 +166,8 @@ def register(req: RegisterRequest):
 
 
 @app.post("/login", response_model=TokenResponse, summary="用户登录")
-def login(req: LoginRequest):
-    user = user_db.authenticate(req.username, req.password)
+async def login(req: LoginRequest):
+    user = await asyncio.to_thread(user_db.authenticate, req.username, req.password)
     if not user:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     token = create_token({"user_id": user["id"], "username": user["username"]})
@@ -175,9 +175,9 @@ def login(req: LoginRequest):
 
 
 @app.get("/me", summary="获取当前用户信息")
-def get_me(authorization: str = Header(...)):
+async def get_me(authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
-    user = _get_current_user(token)
+    user = await asyncio.to_thread(_get_current_user, token)
     return {"id": user["id"], "username": user["username"]}
 
 
@@ -193,51 +193,51 @@ def _get_current_user(token: str) -> dict:
 
 
 @app.post("/conversations", summary="新建对话")
-def create_conversation(authorization: str = Header(...)):
+async def create_conversation(authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
-    user = _get_current_user(token)
-    cid = user_db.create_conversation(user["id"])
+    user = await asyncio.to_thread(_get_current_user, token)
+    cid = await asyncio.to_thread(user_db.create_conversation, user["id"])
     return {"id": cid, "title": "新对话"}
 
 
 @app.get("/conversations", summary="列出对话")
-def list_conversations(authorization: str = Header(...)):
+async def list_conversations(authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
-    user = _get_current_user(token)
-    return user_db.list_conversations(user["id"])
+    user = await asyncio.to_thread(_get_current_user, token)
+    return await asyncio.to_thread(user_db.list_conversations, user["id"])
 
 
 @app.delete("/conversations/{cid}", summary="删除对话")
-def delete_conversation(cid: int, authorization: str = Header(...)):
+async def delete_conversation(cid: int, authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
-    user = _get_current_user(token)
-    if not user_db.delete_conversation(cid, user["id"]):
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not await asyncio.to_thread(user_db.delete_conversation, cid, user["id"]):
         raise HTTPException(status_code=404, detail="对话不存在")
     return {"status": "deleted"}
 
 
 @app.get("/conversations/{cid}/messages", summary="获取对话消息")
-def get_conversation_messages(cid: int, authorization: str = Header(...)):
+async def get_conversation_messages(cid: int, authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
-    user = _get_current_user(token)
-    return user_db.get_messages(cid, user["id"])
+    user = await asyncio.to_thread(_get_current_user, token)
+    return await asyncio.to_thread(user_db.get_messages, cid, user["id"])
 
 
 @app.post("/feedback", summary="提交反馈")
-def submit_feedback(req: FeedbackRequest, authorization: str = Header(...)):
+async def submit_feedback(req: FeedbackRequest, authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
-    user = _get_current_user(token)
+    user = await asyncio.to_thread(_get_current_user, token)
     value_int = 1 if req.value == "positive" else -1
-    user_db.add_feedback(req.message_id, user["id"], value_int, req.comment or "")
+    await asyncio.to_thread(user_db.add_feedback, req.message_id, user["id"], value_int, req.comment or "")
     return {"status": "ok"}
 
 
 @app.post("/regenerate", summary="重新生成回答")
 async def regenerate(req: RegenerateRequest, authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
-    user = _get_current_user(token)
+    user = await asyncio.to_thread(_get_current_user, token)
 
-    messages = user_db.get_messages(req.conversation_id, user["id"])
+    messages = await asyncio.to_thread(user_db.get_messages, req.conversation_id, user["id"])
     target = None
     user_question = None
     for i, msg in enumerate(messages):
@@ -273,7 +273,7 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(...)):
 
 
 @app.get("/files", summary="列出可索引文件", description="列出 data/upload/ 目录下的所有支持格式文件")
-def list_files():
+async def list_files():
     files = []
     if DATA_DIR.is_dir():
         for fpath in sorted(DATA_DIR.iterdir()):
@@ -350,7 +350,7 @@ async def upload_file(file: UploadFile = File(..., description="要上传的文�
 
 
 @app.delete("/files/{filename}", summary="删除文件", description="从 data/upload/ 删除文件并重新索引")
-def delete_file(filename: str, authorization: str = Header(...)):
+async def delete_file(filename: str, authorization: str = Header(...)):
     from rag.folder_indexer import index_folder
     from rag.pipeline import RAGPipeline
     from rag.vector_store import clear as clear_collection
@@ -389,7 +389,7 @@ def delete_file(filename: str, authorization: str = Header(...)):
 
 
 @app.post("/files/{filename}/tags", summary="为文档添加标签", description="为指定文档的所有分块添加标签")
-def add_tags_to_file(filename: str, tags: list[str], authorization: str = Header(...)):
+async def add_tags_to_file(filename: str, tags: list[str], authorization: str = Header(...)):
     from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList, UpdateOperation
     from rag.vector_store import _get_client, COLLECTION_NAME
 
@@ -429,7 +429,7 @@ def add_tags_to_file(filename: str, tags: list[str], authorization: str = Header
 
 
 @app.get("/tags", summary="获取所有标签", description="获取当前知识库中所有已使用的标签")
-def list_tags():
+async def list_tags():
     from rag.vector_store import _get_client, COLLECTION_NAME
 
     client = _get_client()
@@ -681,21 +681,25 @@ class KBResponse(BaseModel):
 
 
 @app.get("/knowledge-bases", summary="列出知识库", description="获取所有知识库列表")
-def list_knowledge_bases(user_id: str = Security(verify_api_key)):
-    manager = KnowledgeBaseManager()
-    kbs = manager.list_kbs()
+async def list_knowledge_bases(user_id: str = Security(verify_api_key)):
+    def _list():
+        manager = KnowledgeBaseManager()
+        return manager.list_kbs()
+    kbs = await asyncio.to_thread(_list)
     return [KBResponse(kb_id=kb.kb_id, name=kb.name, doc_count=kb.doc_count) for kb in kbs]
 
 
 @app.post("/knowledge-bases", summary="创建知识库", description="创建一个新的知识库")
-def create_knowledge_base(req: CreateKBRequest, user_id: str = Security(verify_api_key)):
-    manager = KnowledgeBaseManager()
-    kb_id = manager.create_kb(req.name)
+async def create_knowledge_base(req: CreateKBRequest, user_id: str = Security(verify_api_key)):
+    def _create():
+        manager = KnowledgeBaseManager()
+        return manager.create_kb(req.name)
+    kb_id = await asyncio.to_thread(_create)
     return {"kb_id": kb_id, "name": req.name}
 
 
 @app.delete("/knowledge-bases/{kb_id}", summary="删除知识库", description="删除指定知识库及其所有文档")
-def delete_knowledge_base(kb_id: str, user_id: str = Security(verify_api_key)):
+async def delete_knowledge_base(kb_id: str, user_id: str = Security(verify_api_key)):
     manager = KnowledgeBaseManager()
     try:
         manager.delete_kb(kb_id)
@@ -729,7 +733,7 @@ async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: 
 
 
 @app.delete("/knowledge-bases/{kb_id}/documents/{doc_name}", summary="删除文档", description="从知识库中删除指定文档")
-def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Security(verify_api_key)):
+async def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Security(verify_api_key)):
     manager = KnowledgeBaseManager()
     try:
         manager.remove_document(kb_id, doc_name)
@@ -744,7 +748,7 @@ class QueryKBRequest(BaseModel):
 
 
 @app.post("/knowledge-bases/{kb_id}/query", summary="查询知识库", description="对指定知识库进行语义检索")
-def query_knowledge_base(kb_id: str, req: QueryKBRequest, user_id: str = Security(verify_api_key)):
+async def query_knowledge_base(kb_id: str, req: QueryKBRequest, user_id: str = Security(verify_api_key)):
     manager = KnowledgeBaseManager()
     try:
         chunks = manager.search(kb_id, req.question, top_k=req.top_k)
@@ -757,27 +761,29 @@ def query_knowledge_base(kb_id: str, req: QueryKBRequest, user_id: str = Securit
 # ── 分析端点 ──────────────────────────────────────────────────────
 
 @app.get("/analytics/gaps/summary", summary="检索空白分析统计")
-def get_gap_summary():
-    from rag.gap_analyzer import GapAnalyzer
-    from config import settings as _settings
-    ga = GapAnalyzer(_settings.memory_db_path)
-    try:
-        summary = ga.get_summary()
-        return summary
-    finally:
-        ga.close()
+async def get_gap_summary():
+    def _get():
+        from rag.gap_analyzer import GapAnalyzer
+        from config import settings as _settings
+        ga = GapAnalyzer(_settings.memory_db_path)
+        try:
+            return ga.get_summary()
+        finally:
+            ga.close()
+    return await asyncio.to_thread(_get)
 
 
 @app.get("/analytics/gaps", summary="未解答问题列表")
-def get_gaps(limit: int = 50):
-    from rag.gap_analyzer import GapAnalyzer
-    from config import settings as _settings
-    ga = GapAnalyzer(_settings.memory_db_path)
-    try:
-        gaps = ga.get_gaps(limit=limit)
-        return {"gaps": gaps}
-    finally:
-        ga.close()
+async def get_gaps(limit: int = 50):
+    def _get():
+        from rag.gap_analyzer import GapAnalyzer
+        from config import settings as _settings
+        ga = GapAnalyzer(_settings.memory_db_path)
+        try:
+            return ga.get_gaps(limit=limit)
+        finally:
+            ga.close()
+    return await asyncio.to_thread(_get)
 
 
 # ── 静态文件 & 前端 ────────────────────────────────────────────────
