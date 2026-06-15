@@ -1941,8 +1941,56 @@ plt.rcParams["axes.unicode_minus"] = False
 
 ---
 
+## 技术债修复（2026-06-15）
+
+**来源：** docs/tech-debt-plan.md + 计划书差距分析
+
+**已完成（TDD，3 个提交）：**
+
+### 1. JWT Secret 持久化
+
+**问题：** JWT secret 每次重启随机生成，所有用户 token 立即失效。
+
+**修复：**
+- `rag/auth.py` — 新增 `_load_or_create_secret(secret_file)`
+- 优先级：环境变量 `RAG_JWT_SECRET` > 文件 `data/jwt_secret.txt` > 自动生成
+- 首次启动生成 secret 写入文件，后续重启读取文件
+- `data/jwt_secret.txt` 已加入 `.gitignore`
+
+**测试：** 4 个新测试（文件创建、读取已有文件、重启一致性、环境变量优先）
+
+### 2. api.py 读写锁替换
+
+**问题：** `api.py` 使用 `threading.Lock()`，查询和索引互斥，无法并发查询。
+
+**修复：**
+- `_pipeline_lock` 从 `threading.Lock()` 改为 `ReadWriteLock()`
+- 查询端点 `/query` 使用 `read()` — 多个查询可并发
+- 索引端点 `/upload`、`/delete`、`/index-all` 使用 `write()` — 独占更新
+
+**测试：** 3 个新测试（类型检查、并发读、写阻塞读）
+
+### 3. 注入检测增强
+
+**问题：** `guard.py` 只有 15 个简单关键词，容易被同义词绕过。
+
+**修复：**
+- 扩充到 28 个模式
+- 新增中文变体：无视、忘记设定、忽略上面
+- 新增英文变体：forget、disregard、override
+- 新增角色扮演检测：不受限制的AI、没有限制
+
+**测试：** 5 个新测试（同义词、英文变体、角色扮演、绕过尝试、正常问题不误拦）
+
+**统计：** 232 个测试全过（原 215 + 新 12 + 之前遗漏的 5）
+
+---
+
 ## 下一步计划
 
-- 部署到云平台（让别人也能访问）
-- 流式输出（改 generator 支持 streaming）
-- RAGv2 补测试覆盖
+- SQLite 统一目录（memory.db 移到 data/）
+- pipeline.py 集成 clean_document()（数据清洗未被调用）
+- generator.py 熔断降级（返回友好提示而非抛异常）
+- BM25 持久化（避免每次查询全量加载）
+- Docker 容器化
+- CI/CD（GitHub Actions）
