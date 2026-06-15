@@ -88,8 +88,8 @@ class StreamQueryRequest(BaseModel):
 
 
 class SuggestRequest(BaseModel):
-    question: str
-    answer: str
+    question: str = Field(..., max_length=2000)
+    answer: str = Field(..., max_length=5000)
 
 
 class FeedbackRequest(BaseModel):
@@ -507,16 +507,29 @@ async def query_stream(
         session_id = f"conv_{req.conversation_id}"
 
     async def event_generator():
+        answer_buffer = ""
         async for event in current_pipeline.query_stream(
             req.question, top_k=req.top_k, session_id=session_id, doc_name=req.doc_name
         ):
+            # 从 token 事件中提取 answer 用于持久化
+            if '"type": "token"' in event:
+                try:
+                    import json as _json
+                    data = _json.loads(event.removeprefix("data: ").strip())
+                    answer_buffer += data.get("content", "")
+                except Exception:
+                    pass
             yield event
+        # 流式完成后持久化到 chat_messages
+        if user and req.conversation_id is not None and answer_buffer:
+            user_db.add_message(req.conversation_id, "user", req.question)
+            user_db.add_message(req.conversation_id, "assistant", answer_buffer)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/suggest", summary="生成追问建议", description="基于问答生成 3 个推荐追问")
-async def suggest(req: SuggestRequest):
+async def suggest(req: SuggestRequest, user_id: str = Security(verify_api_key)):
     from rag.suggest import suggest_questions
     questions = await asyncio.to_thread(suggest_questions, req.question, req.answer)
     return {"questions": questions}

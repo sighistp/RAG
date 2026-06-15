@@ -1,4 +1,5 @@
 import asyncio
+import json as _json
 import logging
 import threading
 import time
@@ -137,7 +138,6 @@ class RAGPipeline:
 
     async def query_stream(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None):
         """流式查询，yield SSE 格式的事件字符串。"""
-        import json as _json
         sid = session_id or self.session_id or "default"
         start_time = time.time()
 
@@ -175,6 +175,9 @@ class RAGPipeline:
             tool_calls = []
 
         # 后处理
+        # 注意：流式输出时 token 已经逐个发送给客户端，check_output 无法拦截已发送的内容。
+        # 这是流式输出的固有权衡：延迟 vs 安全。过滤后的 answer 仅用于 memory/cache 持久化。
+        # 生产环境可通过内容审核 API 在客户端侧做二次过滤。
         output_check = check_output(answer)
         if output_check.filtered:
             answer = output_check.text
