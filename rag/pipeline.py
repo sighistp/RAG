@@ -3,8 +3,9 @@ import threading
 import time
 from typing import NamedTuple
 
+from config import settings
 from rag.chunker import chunk
-from rag.cleaner import deduplicate_chunks
+from rag.cleaner import clean_document, deduplicate_chunks
 from rag.embedder import embed
 from rag.generator import generate
 from rag.guard import check_injection, check_output, sanitize_input
@@ -28,7 +29,7 @@ class QueryResult(NamedTuple):
 
 class RAGPipeline:
     def __init__(
-        self, file_path: str = None, session_id: str = None, memory_db_path: str = "memory.db", kb_id: str = None
+        self, file_path: str = None, session_id: str = None, memory_db_path: str = settings.memory_db_path, kb_id: str = None
     ):
         if kb_id:
             # 查询已有知识库，不重新索引
@@ -37,6 +38,7 @@ class RAGPipeline:
         else:
             # 索引新文档到默认集合
             text = load(file_path)
+            text, _metadata = clean_document(text)
             doc_name = file_path.split("/")[-1].split("\\")[-1]
             self.chunks = chunk(text, doc_name=doc_name)
             # 去重（SequenceMatcher 相似度 > 0.95 的段落被去除）

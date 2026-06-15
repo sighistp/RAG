@@ -6,6 +6,8 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from config import settings
+
 
 @dataclass
 class ToolCall:
@@ -25,7 +27,7 @@ class ExecutionTrace:
 
 
 class ExecutionTracker:
-    def __init__(self, db_path: str = "memory.db"):
+    def __init__(self, db_path: str = settings.memory_db_path):
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()

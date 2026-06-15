@@ -15,7 +15,7 @@ _breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
 def generate(messages: list[dict]) -> str:
     global client
     if not _breaker.allow_request():
-        raise RuntimeError("Circuit breaker is open — generator temporarily unavailable")
+        return "系统繁忙，请稍后重试。"
     if client is None:
         with _client_lock:
             if client is None:

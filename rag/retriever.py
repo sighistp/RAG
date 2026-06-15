@@ -3,6 +3,7 @@ import re
 from rank_bm25 import BM25Okapi
 
 from config import settings
+from rag.bm25_store import BM25Store
 from rag.embedder import embed
 from rag.models import Chunk
 from rag.vector_store import search as dense_search
@@ -77,7 +78,13 @@ def _load_all_chunks(collection_name: str) -> list[Chunk]:
 class Retriever:
     def __init__(self, chunks: list[Chunk], collection_name: str = None):
         if not chunks and collection_name:
-            chunks = _load_all_chunks(collection_name)
+            store = BM25Store()
+            if store.has_chunks(collection_name):
+                chunks = store.load_chunks(collection_name)
+            else:
+                chunks = _load_all_chunks(collection_name)
+                store.save_chunks(collection_name, chunks)
+            store.close()
         self.chunks = chunks
         self.collection_name = collection_name
         if chunks:

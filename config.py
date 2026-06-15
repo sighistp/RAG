@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # Agent
     agent_max_iterations: int = 5
+    memory_db_path: str = str(Path(__file__).resolve().parent / "data" / "memory.db")
     analysis_db_path: str = str(Path(__file__).resolve().parent / "data" / "analysis.db")
 
     # 鉴权
@@ -29,6 +30,9 @@ class Settings(BaseSettings):
 
     # Qdrant 本地模式
     qdrant_path: str = str(Path(__file__).resolve().parent / "qdrant_data")
+
+    # BM25 倒排索引
+    bm25_db_path: str = str(Path(__file__).resolve().parent / "data" / "bm25_index.db")
 
     # 分块与检索
     chunk_size: int = 500

@@ -5,6 +5,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from config import settings
 from rag.models import Chunk
 
 
@@ -31,7 +32,7 @@ SYSTEM_PROMPT = (
 class DialogueMemory:
     def __init__(
         self,
-        db_path: str = "memory.db",
+        db_path: str = settings.memory_db_path,
         generate_fn: Callable[[list[dict]], str] | None = None,
     ) -> None:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
