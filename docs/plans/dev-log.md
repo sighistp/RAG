@@ -2270,7 +2270,29 @@ frontend/
 
 ---
 
+## Vue 3 前端 Bug 修复（2026-06-16）✅
+
+**问题 1：页面刷新后服务器卡死**
+- 根因：所有 API 端点是同步 `def`，SQLite 全局锁导致线程池耗尽
+- 修复：所有端点改为 `async def` + `asyncio.to_thread()` 包装 DB 调用
+
+**问题 2：浏览器访问 /files 返回 JSON**
+- 根因：FastAPI 的 `/files` API 端点优先级高于 Vue Router catch-all
+- 修复：添加 SPA fallback 中间件，浏览器请求（Accept: text/html）到 /files、/knowledge、/analytics 时返回 index.html
+
+**问题 3：切换页面时重复 API 调用**
+- 根因：Pinia store 无缓存，每次组件挂载都请求 API
+- 修复：store 添加 `_loaded` 标志，已加载时跳过请求，写操作后强制刷新
+
+**问题 4：/analytics/gaps/summary 404**
+- 根因：端点未实现
+- 修复：实现 `/analytics/gaps/summary` 和 `/analytics/gaps` 端点
+
+**测试：** 304 个全过
+
+---
+
 ## 下一步计划
 
-- Phase 4：后端异步化 + Docker + CI/CD
+- Phase 4：后端异步化（已完成核心部分）+ Docker + CI/CD
 - Phase 5（剩余）：数据源集成（RSS/数据库/API，可选）
