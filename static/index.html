@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG 知识库助手</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg-deep: #06060a;
+  --bg-panel: #0c0c14;
+  --bg-card: #12121e;
+  --bg-input: #16162a;
+  --border: #1a1a30;
+  --text: #e0e0f0;
+  --text-dim: #6a6a8a;
+  --text-muted: #3a3a5a;
+  --accent: #00f0ff;
+  --accent-dim: #00f0ff44;
+  --accent-glow: #00f0ff18;
+  --success: #00ff88;
+  --error: #ff4466;
+  --user-bubble: #1a1a3a;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans: 'Noto Sans SC', system-ui, sans-serif;
+  --radius: 8px;
+  --radius-lg: 14px;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg-deep);
+  color: var(--text);
+  overflow: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0, 240, 255, 0.008) 2px, rgba(0, 240, 255, 0.008) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Login Page ─────────────────────────────────────────────── */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  position: relative;
+  z-index: 10;
+}
+
+.login-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 40px 36px;
+  width: 380px;
+  max-width: 90vw;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-box::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent) 70%, transparent);
+}
+
+.login-logo {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 3px;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.login-subtitle {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 28px;
+}
+
+.login-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.login-tab {
+  flex: 1;
+  padding: 10px 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.login-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.login-form { display: flex; flex-direction: column; gap: 16px; }
+.login-form.hidden { display: none; }
+
+.login-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.login-input::placeholder { color: var(--text-muted); }
+.login-input:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-glow); }
+
+.login-submit {
+  background: linear-gradient(135deg, var(--accent), #0088aa);
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--bg-deep);
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 4px;
+}
+
+.login-submit:hover { box-shadow: 0 0 20px var(--accent-dim); transform: translateY(-1px); }
+.login-submit:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.login-error {
+  color: var(--error);
+  font-size: 12px;
+  text-align: center;
+  min-height: 16px;
+}
+
+/* ── App Layout ─────────────────────────────────────────────── */
+.app {
+  display: none;
+  height: 100vh;
+}
+
+.app.visible { display: flex; }
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 3;
+}
+
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, transparent, var(--accent-dim) 20%, var(--accent-dim) 80%, transparent);
+}
+
+.sidebar-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-header .logo {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.sidebar-header .logo-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 300;
+}
+
+.new-conv-btn {
+  width: 100%;
+  padding: 10px 0;
+  margin-top: 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.new-conv-btn:hover {
+  border-color: var(--accent-dim);
+  background: var(--accent-glow);
+}
+
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.conv-list::-webkit-scrollbar { width: 3px; }
+.conv-list::-webkit-scrollbar-track { background: transparent; }
+.conv-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  margin-bottom: 4px;
+}
+
+.conv-item:hover {
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+.conv-item.active {
+  background: var(--accent-glow);
+  border-color: var(--accent-dim);
+}
+
+.conv-item-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.conv-item.active .conv-item-icon { color: var(--accent); }
+
+.conv-item-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conv-item.active .conv-item-title { color: var(--text); }
+
+.conv-item-delete {
+  opacity: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.conv-item:hover .conv-item-delete { opacity: 1; }
+.conv-item-delete:hover { color: var(--error); background: rgba(255, 68, 102, 0.1); }
+
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-info {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-icon {
+  font-size: 16px;
+}
+
+.logout-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+
+.logout-btn:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* ── Main Area ──────────────────────────────────────────────── */
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ── Top Bar ────────────────────────────────────────────────── */
+.top-bar {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.top-bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-dim) 20%, var(--accent-dim) 80%, transparent);
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.top-bar-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+
+.clear-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+
+.clear-btn:hover {
+  border-color: var(--error);
+  color: var(--error);
+  background: rgba(255, 68, 102, 0.08);
+}
+
+/* ── File Selector ──────────────────────────────────────────── */
+.file-bar {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 32px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  transition: background 0.2s;
+}
+
+.file-bar.drag-over {
+  background: var(--accent-glow);
+  border-bottom-color: var(--accent-dim);
+}
+
+.file-bar-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-bar-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.file-bar-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-glow);
+  border: 1px solid var(--accent-dim);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.file-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+  align-items: stretch;
+}
+
+.file-scroll::-webkit-scrollbar { height: 4px; }
+.file-scroll::-webkit-scrollbar-track { background: transparent; }
+.file-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.file-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+
+.file-card {
+  flex-shrink: 0;
+  width: 200px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.file-card::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transition: transform 0.25s ease;
+}
+
+.file-card:hover {
+  border-color: var(--accent-dim);
+  background: var(--bg-input);
+  transform: translateY(-2px);
+}
+
+.file-card:hover::before { transform: scaleX(1); }
+
+.file-card.active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  box-shadow: 0 4px 20px var(--accent-glow), inset 0 0 20px var(--accent-glow);
+}
+
+.file-card.active::before { transform: scaleX(1); }
+
+.file-card-icon { font-size: 24px; margin-bottom: 8px; }
+
+.file-card-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 18px;
+}
+
+.file-card-meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 8px;
+}
+
+.file-ext { color: var(--accent); font-weight: 500; }
+
+/* file delete button */
+.file-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 68, 102, 0.15);
+  border: 1px solid rgba(255, 68, 102, 0.3);
+  border-radius: 50%;
+  color: var(--error);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 5;
+}
+
+.file-card:hover .file-delete { opacity: 1; }
+.file-delete:hover { background: rgba(255, 68, 102, 0.3); border-color: var(--error); }
+
+/* upload card */
+.upload-card {
+  flex-shrink: 0;
+  width: 140px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-dim);
+}
+
+.upload-card:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.upload-card-icon { font-size: 24px; }
+
+.upload-card-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.file-upload-status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  padding: 4px 0;
+  min-height: 20px;
+}
+
+.file-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 14px 16px;
+}
+
+/* hidden file input */
+#fileInput { display: none; }
+
+/* ── Chat Area ──────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 60px 60px;
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+/* ── Messages ───────────────────────────────────────────────── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: relative;
+  z-index: 1;
+  scroll-behavior: smooth;
+}
+
+.messages::-webkit-scrollbar { width: 4px; }
+.messages::-webkit-scrollbar-track { background: transparent; }
+.messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.message {
+  display: flex;
+  gap: 14px;
+  max-width: 85%;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message.user { align-self: flex-end; flex-direction: row-reverse; }
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.message.user .message-avatar {
+  background: linear-gradient(135deg, #2a1a4a, #1a1a3a);
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+}
+
+.message.bot .message-avatar {
+  background: linear-gradient(135deg, #0a1a2a, #0a0a1a);
+  color: var(--success);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+.message-body { flex: 1; min-width: 0; }
+
+.message-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.message.user .message-content {
+  background: var(--user-bubble);
+  border-color: var(--accent-dim);
+}
+
+.message-content code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-input);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+/* ── Sources ────────────────────────────────────────────────── */
+.sources {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.source-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin: 2px 4px 2px 0;
+  transition: all 0.2s;
+}
+
+.source-tag:hover { border-color: var(--accent-dim); color: var(--accent); }
+.source-idx { color: var(--accent); font-weight: 600; }
+
+/* ── Feedback Buttons ───────────────────────────────────────── */
+.feedback-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 2px;
+}
+
+.feedback-btn {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.feedback-btn:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  background: var(--bg-input);
+}
+
+.feedback-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.feedback-btn.selected-up {
+  border-color: var(--success);
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--success);
+  opacity: 1;
+}
+
+.feedback-btn.selected-down {
+  border-color: var(--error);
+  background: rgba(255, 68, 102, 0.1);
+  color: var(--error);
+  opacity: 1;
+}
+
+/* ── Typing indicator ───────────────────────────────────────── */
+.typing { display: flex; gap: 4px; padding: 8px 0; }
+.typing span {
+  width: 6px; height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: bounce 1.4s infinite;
+}
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* ── Input Area ─────────────────────────────────────────────── */
+.input-area {
+  padding: 20px 32px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  position: relative;
+  z-index: 1;
+}
+
+.input-wrapper {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.input-field {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--text);
+  resize: none;
+  min-height: 48px;
+  max-height: 120px;
+  outline: none;
+  transition: border-color 0.2s;
+  line-height: 1.5;
+}
+
+.input-field::placeholder { color: var(--text-muted); }
+.input-field:focus {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.send-btn {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, var(--accent), #0088aa);
+  border: none;
+  border-radius: var(--radius-lg);
+  color: var(--bg-deep);
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.send-btn:hover { transform: scale(1.05); box-shadow: 0 0 20px var(--accent-dim); }
+.send-btn:active { transform: scale(0.95); }
+.send-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* ── Welcome ────────────────────────────────────────────────── */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.welcome h2 {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+  letter-spacing: 2px;
+}
+
+.welcome p {
+  font-size: 14px;
+  color: var(--text-dim);
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+/* ── Deerflow badge ─────────────────────────────────────────── */
+.deerflow-badge {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-decoration: none;
+  opacity: 0.4;
+  transition: opacity 0.3s;
+  letter-spacing: 1px;
+  z-index: 100;
+}
+
+.deerflow-badge:hover { opacity: 0.8; color: var(--accent); }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .sidebar { width: 220px; min-width: 220px; }
+}
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .file-card { width: 160px; }
+  .messages { padding: 20px; }
+  .input-area { padding: 16px 20px 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Login Page ────────────────────────────────────────────── -->
+<div class="login-page" id="loginPage">
+  <div class="login-box">
+    <div class="login-logo">RAG SYSTEM</div>
+    <div class="login-subtitle">智能知识库检索系统</div>
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="switchTab('login')">登录</button>
+      <button class="login-tab" onclick="switchTab('register')">注册</button>
+    </div>
+    <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
+      <input class="login-input" type="text" id="loginUsername" placeholder="用户名" autocomplete="username" required>
+      <input class="login-input" type="password" id="loginPassword" placeholder="密码" autocomplete="current-password" required>
+      <div class="login-error" id="loginError"></div>
+      <button class="login-submit" type="submit" id="loginSubmit">登 录</button>
+    </form>
+    <form class="login-form hidden" id="registerForm" onsubmit="handleRegister(event)">
+      <input class="login-input" type="text" id="regUsername" placeholder="用户名" autocomplete="username" required>
+      <input class="login-input" type="password" id="regPassword" placeholder="密码" autocomplete="new-password" required>
+      <div class="login-error" id="regError"></div>
+      <button class="login-submit" type="submit" id="regSubmit">注 册</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Main App ──────────────────────────────────────────────── -->
+<div class="app" id="app">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">RAG System</div>
+      <div class="logo-sub">智能知识库检索系统</div>
+      <button class="new-conv-btn" onclick="createConversation()">
+        <span>+</span> 新建对话
+      </button>
+    </div>
+    <div class="conv-list" id="convList"></div>
+    <div class="sidebar-footer">
+      <span class="user-icon">👤</span>
+      <span class="user-info" id="userName">-</span>
+      <button class="logout-btn" onclick="logout()">退出</button>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ────────────────────────────────────── -->
+  <div class="main-area">
+
+    <div class="top-bar">
+      <div class="top-bar-left">
+        <div class="status-dot"></div>
+        <span class="top-bar-title" id="topBarTitle">选择或新建对话</span>
+      </div>
+      <button class="clear-btn" onclick="clearChat()">清空当前对话</button>
+    </div>
+
+    <div class="file-bar" id="fileBar">
+      <div class="file-bar-header">
+        文档库
+        <span class="file-bar-count" id="fileCount">0</span>
+      </div>
+      <div class="file-scroll" id="fileScroll">
+        <div class="file-empty">📂 加载中...</div>
+      </div>
+      <div class="file-upload-status" id="uploadStatus"></div>
+      <input type="file" id="fileInput" accept=".txt,.md,.pdf,.docx,.xlsx,.csv,.json,.html">
+    </div>
+
+    <main class="main">
+      <div class="messages" id="messages">
+        <div class="welcome" id="welcome">
+          <div class="welcome-icon">🔮</div>
+          <h2>开始提问</h2>
+          <p>选择或新建一个对话，然后输入问题。<br>系统将从知识库中检索相关信息并生成回答。</p>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea class="input-field" id="inputField" placeholder="输入你的问题..." rows="1"
+            onkeydown="handleKeyDown(event)" oninput="autoResize(this)"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="sendMessage()">▶</button>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<a href="https://deerflow.tech" target="_blank" class="deerflow-badge">✦ Deerflow</a>
+
+<script>
+const API_URL = window.location.origin;
+
+// ── State ──────────────────────────────────────────────────
+let token = localStorage.getItem('token') || '';
+let currentUser = null;
+let conversations = [];
+let currentConvId = null;
+let messageCount = 0;
+
+const EXT_ICONS = {
+  '.txt': '📄', '.md': '📝', '.pdf': '📕',
+  '.docx': '📘', '.xlsx': '📊', '.csv': '📈',
+};
+
+// ── Auth Helper ────────────────────────────────────────────
+function authHeaders(extra = {}) {
+  const h = { ...extra };
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+
+async function authFetch(url, options = {}) {
+  if (!options.headers) options.headers = {};
+  if (token) options.headers['Authorization'] = 'Bearer ' + token;
+  const resp = await fetch(url, options);
+  if (resp.status === 401) {
+    token = '';
+    localStorage.removeItem('token');
+    showLogin();
+    throw new Error('Unauthorized');
+  }
+  return resp;
+}
+
+// ── Login / Register ───────────────────────────────────────
+function showLogin() {
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('app').classList.remove('visible');
+}
+
+function showApp() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('app').classList.add('visible');
+}
+
+function switchTab(tab) {
+  const tabs = document.querySelectorAll('.login-tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  if (tab === 'login') {
+    tabs[0].classList.add('active');
+    document.getElementById('loginForm').classList.remove('hidden');
+    document.getElementById('registerForm').classList.add('hidden');
+  } else {
+    tabs[1].classList.add('active');
+    document.getElementById('loginForm').classList.add('hidden');
+    document.getElementById('registerForm').classList.remove('hidden');
+  }
+  document.getElementById('loginError').textContent = '';
+  document.getElementById('regError').textContent = '';
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const errEl = document.getElementById('loginError');
+  const btn = document.getElementById('loginSubmit');
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = '登录中...';
+  try {
+    const resp = await fetch(`${API_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('loginUsername').value.trim(),
+        password: document.getElementById('loginPassword').value,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.detail || '登录失败';
+      return;
+    }
+    token = data.token;
+    localStorage.setItem('token', token);
+    await onAuthSuccess();
+  } catch (ex) {
+    errEl.textContent = '网络错误';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '登 录';
+  }
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  const errEl = document.getElementById('regError');
+  const btn = document.getElementById('regSubmit');
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = '注册中...';
+  try {
+    const resp = await fetch(`${API_URL}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('regUsername').value.trim(),
+        password: document.getElementById('regPassword').value,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.detail || '注册失败';
+      return;
+    }
+    token = data.token;
+    localStorage.setItem('token', token);
+    await onAuthSuccess();
+  } catch (ex) {
+    errEl.textContent = '网络错误';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '注 册';
+  }
+}
+
+async function onAuthSuccess() {
+  try {
+    const resp = await authFetch(`${API_URL}/me`);
+    if (!resp.ok) throw new Error();
+    const data = await resp.json();
+    currentUser = data;
+    document.getElementById('userName').textContent = data.username || '用户';
+  } catch {
+    document.getElementById('userName').textContent = '用户';
+  }
+  showApp();
+  await loadConversations();
+  await loadFiles();
+  document.getElementById('inputField').focus();
+}
+
+function logout() {
+  token = '';
+  currentUser = null;
+  currentConvId = null;
+  conversations = [];
+  localStorage.removeItem('token');
+  showLogin();
+}
+
+// ── Conversations ──────────────────────────────────────────
+async function loadConversations() {
+  try {
+    const resp = await authFetch(`${API_URL}/conversations`);
+    if (!resp.ok) return;
+    conversations = await resp.json();
+    renderConversations();
+  } catch (e) {
+    console.error('加载对话列表失败:', e);
+  }
+}
+
+function renderConversations() {
+  const list = document.getElementById('convList');
+  if (conversations.length === 0) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">暂无对话</div>';
+    return;
+  }
+  list.innerHTML = conversations.map(c => `
+    <div class="conv-item ${c.id === currentConvId ? 'active' : ''}" onclick="selectConversation('${c.id}')">
+      <span class="conv-item-icon">💬</span>
+      <span class="conv-item-title" title="${escHtml(c.title || '新对话')}">${escHtml(c.title || '新对话')}</span>
+      <button class="conv-item-delete" onclick="event.stopPropagation();deleteConversation('${c.id}')" title="删除">✕</button>
+    </div>
+  `).join('');
+}
+
+async function createConversation() {
+  try {
+    const resp = await authFetch(`${API_URL}/conversations`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ title: '新对话' }),
+    });
+    if (!resp.ok) return;
+    const conv = await resp.json();
+    conversations.unshift(conv);
+    currentConvId = conv.id;
+    renderConversations();
+    clearMessages();
+    updateTopBarTitle();
+    document.getElementById('inputField').focus();
+  } catch (e) {
+    console.error('创建对话失败:', e);
+  }
+}
+
+async function selectConversation(cid) {
+  currentConvId = cid;
+  renderConversations();
+  updateTopBarTitle();
+  clearMessages();
+  try {
+    const resp = await authFetch(`${API_URL}/conversations/${cid}/messages`);
+    if (!resp.ok) return;
+    const msgs = await resp.json();
+    for (const m of msgs) {
+      const role = m.role === 'assistant' ? 'bot' : 'user';
+      addMessage(role, m.content, m.sources || [], m.id, false);
+    }
+    scrollMessages();
+  } catch (e) {
+    console.error('加载消息失败:', e);
+  }
+}
+
+async function deleteConversation(cid) {
+  if (!confirm('确定删除这个对话？')) return;
+  try {
+    const resp = await authFetch(`${API_URL}/conversations/${cid}`, { method: 'DELETE' });
+    if (!resp.ok) return;
+    conversations = conversations.filter(c => c.id !== cid);
+    if (currentConvId === cid) {
+      currentConvId = null;
+      clearMessages();
+      updateTopBarTitle();
+    }
+    renderConversations();
+  } catch (e) {
+    console.error('删除对话失败:', e);
+  }
+}
+
+function updateTopBarTitle() {
+  const el = document.getElementById('topBarTitle');
+  if (!currentConvId) {
+    el.textContent = '选择或新建对话';
+    return;
+  }
+  const conv = conversations.find(c => c.id === currentConvId);
+  el.textContent = conv ? (conv.title || '新对话') : '对话';
+}
+
+// ── Files ──────────────────────────────────────────────────
+async function loadFiles() {
+  try {
+    const resp = await fetch(`${API_URL}/files`);
+    const data = await resp.json();
+    renderFiles(data.files || []);
+  } catch (e) {
+    console.error('加载文件列表失败:', e);
+  }
+}
+
+function renderFiles(files) {
+  const scroll = document.getElementById('fileScroll');
+  const count = document.getElementById('fileCount');
+  count.textContent = files.length;
+
+  const uploadBtn = `
+    <div class="upload-card" onclick="document.getElementById('fileInput').click()">
+      <div class="upload-card-icon">⬆</div>
+      <div class="upload-card-text">上传文件</div>
+    </div>`;
+
+  if (files.length === 0) {
+    scroll.innerHTML = uploadBtn + '<div class="file-empty">📂 暂无文档</div>';
+    return;
+  }
+
+  scroll.innerHTML = uploadBtn + files.map(f => `
+    <div class="file-card" onclick="selectFile(this, '${f.name}')">
+      <button class="file-delete" onclick="event.stopPropagation();deleteFile('${escAttr(f.name)}')" title="删除文件">✕</button>
+      <div class="file-card-icon">${EXT_ICONS[f.ext] || '📄'}</div>
+      <div class="file-card-name" title="${escAttr(f.name)}">${escHtml(f.name)}</div>
+      <div class="file-card-meta">
+        <span class="file-ext">${f.ext}</span>
+        <span>${f.size_human}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+let selectedFileName = null;
+
+function selectFile(el, name) {
+  if (selectedFileName === name) {
+    el.classList.remove('active');
+    selectedFileName = null;
+  } else {
+    document.querySelectorAll('.file-card').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    selectedFileName = name;
+  }
+}
+
+async function deleteFile(filename) {
+  if (!confirm(`确定删除文件 "${filename}" ？`)) return;
+  try {
+    const resp = await authFetch(`${API_URL}/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      alert(data.detail || '删除失败');
+      return;
+    }
+    await loadFiles();
+  } catch (e) {
+    console.error('删除文件失败:', e);
+  }
+}
+
+// ── File Upload ────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+
+async function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.textContent = `正在上传 ${file.name} ...`;
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const resp = await authFetch(`${API_URL}/upload`, {
+      method: 'POST',
+      body: form,
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      statusEl.textContent = `上传失败: ${data.detail || resp.status}`;
+      return;
+    }
+    statusEl.textContent = `✓ ${file.name} 上传成功`;
+    await loadFiles();
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+  } catch (ex) {
+    statusEl.textContent = `上传失败: ${ex.message}`;
+  }
+}
+
+// Drag & drop on file bar
+const fileBar = document.getElementById('fileBar');
+fileBar.addEventListener('dragover', e => {
+  e.preventDefault();
+  fileBar.classList.add('drag-over');
+});
+fileBar.addEventListener('dragleave', () => {
+  fileBar.classList.remove('drag-over');
+});
+fileBar.addEventListener('drop', e => {
+  e.preventDefault();
+  fileBar.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  // trigger upload via the same flow
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.textContent = `正在上传 ${file.name} ...`;
+  const form = new FormData();
+  form.append('file', file);
+  (async () => {
+    try {
+      const resp = await authFetch(`${API_URL}/upload`, { method: 'POST', body: form });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        statusEl.textContent = `上传失败: ${data.detail || resp.status}`;
+        return;
+      }
+      statusEl.textContent = `✓ ${file.name} 上传成功`;
+      await loadFiles();
+      setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    } catch (ex) {
+      statusEl.textContent = `上传失败: ${ex.message}`;
+    }
+  })();
+});
+
+// ── Messages ───────────────────────────────────────────────
+function addMessage(role, content, sources = [], msgId = null, doScroll = true) {
+  const messages = document.getElementById('messages');
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.remove();
+
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  if (msgId) div.dataset.msgId = msgId;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'message-avatar';
+  avatar.textContent = role === 'user' ? 'U' : 'AI';
+
+  const bodyDiv = document.createElement('div');
+  bodyDiv.className = 'message-body';
+
+  const contentDiv = document.createElement('div');
+  contentDiv.className = 'message-content';
+  contentDiv.innerHTML = formatContent(content);
+
+  if (sources.length > 0) {
+    const sourcesDiv = document.createElement('div');
+    sourcesDiv.className = 'sources';
+    sourcesDiv.innerHTML = sources.map((s, i) =>
+      `<span class="source-tag"><span class="source-idx">[${i + 1}]</span> ${escHtml(s.doc_name)} — 第${s.chunk_index + 1}段</span>`
+    ).join('');
+    contentDiv.appendChild(sourcesDiv);
+  }
+
+  bodyDiv.appendChild(contentDiv);
+
+  // feedback buttons for bot messages
+  if (role === 'bot' && msgId) {
+    const fbRow = document.createElement('div');
+    fbRow.className = 'feedback-row';
+    fbRow.innerHTML = `
+      <button class="feedback-btn" data-fb="up" onclick="sendFeedback(this,'${msgId}','up')" title="有帮助">👍</button>
+      <button class="feedback-btn" data-fb="down" onclick="sendFeedback(this,'${msgId}','down')" title="没帮助">👎</button>
+    `;
+    bodyDiv.appendChild(fbRow);
+  }
+
+  div.appendChild(avatar);
+  div.appendChild(bodyDiv);
+  messages.appendChild(div);
+
+  if (doScroll) scrollMessages();
+  messageCount++;
+}
+
+async function sendFeedback(btn, msgId, value) {
+  const row = btn.parentElement;
+  const buttons = row.querySelectorAll('.feedback-btn');
+  buttons.forEach(b => b.disabled = true);
+
+  try {
+    await authFetch(`${API_URL}/feedback`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ message_id: msgId, value }),
+    });
+    btn.classList.add(value === 'up' ? 'selected-up' : 'selected-down');
+  } catch (e) {
+    buttons.forEach(b => b.disabled = false);
+    console.error('反馈提交失败:', e);
+  }
+}
+
+function clearMessages() {
+  const messages = document.getElementById('messages');
+  messages.innerHTML = `
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">🔮</div>
+      <h2>开始提问</h2>
+      <p>选择或新建一个对话，然后输入问题。<br>系统将从知识库中检索相关信息并生成回答。</p>
+    </div>
+  `;
+  messageCount = 0;
+}
+
+function scrollMessages() {
+  const messages = document.getElementById('messages');
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function formatContent(text) {
+  // 1. Remove chart save text
+  text = text.replace(/图表已保存为\s*/g, '');
+
+  // 2. Extract image paths
+  const images = [];
+  const seenPaths = new Set();
+  const IMG_STYLE = 'max-width:480px;width:100%;border-radius:8px;margin:8px 0;border:1px solid var(--border);cursor:pointer';
+
+  function addImage(path, alt) {
+    if (seenPaths.has(path)) return '';
+    seenPaths.add(path);
+    images.push(`<img src="/${path}" alt="${alt}" style="${IMG_STYLE}" onclick="window.open(this.src)">`);
+    return `__IMG_${images.length - 1}__`;
+  }
+
+  text = text.replace(/!\[(.*?)\]\((data\/chart_\w+\.png)\)/g, (_, alt, path) => addImage(path, alt));
+  text = text.replace(/(data\/chart_\w+\.png)/g, (_, path) => addImage(path, '图表'));
+
+  // 3. HTML escape + formatting
+  text = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`(.*?)`/g, '<code>$1</code>')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\n/g, '<br>');
+
+  // 4. Restore image placeholders
+  images.forEach((img, i) => {
+    text = text.replace(`__IMG_${i}__`, img);
+  });
+
+  return text;
+}
+
+// ── Chat send ──────────────────────────────────────────────
+function addTyping() {
+  const messages = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'message bot';
+  div.id = 'typing-msg';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'message-avatar';
+  avatar.textContent = 'AI';
+
+  const bodyDiv = document.createElement('div');
+  bodyDiv.className = 'message-body';
+
+  const contentDiv = document.createElement('div');
+  contentDiv.className = 'message-content';
+  contentDiv.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+
+  bodyDiv.appendChild(contentDiv);
+  div.appendChild(avatar);
+  div.appendChild(bodyDiv);
+  messages.appendChild(div);
+  scrollMessages();
+}
+
+function removeTyping() {
+  const el = document.getElementById('typing-msg');
+  if (el) el.remove();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('inputField');
+  const btn = document.getElementById('sendBtn');
+  const question = input.value.trim();
+  if (!question) return;
+
+  // If no conversation selected, create one automatically
+  if (!currentConvId) {
+    try {
+      const resp = await authFetch(`${API_URL}/conversations`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ title: question.slice(0, 30) }),
+      });
+      if (resp.ok) {
+        const conv = await resp.json();
+        conversations.unshift(conv);
+        currentConvId = conv.id;
+        renderConversations();
+        updateTopBarTitle();
+      }
+    } catch (e) {
+      console.error('自动创建对话失败:', e);
+    }
+  }
+
+  addMessage('user', question);
+  input.value = '';
+  autoResize(input);
+  btn.disabled = true;
+  addTyping();
+
+  try {
+    const resp = await authFetch(`${API_URL}/query`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ question, conversation_id: currentConvId, session_id: 'web_' + Date.now(), doc_name: selectedFileName }),
+    });
+
+    removeTyping();
+
+    if (resp.status === 400) {
+      addMessage('bot', '⚠️ 知识库尚未初始化，请先通过管理端上传文档或运行索引。');
+      return;
+    }
+
+    const data = await resp.json();
+    addMessage('bot', data.answer, data.sources || [], data.message_id || null);
+
+    // Update conversation title from first question
+    if (currentConvId && conversations.length > 0) {
+      const conv = conversations.find(c => c.id === currentConvId);
+      if (conv && (!conv.title || conv.title === '新对话')) {
+        conv.title = question.slice(0, 30);
+        renderConversations();
+        updateTopBarTitle();
+      }
+    }
+  } catch (e) {
+    removeTyping();
+    if (e.message !== 'Unauthorized') {
+      addMessage('bot', `❌ 请求失败: ${e.message}`);
+    }
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
+function clearChat() {
+  if (!currentConvId) return;
+  clearMessages();
+}
+
+function handleKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function escAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ── Init ───────────────────────────────────────────────────
+(async function init() {
+  if (token) {
+    try {
+      const resp = await authFetch(`${API_URL}/me`);
+      if (resp.ok) {
+        const data = await resp.json();
+        currentUser = data;
+        document.getElementById('userName').textContent = data.username || '用户';
+        showApp();
+        await loadConversations();
+        await loadFiles();
+        document.getElementById('inputField').focus();
+        return;
+      }
+    } catch {}
+    // token invalid
+    token = '';
+    localStorage.removeItem('token');
+  }
+  showLogin();
+})();
+</script>
+</body>
+</html>

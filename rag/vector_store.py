@@ -1,0 +1,153 @@
+import uuid
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, Filter, PointStruct, VectorParams
+
+from config import settings
+from rag.concurrency import ReadWriteLock
+from rag.models import Chunk
+
+COLLECTION_NAME = "rag_docs"
+
+_client = None
+_write_lock = ReadWriteLock()
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = QdrantClient(path=settings.qdrant_path)
+    return _client
+
+
+def _ensure_collection():
+    client = _get_client()
+    if not client.collection_exists(COLLECTION_NAME):
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(
+                size=settings.embed_dimension,
+                distance=Distance.COSINE,
+            ),
+        )
+
+
+def add(chunks: list[Chunk], embeddings: list[list[float]]):
+    with _write_lock.write():
+        client = _get_client()
+        _ensure_collection()
+        points = [
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=embeddings[i],
+                payload={
+                    "text": chunks[i].text,
+                    "doc_name": chunks[i].doc_name,
+                    "chunk_index": chunks[i].chunk_index,
+                },
+            )
+            for i in range(len(chunks))
+        ]
+        client.upsert(collection_name=COLLECTION_NAME, points=points)
+
+
+def clear():
+    """Delete all points from the collection, then recreate it fresh."""
+    with _write_lock.write():
+        client = _get_client()
+        if client.collection_exists(COLLECTION_NAME):
+            client.delete_collection(COLLECTION_NAME)
+        _ensure_collection()
+
+
+def search(query_embedding: list[float], top_k: int = 5) -> list[Chunk]:
+    with _write_lock.read():
+        client = _get_client()
+        _ensure_collection()
+        hits = client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=query_embedding,
+            limit=top_k,
+            with_payload=True,
+        )
+        return [
+            Chunk(
+                text=h.payload["text"],
+                doc_name=h.payload.get("doc_name", ""),
+                chunk_index=h.payload.get("chunk_index", 0),
+            )
+            for h in hits.points
+            if h.payload
+        ]
+
+
+def _ensure_collection_name(collection_name: str):
+    client = _get_client()
+    if not client.collection_exists(collection_name):
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(
+                size=settings.embed_dimension,
+                distance=Distance.COSINE,
+            ),
+        )
+
+
+def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: list[list[float]]):
+    with _write_lock.write():
+        client = _get_client()
+        if not client.collection_exists(collection_name):
+            raise ValueError(f"集合 {collection_name} 不存在，请先创建知识库")
+        points = [
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=embeddings[i],
+                payload={
+                    "text": chunks[i].text,
+                    "doc_name": chunks[i].doc_name,
+                    "chunk_index": chunks[i].chunk_index,
+                },
+            )
+            for i in range(len(chunks))
+        ]
+        client.upsert(collection_name=collection_name, points=points)
+
+
+def search_collection(collection_name: str, query_embedding: list[float], top_k: int = 5, doc_name: str = None) -> list[Chunk]:
+    with _write_lock.read():
+        client = _get_client()
+        if not client.collection_exists(collection_name):
+            return []
+
+        search_filter = None
+        if doc_name:
+            from qdrant_client.models import FieldCondition, MatchValue
+            search_filter = Filter(must=[FieldCondition(key="doc_name", match=MatchValue(value=doc_name))])
+
+        hits = client.query_points(
+            collection_name=collection_name,
+            query=query_embedding,
+            limit=top_k,
+            with_payload=True,
+            query_filter=search_filter,
+        )
+        return [
+            Chunk(
+                text=h.payload["text"],
+                doc_name=h.payload.get("doc_name", ""),
+                chunk_index=h.payload.get("chunk_index", 0),
+            )
+            for h in hits.points
+            if h.payload
+        ]
+
+
+def delete_doc(collection_name: str, doc_name: str):
+    from qdrant_client.models import FieldCondition, MatchValue
+
+    with _write_lock.write():
+        client = _get_client()
+        client.delete(
+            collection_name=collection_name,
+            points_selector=Filter(must=[FieldCondition(key="doc_name", match=MatchValue(value=doc_name))]),
+        )

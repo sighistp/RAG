@@ -1,0 +1,214 @@
+"""SQLite-backed user database for conversations, messages, and feedback."""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import sqlite3
+import threading
+from typing import Any
+
+
+class UserDB:
+    """Thread-safe SQLite database for users, conversations, messages, and feedback."""
+
+    def __init__(self, db_path: str) -> None:
+        self.db_path = db_path
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        self._create_tables()
+
+    # ------------------------------------------------------------------
+    # Schema
+    # ------------------------------------------------------------------
+
+    def _create_tables(self) -> None:
+        with self._lock:
+            self._conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username    TEXT    NOT NULL UNIQUE,
+                    salt        TEXT    NOT NULL,
+                    password    TEXT    NOT NULL,
+                    created_at  REAL    NOT NULL DEFAULT (strftime('%s','now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     INTEGER NOT NULL REFERENCES users(id),
+                    title       TEXT    NOT NULL DEFAULT '',
+                    created_at  REAL    NOT NULL DEFAULT (strftime('%s','now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+                    role            TEXT    NOT NULL,
+                    content         TEXT    NOT NULL,
+                    created_at      REAL    NOT NULL DEFAULT (strftime('%s','now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id  INTEGER NOT NULL REFERENCES chat_messages(id),
+                    user_id     INTEGER NOT NULL REFERENCES users(id),
+                    value       INTEGER NOT NULL,
+                    comment     TEXT    NOT NULL DEFAULT '',
+                    created_at  REAL    NOT NULL DEFAULT (strftime('%s','now')),
+                    UNIQUE(message_id, user_id)
+                );
+                """
+            )
+
+    # ------------------------------------------------------------------
+    # Password helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _hash_password(password: str, salt: bytes) -> str:
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+        return dk.hex()
+
+    @staticmethod
+    def _generate_salt() -> bytes:
+        return os.urandom(16)
+
+    # ------------------------------------------------------------------
+    # Users
+    # ------------------------------------------------------------------
+
+    def create_user(self, username: str, password: str) -> int:
+        """Create a new user.  Raises ``ValueError`` if the username is taken."""
+        from rag.auth import hash_password
+
+        hashed = hash_password(password)
+        with self._lock:
+            try:
+                cur = self._conn.execute(
+                    "INSERT INTO users (username, salt, password) VALUES (?, ?, ?)",
+                    (username, "", hashed),
+                )
+                self._conn.commit()
+                return cur.lastrowid  # type: ignore[return-value]
+            except sqlite3.IntegrityError:
+                raise ValueError(f"Username '{username}' already exists")
+
+    def authenticate(self, username: str, password: str) -> dict[str, Any] | None:
+        """Return user dict on success, ``None`` on failure."""
+        from rag.auth import verify_password
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, username, password FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+        if row is None:
+            return None
+        if not verify_password(password, row["password"]):
+            return None
+        return {"id": row["id"], "username": row["username"]}
+
+    def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
+        """Return user dict or ``None``."""
+        with self._lock:
+            row = self._conn.execute("SELECT id, username FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            return None
+        return {"id": row["id"], "username": row["username"]}
+
+    # ------------------------------------------------------------------
+    # Conversations
+    # ------------------------------------------------------------------
+
+    def create_conversation(self, user_id: int, title: str = "") -> int:
+        """Create a conversation and return its id."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO conversations (user_id, title) VALUES (?, ?)",
+                (user_id, title),
+            )
+            self._conn.commit()
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def list_conversations(self, user_id: int) -> list[dict[str, Any]]:
+        """Return all conversations for *user_id*, newest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, user_id, title, created_at FROM conversations WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_conversation(self, conversation_id: int, user_id: int) -> bool:
+        """Delete a conversation (only if owned by user_id). Returns True if deleted."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM chat_messages WHERE conversation_id = ? "
+                "AND conversation_id IN (SELECT id FROM conversations WHERE id = ? AND user_id = ?)",
+                (conversation_id, conversation_id, user_id),
+            )
+            cur = self._conn.execute(
+                "DELETE FROM conversations WHERE id = ? AND user_id = ?",
+                (conversation_id, user_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # Messages
+    # ------------------------------------------------------------------
+
+    def add_message(self, conversation_id: int, role: str, content: str) -> int:
+        """Append a message to a conversation and return its id."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO chat_messages (conversation_id, role, content) VALUES (?, ?, ?)",
+                (conversation_id, role, content),
+            )
+            self._conn.commit()
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def get_messages(self, conversation_id: int, user_id: int) -> list[dict[str, Any]]:
+        """Return all messages in a conversation (only if owned by user_id)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT m.id, m.conversation_id, m.role, m.content, m.created_at "
+                "FROM chat_messages m "
+                "JOIN conversations c ON m.conversation_id = c.id "
+                "WHERE m.conversation_id = ? AND c.user_id = ? ORDER BY m.created_at",
+                (conversation_id, user_id),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Feedback
+    # ------------------------------------------------------------------
+
+    def add_feedback(
+        self,
+        message_id: int,
+        user_id: int,
+        value: int,
+        comment: str = "",
+    ) -> int:
+        """Record user feedback on a message and return feedback id."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO feedback (message_id, user_id, value, comment) VALUES (?, ?, ?, ?)",
+                (message_id, user_id, value, comment),
+            )
+            self._conn.commit()
+            return cur.lastrowid  # type: ignore[return-value]
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
+
+    def close(self) -> None:
+        """Close the underlying SQLite connection."""
+        with self._lock:
+            self._conn.close()

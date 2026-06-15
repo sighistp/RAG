@@ -1,0 +1,311 @@
+from unittest.mock import patch, MagicMock
+from rag.models import Chunk
+from rag.pipeline import RAGPipeline
+
+
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+def test_pipeline_indexes_file(mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear, mock_reranker_cls):
+    mock_load.return_value = "full document text"
+    chunks = [
+        Chunk(text="chunk1", doc_name="test.txt", chunk_index=0),
+        Chunk(text="chunk2", doc_name="test.txt", chunk_index=1),
+    ]
+    mock_chunk.return_value = chunks
+    mock_embed.return_value = [[0.1] * 1024, [0.2] * 1024]
+
+    pipeline = RAGPipeline("test.txt")
+
+    mock_load.assert_called_once_with("test.txt")
+    mock_chunk.assert_called_once_with("full document text", doc_name="test.txt")
+    mock_embed.assert_called_once_with(["chunk1", "chunk2"])
+    mock_add.assert_called_once_with(chunks, [[0.1] * 1024, [0.2] * 1024])
+    mock_retriever_cls.assert_called_once_with(chunks)
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten question")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_queries(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    mock_chunk.return_value = [c1]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1]
+    mock_retriever_cls.return_value = mock_retriever
+    mock_generate.return_value = "answer"
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    result = pipeline.query("question")
+
+    assert result.answer == "answer"
+    mock_rewrite.assert_called_once_with("question")
+    mock_retriever.retrieve.assert_called_once_with("rewritten question", top_k=8, doc_name=None)
+    mock_generate.assert_called_once()
+    msgs = mock_generate.call_args[0][0]
+    assert isinstance(msgs, list)
+    assert any("question" in m["content"] for m in msgs)
+    assert any("chunk1" in m["content"] for m in msgs)
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten question")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_reranks_context(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    c2 = Chunk(text="chunk2", doc_name="test.txt", chunk_index=1)
+    c3 = Chunk(text="chunk3", doc_name="test.txt", chunk_index=2)
+    mock_chunk.return_value = [c1, c2, c3]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1, c2, c3]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c2, c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    mock_generate.return_value = "answer"
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    result = pipeline.query("question")
+
+    assert result.answer == "answer"
+    mock_retriever.retrieve.assert_called_once_with("rewritten question", top_k=8, doc_name=None)
+    mock_reranker.rerank.assert_called_once_with(
+        "rewritten question", [c1, c2, c3]
+    )
+    msgs = mock_generate.call_args[0][0]
+    combined = " ".join(m["content"] for m in msgs)
+    assert "chunk2" in combined
+
+
+@patch("rag.agent.route_question", return_value="agent")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+def test_pipeline_uses_agent_for_complex_question(
+    mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_route,
+):
+    mock_load.return_value = "text"
+    mock_chunk.return_value = [Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+
+    with patch.object(pipeline.agent, "run", return_value="agent answer") as mock_agent_run:
+        result = pipeline.query("计算增长率")
+        assert result.answer == "agent answer"
+        assert result.sources == []
+        mock_agent_run.assert_called_once_with("计算增长率")
+        mock_route.assert_called_once()
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_uses_rag_for_simple_question(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    mock_chunk.return_value = [c1]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    mock_generate.return_value = "rag answer"
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    result = pipeline.query("什么是 RAG？")
+
+    assert result.answer == "rag answer"
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_returns_sources(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    mock_load.return_value = "text"
+    mock_chunk.return_value = [
+        Chunk(text="chunk1", doc_name="test.txt", chunk_index=0),
+    ]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [
+        Chunk(text="chunk1", doc_name="test.txt", chunk_index=0),
+    ]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [
+        Chunk(text="chunk1", doc_name="test.txt", chunk_index=0),
+    ]
+    mock_reranker_cls.return_value = mock_reranker
+
+    mock_generate.return_value = "answer"
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    result = pipeline.query("question")
+
+    assert result.answer == "answer"
+    assert len(result.sources) == 1
+    assert result.sources[0]["doc_name"] == "test.txt"
+    assert result.sources[0]["chunk_index"] == 0
+    assert isinstance(result.context[0], Chunk)
+
+
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+def test_pipeline_with_kb_id_skips_indexing(
+    mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear, mock_reranker_cls,
+):
+    """When kb_id is provided, pipeline should skip indexing and use collection_name."""
+    RAGPipeline("test.txt", kb_id="kb_abc12345")
+
+    mock_load.assert_not_called()
+    mock_chunk.assert_not_called()
+    mock_embed.assert_not_called()
+    mock_clear.assert_not_called()
+    mock_add.assert_not_called()
+    mock_retriever_cls.assert_called_once_with([], collection_name="kb_abc12345")
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_saves_execution_trace(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    """pipeline.query() should save an execution trace via tracker."""
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    mock_chunk.return_value = [c1]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    mock_generate.return_value = "answer"
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    with patch.object(pipeline.tracker, "save") as mock_save:
+        result = pipeline.query("question")
+        mock_save.assert_called_once()
+        trace = mock_save.call_args[0][0]
+        assert trace.question == "question"
+        assert trace.route == "rag"
+        assert trace.answer == "answer"
+        assert trace.total_ms >= 0
+
+
+@patch("rag.agent.route_question", return_value="agent")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+def test_pipeline_agent_route_captures_tool_calls(
+    mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_route,
+):
+    """Agent route should capture tool calls in the execution trace."""
+    mock_load.return_value = "text"
+    mock_chunk.return_value = [Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+
+    mock_tool = MagicMock()
+    mock_tool.name = "calculate"
+    mock_tool.func = MagicMock(return_value="42")
+    pipeline.agent.tools = [mock_tool]
+
+    with patch.object(pipeline.agent, "run", return_value="答案是 42") as mock_run:
+        with patch.object(pipeline.tracker, "save") as mock_save:
+            pipeline.query("计算一下")
+            trace = mock_save.call_args[0][0]
+            assert trace.route == "agent"

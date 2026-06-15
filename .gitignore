@@ -1,0 +1,46 @@
+# API keys
+.env
+
+# Qdrant data
+/qdrant_data/
+
+# Chat history
+/history/*
+!/history/.gitkeep
+
+# Benchmark results
+/benchmarks/
+
+# Eval history (generated)
+/data/eval/eval_history.jsonl
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Streamlit
+.streamlit/
+
+# IDE
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temp
+tmp/
+
+# SQLite
+*.db
+
+# Generated charts
+data/chart_*.png
+
+# JWT secret (auto-generated)
+data/jwt_secret.txt
+
+# Ruff cache
+.ruff_cache/

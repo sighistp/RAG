@@ -1,0 +1,20 @@
+name: quality_check
+version: 1
+description: 答案自检 prompt
+changelog:
+  - version: 1
+    date: 2026-05-29
+    change: 初始版本，从 agent.py 迁移
+template: |
+  你是一个答案质量审查员。请判断以下答案是否完整回答了用户的问题。
+
+  问题：{question}
+  答案：{answer}
+
+  判断标准：
+  1. 答案是否直接回应了问题的核心诉求
+  2. 是否遗漏了问题中的关键信息点
+  3. 是否包含无关或错误的信息
+
+  请用 JSON 格式回复：
+  {{"verdict": "pass 或 fail", "missing": ["缺失的要点1", ...]}}
