@@ -1,4 +1,5 @@
 from unittest.mock import patch, MagicMock
+import hashlib
 from rag.models import Chunk
 from rag.pipeline import RAGPipeline
 
@@ -61,7 +62,7 @@ def test_pipeline_queries(
 
     assert result.answer == "answer"
     mock_rewrite.assert_called_once_with("question")
-    mock_retriever.retrieve.assert_called_once_with("rewritten question", top_k=8, doc_name=None)
+    mock_retriever.retrieve.assert_called_once_with("rewritten question", top_k=8, doc_name=None, tags=None)
     mock_generate.assert_called_once()
     msgs = mock_generate.call_args[0][0]
     assert isinstance(msgs, list)
@@ -104,7 +105,7 @@ def test_pipeline_reranks_context(
     result = pipeline.query("question")
 
     assert result.answer == "answer"
-    mock_retriever.retrieve.assert_called_once_with("rewritten question", top_k=8, doc_name=None)
+    mock_retriever.retrieve.assert_called_once_with("rewritten question", top_k=8, doc_name=None, tags=None)
     mock_reranker.rerank.assert_called_once_with(
         "rewritten question", [c1, c2, c3]
     )
@@ -385,3 +386,165 @@ def test_prepare_context_returns_cached():
     assert result["route"] == "cached"
     assert result["answer"] == "cached answer"
     assert "sources" in result
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten question")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_records_chunk_hashes_in_trace(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    """pipeline.query() should record chunk_hashes in ExecutionTrace."""
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    mock_chunk.return_value = [c1]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    mock_generate.return_value = "answer"
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    with patch.object(pipeline.tracker, "save") as mock_save:
+        result = pipeline.query("question")
+        mock_save.assert_called_once()
+        trace = mock_save.call_args[0][0]
+        expected_hash = hashlib.md5("chunk1".encode()).hexdigest()
+        assert expected_hash in trace.chunk_hashes
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten question")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_gap_analysis_triggered_on_gap_answer(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    """pipeline.query() should record retrieval gaps when answer indicates gap."""
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    mock_chunk.return_value = [c1]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    # Answer contains gap keyword
+    mock_generate.return_value = "文档中未提及该信息"
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    with patch("rag.gap_analyzer.GapAnalyzer") as mock_ga_cls:
+        mock_ga = MagicMock()
+        mock_ga_cls.return_value = mock_ga
+        # Make is_gap return True for this answer
+        mock_ga_cls.is_gap.return_value = True
+        result = pipeline.query("question about missing info")
+        mock_ga.record_gap.assert_called_once()
+        mock_ga.close.assert_called_once()
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten question")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_pipeline_no_gap_analysis_when_answer_is_normal(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    """pipeline.query() should NOT trigger gap analysis for normal answers."""
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    mock_chunk.return_value = [c1]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    mock_generate.return_value = "RAG is a retrieval augmented generation technique"
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+    with patch("rag.gap_analyzer.GapAnalyzer") as mock_ga_cls:
+        mock_ga_cls.is_gap.return_value = False
+        result = pipeline.query("what is RAG")
+        mock_ga_cls.return_value.record_gap.assert_not_called()
+
+
+@patch("rag.agent.route_question", return_value="rag")
+@patch("rag.pipeline.rewrite_query", return_value="rewritten question")
+@patch("rag.pipeline.Reranker")
+@patch("rag.pipeline.clear")
+@patch("rag.pipeline.Retriever")
+@patch("rag.pipeline.add")
+@patch("rag.pipeline.embed")
+@patch("rag.pipeline.chunk")
+@patch("rag.pipeline.load")
+@patch("rag.pipeline.generate")
+def test_prepare_context_computes_feedback_weights(
+    mock_generate, mock_load, mock_chunk, mock_embed, mock_add, mock_retriever_cls, mock_clear,
+    mock_reranker_cls, mock_rewrite, mock_route,
+):
+    """_prepare_context should compute chunk hashes and weights from FeedbackProcessor."""
+    mock_load.return_value = "text"
+    c1 = Chunk(text="chunk1", doc_name="test.txt", chunk_index=0)
+    mock_chunk.return_value = [c1]
+    mock_embed.return_value = [[0.1] * 1024]
+
+    mock_retriever = MagicMock()
+    mock_retriever.retrieve.return_value = [c1]
+    mock_retriever_cls.return_value = mock_retriever
+
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [c1]
+    mock_reranker_cls.return_value = mock_reranker
+
+    pipeline = RAGPipeline("test.txt", session_id="s1", memory_db_path=":memory:")
+
+    with patch("rag.agent.route_question", return_value="rag"), \
+         patch("rag.pipeline.rewrite_query", return_value="test"), \
+         patch.object(pipeline.retriever, "retrieve", return_value=[c1]), \
+         patch.object(pipeline.reranker, "rerank", return_value=[c1]):
+        result, error = pipeline._prepare_context("test question", "s1", None)
+
+    assert error is None
+    assert "chunk_hashes" in result
+    assert "weights" in result
+    expected_hash = hashlib.md5("chunk1".encode()).hexdigest()
+    assert expected_hash in result["chunk_hashes"]
+    assert isinstance(result["weights"], dict)

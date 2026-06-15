@@ -65,7 +65,7 @@ class RAGPipeline:
         self._cache = ResultCache()
         self._agent_lock = threading.Lock()
 
-    def _prepare_context(self, question: str, session_id: str, doc_name: str, top_k: int = 8):
+    def _prepare_context(self, question: str, session_id: str, doc_name: str, top_k: int = 8, tags: list[str] = None):
         """公共逻辑：guard -> cache -> route -> retrieve -> rerank -> build_messages。"""
         question = sanitize_input(question)
         guard = check_injection(question)
@@ -83,20 +83,34 @@ class RAGPipeline:
             return {"route": "agent", "question": question}, None
 
         rewritten = rewrite_query(question)
-        context = self.retriever.retrieve(rewritten, top_k=top_k, doc_name=doc_name)
+        context = self.retriever.retrieve(rewritten, top_k=top_k, doc_name=doc_name, tags=tags)
         context = self.reranker.rerank(rewritten, context)
+
+        # Compute feedback weights for reranked chunks
+        import hashlib
+        from rag.feedback_processor import FeedbackProcessor
+
+        chunk_hashes = [hashlib.md5(c.text.encode()).hexdigest() for c in context]
+        fp = FeedbackProcessor(settings.memory_db_path)
+        weights = fp.get_weights(chunk_hashes)
+        fp.close()
+
         sid = session_id or self.session_id or "default"
         messages = self.memory.build_messages(sid, question, context)
         sources = [
             {"doc_name": c.doc_name, "chunk_index": c.chunk_index, "text_preview": c.text[:100]} for c in context
         ]
-        return {"route": "rag", "question": question, "context": context, "messages": messages, "sources": sources, "sid": sid}, None
+        return {
+            "route": "rag", "question": question, "context": context,
+            "messages": messages, "sources": sources, "sid": sid,
+            "chunk_hashes": chunk_hashes, "weights": weights,
+        }, None
 
-    def query(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None) -> QueryResult:
+    def query(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None, tags: list[str] = None) -> QueryResult:
         sid = session_id or self.session_id or "default"
         start_time = time.time()
 
-        prepared, error = self._prepare_context(question, sid, doc_name, top_k)
+        prepared, error = self._prepare_context(question, sid, doc_name, top_k, tags=tags)
         if error:
             self.tracker.save(ExecutionTrace(question=question, route="blocked", answer=error, total_ms=0))
             return QueryResult(answer=error, context=[], sources=[])
@@ -122,10 +136,22 @@ class RAGPipeline:
             tool_calls = []
 
         total_ms = (time.time() - start_time) * 1000
+        chunk_hashes = prepared.get("chunk_hashes", [])
         self.tracker.save(ExecutionTrace(
             question=question, route=prepared["route"], answer=answer,
-            total_ms=total_ms, tool_calls=tool_calls,
+            total_ms=total_ms, tool_calls=tool_calls, chunk_hashes=chunk_hashes,
         ))
+
+        # Gap analysis: check if this is a retrieval gap
+        if prepared["route"] == "rag" and chunk_hashes:
+            from rag.gap_analyzer import GapAnalyzer
+            weights = prepared.get("weights", {})
+            best_weight = max(weights.values()) if weights else 1.0
+            if GapAnalyzer.is_gap(best_weight, answer):
+                ga = GapAnalyzer(settings.memory_db_path)
+                ga.record_gap(question, best_weight)
+                ga.close()
+
         output_check = check_output(answer)
         if output_check.filtered:
             answer = output_check.text
@@ -136,12 +162,12 @@ class RAGPipeline:
         self._cache.set(question, answer)
         return QueryResult(answer=answer, context=context, sources=sources)
 
-    async def query_stream(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None):
+    async def query_stream(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None, tags: list[str] = None):
         """流式查询，yield SSE 格式的事件字符串。"""
         sid = session_id or self.session_id or "default"
         start_time = time.time()
 
-        prepared, error = self._prepare_context(question, sid, doc_name, top_k)
+        prepared, error = self._prepare_context(question, sid, doc_name, top_k, tags=tags)
         if error:
             yield f'data: {_json.dumps({"type": "error", "reason": error}, ensure_ascii=False)}\n\n'
             self.tracker.save(ExecutionTrace(question=question, route="blocked", answer=error, total_ms=0))
@@ -185,10 +211,22 @@ class RAGPipeline:
         yield f'data: {_json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False)}\n\n'
 
         total_ms = (time.time() - start_time) * 1000
+        chunk_hashes = prepared.get("chunk_hashes", [])
         self.tracker.save(ExecutionTrace(
             question=question, route=prepared["route"], answer=answer,
-            total_ms=total_ms, tool_calls=tool_calls,
+            total_ms=total_ms, tool_calls=tool_calls, chunk_hashes=chunk_hashes,
         ))
+
+        # Gap analysis for stream
+        if prepared["route"] == "rag" and chunk_hashes:
+            from rag.gap_analyzer import GapAnalyzer
+            weights = prepared.get("weights", {})
+            best_weight = max(weights.values()) if weights else 1.0
+            if GapAnalyzer.is_gap(best_weight, answer):
+                ga = GapAnalyzer(settings.memory_db_path)
+                ga.record_gap(question, best_weight)
+                ga.close()
+
         self.memory.add_message(sid, "user", question)
         self.memory.add_message(sid, "assistant", answer)
         if self.memory.should_summarize(sid):

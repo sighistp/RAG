@@ -24,6 +24,7 @@ class ExecutionTrace:
     answer: str = ""
     total_ms: float = 0
     tool_calls: list[ToolCall] = field(default_factory=list)
+    chunk_hashes: list[str] = field(default_factory=list)
 
 
 class ExecutionTracker:
