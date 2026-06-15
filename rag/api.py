@@ -508,6 +508,67 @@ async def index(file: UploadFile = File(..., description="要索引的文档文�
     return {"status": "indexed", "chunks": count}
 
 
+@app.post("/batch-import", summary="批量导入", description="上传 Excel/CSV 批量导入到知识库")
+async def batch_import(
+    file: UploadFile = File(...),
+    mode: str = "qa_pair",
+    config: str = "{}",
+    user_id: str = Security(verify_api_key),
+):
+    import json as _json
+    from rag.batch_importer import BatchImporter
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="文件过大")
+
+    suffix = Path(file.filename).suffix.lower() if file.filename else ".csv"
+    if suffix not in {".csv", ".xlsx"}:
+        raise HTTPException(status_code=400, detail=f"不支持的格式: {suffix}")
+
+    # 保存临时文件
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    try:
+        tmp.write(content)
+        tmp_path = tmp.name
+    finally:
+        tmp.close()
+
+    try:
+        parsed_config = _json.loads(config)
+    except _json.JSONDecodeError:
+        parsed_config = {}
+
+    try:
+        importer = BatchImporter()
+        chunks = importer.parse(tmp_path, mode=mode, config=parsed_config)
+
+        if not chunks:
+            raise HTTPException(status_code=400, detail="解析结果为空")
+
+        # 索引到知识库
+        from rag.embedder import embed
+        from rag.vector_store import add
+
+        embeddings = embed([c.text for c in chunks])
+        add(chunks, embeddings)
+
+        # 刷新 pipeline
+        global pipeline
+        from rag.pipeline import RAGPipeline
+        with _pipeline_lock.write():
+            try:
+                pipeline = RAGPipeline(kb_id="rag_docs")
+            except Exception as e:
+                logger.error("Pipeline 刷新失败: %s", e)
+
+        return {"status": "imported", "chunks": len(chunks), "mode": mode}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        os.unlink(tmp_path)
+
+
 @app.post("/query", response_model=QueryResponse, summary="查询知识库", description="对已索引的文档进行语义检索问答")
 async def query(req: QueryRequest, user_id: str = Security(verify_api_key), authorization: str = Header(default="")):
     global pipeline
@@ -602,6 +663,11 @@ async def suggest(req: SuggestRequest, user_id: str = Security(verify_api_key)):
     from rag.suggest import suggest_questions
     questions = await asyncio.to_thread(suggest_questions, req.question, req.answer)
     return {"questions": questions}
+
+
+class BatchImportRequest(BaseModel):
+    mode: str = Field(pattern="^(qa_pair|document|table)$")
+    config: dict = Field(default_factory=dict)
 
 
 class CreateKBRequest(BaseModel):
