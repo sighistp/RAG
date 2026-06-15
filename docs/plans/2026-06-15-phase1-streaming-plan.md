@@ -4,9 +4,9 @@
 
 **Goal:** 实现 SSE 流式输出（打字机效果）、追问建议、重新生成三个核心用户体验功能。
 
-**Architecture:** 在现有 `generate()` 基础上新增 `generate_stream()` 异步迭代器，通过 SSE 推送 token。提取 `_prepare_context()` 公共方法避免流式/非流式逻辑重复。追问建议在流式完成后用 LLM 生成。重新生成通过 UPDATE 覆盖原消息。
+**Architecture:** 在现有 `generate()` 基础上新增 `generate_stream()` 异步迭代器，通过 POST + ReadableStream 推送 token。提取 `_prepare_context()` 公共方法避免流式/非流式逻辑重复。追问建议通过独立 `/suggest` 端点异步获取。重新生成通过 UPDATE 覆盖原消息，复用 `_prepare_context()`。
 
-**Tech Stack:** FastAPI StreamingResponse, AsyncOpenAI, SSE, existing pipeline/generator/memory modules
+**Tech Stack:** FastAPI StreamingResponse, AsyncOpenAI, POST + ReadableStream, existing pipeline/generator/memory modules
 
 ---
 
@@ -14,10 +14,11 @@
 
 | 文件 | 操作 | 职责 |
 |------|------|------|
-| `rag/generator.py` | 修改 | 新增 `generate_stream()` 异步迭代器 |
+| `rag/generator.py` | 修改 | 新增 `generate_stream()` + `generate()` 增加 temperature 参数 |
 | `rag/pipeline.py` | 修改 | 提取 `_prepare_context()` + 新增 `query_stream()` |
-| `rag/api.py` | 修改 | 新增 `/query/stream` + `/regenerate` 端点 |
+| `rag/api.py` | 修改 | 新增 `POST /query/stream` + `POST /suggest` + `POST /regenerate` |
 | `rag/suggest.py` | 新建 | 追问建议生成 |
+| `tests/conftest.py` | 修改 | 新增 _async_client 和 _breaker 重置 |
 | `tests/test_generator_stream.py` | 新建 | 流式生成测试 |
 | `tests/test_pipeline_stream.py` | 新建 | 流式 pipeline 测试 |
 | `tests/test_suggest.py` | 新建 | 追问建议测试 |
@@ -37,13 +38,13 @@
 # tests/test_generator_stream.py
 """流式生成器测试。"""
 import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+import inspect
+from unittest.mock import patch, MagicMock, AsyncMock
 
 
 def test_generate_stream_returns_async_generator():
     """generate_stream 应该返回一个 async generator。"""
     from rag.generator import generate_stream
-    import inspect
 
     result = generate_stream([{"role": "user", "content": "hello"}])
     assert inspect.isasyncgen(result), f"应该是 async generator，实际是 {type(result)}"
@@ -60,7 +61,6 @@ def test_generate_stream_yields_tokens():
         chunk.choices = [MagicMock()]
         chunk.choices[0].delta.content = text
         mock_chunks.append(chunk)
-    # 最后一个 chunk content 为 None
     final = MagicMock()
     final.choices = [MagicMock()]
     final.choices[0].delta.content = None
@@ -73,7 +73,8 @@ def test_generate_stream_yields_tokens():
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(return_value=mock_stream())
 
-    with patch("rag.generator._async_client", mock_client):
+    # Mock AsyncOpenAI 构造函数返回 mock_client
+    with patch("rag.generator.AsyncOpenAI", return_value=mock_client):
         tokens = []
 
         async def collect():
@@ -114,7 +115,7 @@ def test_generate_stream_strips_reasoning_content():
 
     mock_client.chat.completions.create = capture_create
 
-    with patch("rag.generator._async_client", mock_client):
+    with patch("rag.generator.AsyncOpenAI", return_value=mock_client):
         tokens = []
 
         async def collect():
@@ -123,7 +124,6 @@ def test_generate_stream_strips_reasoning_content():
 
         asyncio.run(collect())
 
-    # reasoning_content 应该被过滤
     assert captured_messages is not None
     for msg in captured_messages:
         assert "reasoning_content" not in msg
@@ -133,7 +133,6 @@ def test_generate_stream_respects_circuit_breaker():
     """熔断时 generate_stream 应该 yield 降级提示。"""
     from rag.generator import generate_stream, _breaker
 
-    # 手动打开熔断器
     for _ in range(5):
         _breaker.record_failure()
 
@@ -145,29 +144,26 @@ def test_generate_stream_respects_circuit_breaker():
 
     asyncio.run(collect())
 
-    # 应该 yield 降级提示
     assert len(tokens) > 0
     assert "系统繁忙" in "".join(tokens)
 
-    # 恢复熔断器
     _breaker.record_success()
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_generator_stream.py -v --tb=short`
-Expected: FAIL — `ImportError: cannot import name 'generate_stream' from 'rag.generator'`
+Expected: FAIL — `ImportError: cannot import name 'generate_stream'`
 
 - [ ] **Step 3: Write minimal implementation**
 
 ```python
 # rag/generator.py — 在文件末尾新增
 
-import asyncio
 from openai import AsyncOpenAI
 
 _async_client = None
-_async_client_lock = asyncio.Lock()
+_async_client_lock = threading.Lock()  # 用 threading.Lock，不用 asyncio.Lock
 
 
 async def generate_stream(messages: list[dict]):
@@ -177,7 +173,7 @@ async def generate_stream(messages: list[dict]):
         yield "系统繁忙，请稍后重试。"
         return
     if _async_client is None:
-        async with _async_client_lock:
+        with _async_client_lock:
             if _async_client is None:
                 _async_client = AsyncOpenAI(
                     api_key=settings.deepseek_api_key,
@@ -206,7 +202,12 @@ async def generate_stream(messages: list[dict]):
 Run: `python -m pytest tests/test_generator_stream.py -v --tb=short`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run full test suite**
+
+Run: `python -m pytest tests/ -q --tb=line`
+Expected: All PASS
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add rag/generator.py tests/test_generator_stream.py
@@ -215,7 +216,90 @@ git commit -m "feat: add generate_stream() async generator for SSE streaming"
 
 ---
 
-## Task 2: _prepare_context() 公共方法提取
+## Task 2: generate() 增加 temperature 参数
+
+**Files:**
+- Modify: `rag/generator.py`
+- Modify: `tests/test_generator.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+# tests/test_generator.py — 新增
+
+def test_generate_accepts_temperature_parameter():
+    """generate() 应该接受 temperature 参数。"""
+    from rag.generator import generate
+
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "test answer"
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = MagicMock(return_value=mock_response)
+
+    with patch("rag.generator.client", mock_client):
+        result = generate([{"role": "user", "content": "test"}], temperature=0.7)
+
+    # 验证 temperature 被传入
+    call_kwargs = mock_client.chat.completions.create.call_args
+    assert call_kwargs[1].get("temperature") == 0.7 or (len(call_kwargs[0]) > 0 and call_kwargs[1].get("temperature") == 0.7)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -m pytest tests/test_generator.py::test_generate_accepts_temperature_parameter -v --tb=short`
+Expected: FAIL — `TypeError: generate() got an unexpected keyword argument 'temperature'`
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+# rag/generator.py — 修改 generate() 签名和调用
+
+@retry(max_attempts=3, backoff_base=1.0, retryable_exceptions=(TimeoutError, ConnectionError, OSError))
+def generate(messages: list[dict], temperature: float = 0.3) -> str:
+    global client
+    if not _breaker.allow_request():
+        return "系统繁忙，请稍后重试。"
+    if client is None:
+        with _client_lock:
+            if client is None:
+                client = OpenAI(
+                    api_key=settings.deepseek_api_key,
+                    base_url=settings.deepseek_base_url,
+                    timeout=30.0,
+                )
+    clean_msgs = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
+    try:
+        response = client.chat.completions.create(
+            model=settings.deepseek_model,
+            messages=clean_msgs,
+            temperature=temperature,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        result = response.choices[0].message.content
+        _breaker.record_success()
+        return result or "（模型未返回内容）"
+    except Exception:
+        _breaker.record_failure()
+        raise
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python -m pytest tests/test_generator.py -v --tb=short`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add rag/generator.py tests/test_generator.py
+git commit -m "feat: add temperature parameter to generate()"
+```
+
+---
+
+## Task 3: _prepare_context() 公共方法提取
 
 **Files:**
 - Modify: `rag/pipeline.py`
@@ -224,11 +308,10 @@ git commit -m "feat: add generate_stream() async generator for SSE streaming"
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/test_pipeline.py — 新增测试
+# tests/test_pipeline.py — 新增
 
 def test_prepare_context_returns_rag_route(pipeline_fixture):
     """_prepare_context 对普通问题返回 rag route。"""
-    # pipeline_fixture 是已有的测试 fixture
     result, error = pipeline_fixture._prepare_context("什么是 mTLS?", "s1", None)
     assert error is None
     assert result["route"] == "rag"
@@ -242,6 +325,17 @@ def test_prepare_context_blocks_injection(pipeline_fixture):
     assert result is None
     assert error is not None
     assert "拦截" in error
+
+
+def test_prepare_context_returns_cached(pipeline_fixture):
+    """_prepare_context 缓存命中时返回 cached route 和 sources。"""
+    # 先设置缓存
+    pipeline_fixture._cache.set("test question", "test answer")
+    result, error = pipeline_fixture._prepare_context("test question", "s1", None)
+    assert error is None
+    assert result["route"] == "cached"
+    assert result["answer"] == "test answer"
+    assert "sources" in result  # 缓存也带 sources
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -288,7 +382,7 @@ def _prepare_context(self, question: str, session_id: str, doc_name: str, top_k:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_pipeline.py -v --tb=short`
-Expected: PASS (all existing tests + new tests)
+Expected: PASS (existing + new tests)
 
 - [ ] **Step 5: Refactor query() to use _prepare_context()**
 
@@ -343,7 +437,7 @@ def query(self, question: str, top_k: int = 8, session_id: str = None, doc_name:
 - [ ] **Step 6: Run full test suite**
 
 Run: `python -m pytest tests/ -q --tb=line`
-Expected: All tests PASS
+Expected: All PASS
 
 - [ ] **Step 7: Commit**
 
@@ -354,7 +448,7 @@ git commit -m "refactor: extract _prepare_context() shared method from query()"
 
 ---
 
-## Task 3: query_stream() 流式查询
+## Task 4: query_stream() 流式查询
 
 **Files:**
 - Modify: `rag/pipeline.py`
@@ -366,15 +460,15 @@ git commit -m "refactor: extract _prepare_context() shared method from query()"
 # tests/test_pipeline_stream.py
 """流式 pipeline 测试。"""
 import asyncio
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 
 def test_query_stream_yields_sse_events():
     """query_stream 应该 yield SSE 格式的事件。"""
     from rag.pipeline import RAGPipeline
 
-    with patch("rag.pipeline.load", return_value="test content"), \
-         patch("rag.pipeline.clean_document", return_value=("test content", {})), \
+    with patch("rag.pipeline.load", return_value="test"), \
+         patch("rag.pipeline.clean_document", return_value=("test", {})), \
          patch("rag.pipeline.chunk", return_value=[]), \
          patch("rag.pipeline.deduplicate_chunks", return_value=[]), \
          patch("rag.pipeline.embed", return_value=[]), \
@@ -382,17 +476,14 @@ def test_query_stream_yields_sse_events():
          patch("rag.pipeline.add"):
         pipeline = RAGPipeline("test.txt", kb_id="test_kb")
 
-    # Mock _prepare_context
     prepared = {
-        "route": "rag",
-        "question": "test",
-        "context": [],
+        "route": "rag", "question": "test", "context": [],
         "messages": [{"role": "user", "content": "test"}],
-        "sources": [],
-        "sid": "s1",
+        "sources": [], "sid": "s1",
     }
     with patch.object(pipeline, "_prepare_context", return_value=(prepared, None)), \
-         patch("rag.pipeline.generate_stream") as mock_stream:
+         patch("rag.pipeline.generate_stream") as mock_stream, \
+         patch("rag.pipeline.suggest_questions", return_value=["追问1", "追问2"]):
 
         async def fake_stream(messages):
             yield "你"
@@ -408,7 +499,6 @@ def test_query_stream_yields_sse_events():
 
         asyncio.run(collect())
 
-    # 应该有 token 事件和 done 事件
     assert any('"type": "token"' in e for e in events)
     assert any('"type": "done"' in e for e in events)
 
@@ -447,6 +537,7 @@ Expected: FAIL — `AttributeError: 'RAGPipeline' object has no attribute 'query
 
 ```python
 # rag/pipeline.py — 在 RAGPipeline 类中新增方法
+import asyncio
 import json as _json
 
 async def query_stream(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None):
@@ -463,16 +554,15 @@ async def query_stream(self, question: str, top_k: int = 8, session_id: str = No
     if prepared["route"] == "cached":
         yield f'data: {_json.dumps({"type": "token", "content": prepared["answer"]}, ensure_ascii=False)}\n\n'
         yield f'data: {_json.dumps({"type": "sources", "sources": prepared["sources"]}, ensure_ascii=False)}\n\n'
-        yield f'data: {{"type": "done"}}\n\n'
+        yield 'data: {"type": "done"}\n\n'
         return
 
     if prepared["route"] == "agent":
-        import asyncio as _asyncio
         captured_calls = []
         with self._agent_lock:
             self._wrap_agent_tools(captured_calls)
             try:
-                answer = await _asyncio.to_thread(self.agent.run, prepared["question"])
+                answer = await asyncio.to_thread(self.agent.run, prepared["question"])
             finally:
                 self._unwrap_agent_tools()
         yield f'data: {_json.dumps({"type": "token", "content": answer}, ensure_ascii=False)}\n\n'
@@ -489,18 +579,12 @@ async def query_stream(self, question: str, top_k: int = 8, session_id: str = No
         sources = prepared["sources"]
         tool_calls = []
 
-    # 后处理：输出审查 + 来源 + 追问建议 + 追踪 + 记忆 + 缓存
+    # 后处理
     output_check = check_output(answer)
     if output_check.filtered:
         answer = output_check.text
 
     yield f'data: {_json.dumps({"type": "sources", "sources": sources}, ensure_ascii=False)}\n\n'
-
-    # 追问建议
-    from rag.suggest import suggest_questions
-    suggestions = await _asyncio.to_thread(suggest_questions, question, answer)
-    if suggestions:
-        yield f'data: {_json.dumps({"type": "suggested", "questions": suggestions}, ensure_ascii=False)}\n\n'
 
     total_ms = (time.time() - start_time) * 1000
     self.tracker.save(ExecutionTrace(
@@ -513,8 +597,10 @@ async def query_stream(self, question: str, top_k: int = 8, session_id: str = No
         self.memory.summarize_old_rounds(sid)
     self._cache.set(question, answer)
 
-    yield f'data: {{"type": "done"}}\n\n'
+    yield 'data: {"type": "done"}\n\n'
 ```
+
+**注意：** `import asyncio` 放在函数顶部（模块级），不在分支内 import。追问建议通过独立 `/suggest` 端点获取，不在此处调用。
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -524,18 +610,18 @@ Expected: PASS
 - [ ] **Step 5: Run full test suite**
 
 Run: `python -m pytest tests/ -q --tb=line`
-Expected: All tests PASS
+Expected: All PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add rag/pipeline.py tests/test_pipeline_stream.py
-git commit -m "feat: add query_stream() for SSE streaming with _prepare_context"
+git commit -m "feat: add query_stream() for SSE streaming"
 ```
 
 ---
 
-## Task 4: /query/stream API 端点
+## Task 5: POST /query/stream + POST /suggest 端点
 
 **Files:**
 - Modify: `rag/api.py`
@@ -547,19 +633,27 @@ git commit -m "feat: add query_stream() for SSE streaming with _prepare_context"
 # tests/test_api.py — 新增
 
 def test_query_stream_endpoint_exists():
-    """GET /query/stream 端点应该存在。"""
+    """POST /query/stream 端点应该存在。"""
     from fastapi.testclient import TestClient
     from rag.api import app
     client = TestClient(app)
-    # 不管返回什么，只要不是 404 就行
-    response = client.get("/query/stream?question=test")
+    response = client.post("/query/stream", json={"question": "test"})
+    assert response.status_code != 404
+
+
+def test_suggest_endpoint_exists():
+    """POST /suggest 端点应该存在。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app
+    client = TestClient(app)
+    response = client.post("/suggest", json={"question": "test", "answer": "test"})
     assert response.status_code != 404
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `python -m pytest tests/test_api.py::test_query_stream_endpoint_exists -v --tb=short`
-Expected: FAIL — 404 (端点不存在)
+Run: `python -m pytest tests/test_api.py::test_query_stream_endpoint_exists tests/test_api.py::test_suggest_endpoint_exists -v --tb=short`
+Expected: FAIL — 404
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -568,13 +662,25 @@ Expected: FAIL — 404 (端点不存在)
 
 from fastapi.responses import StreamingResponse
 
-@app.get("/query/stream", summary="流式查询知识库", description="SSE 流式返回查询结果")
+
+class StreamQueryRequest(BaseModel):
+    question: str
+    top_k: int = Field(default=5, ge=1)
+    session_id: str | None = None
+    conversation_id: int | None = None
+    doc_name: str | None = None
+
+
+class SuggestRequest(BaseModel):
+    question: str
+    answer: str
+
+
+@app.post("/query/stream", summary="流式查询知识库", description="SSE 流式返回查询结果，支持 JWT 认证")
 async def query_stream(
-    question: str,
-    session_id: str = None,
-    doc_name: str = None,
-    top_k: int = 8,
+    req: StreamQueryRequest,
     user_id: str = Security(verify_api_key),
+    authorization: str = Header(default=""),
 ):
     global pipeline
     with _pipeline_lock.read():
@@ -582,35 +688,55 @@ async def query_stream(
             return JSONResponse(status_code=400, content={"error": "尚未索引文档"})
         current_pipeline = pipeline
 
+    # 解析用户
+    user = None
+    if authorization:
+        try:
+            token = authorization.replace("Bearer ", "")
+            user = _get_current_user(token)
+        except HTTPException:
+            pass
+
+    session_id = req.session_id
+    if user and req.conversation_id is not None:
+        session_id = f"conv_{req.conversation_id}"
+
     async def event_generator():
         async for event in current_pipeline.query_stream(
-            question, top_k=top_k, session_id=session_id, doc_name=doc_name
+            req.question, top_k=req.top_k, session_id=session_id, doc_name=req.doc_name
         ):
             yield event
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/suggest", summary="生成追问建议", description="基于问答生成 3 个推荐追问")
+async def suggest(req: SuggestRequest):
+    from rag.suggest import suggest_questions
+    questions = await asyncio.to_thread(suggest_questions, req.question, req.answer)
+    return {"questions": questions}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `python -m pytest tests/test_api.py::test_query_stream_endpoint_exists -v --tb=short`
+Run: `python -m pytest tests/test_api.py::test_query_stream_endpoint_exists tests/test_api.py::test_suggest_endpoint_exists -v --tb=short`
 Expected: PASS
 
 - [ ] **Step 5: Run full test suite**
 
 Run: `python -m pytest tests/ -q --tb=line`
-Expected: All tests PASS
+Expected: All PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add rag/api.py tests/test_api.py
-git commit -m "feat: add GET /query/stream SSE endpoint"
+git commit -m "feat: add POST /query/stream and POST /suggest endpoints"
 ```
 
 ---
 
-## Task 5: 追问建议
+## Task 6: 追问建议模块
 
 **Files:**
 - Create: `rag/suggest.py`
@@ -631,7 +757,6 @@ def test_suggest_questions_returns_list():
         result = suggest_questions("什么是 mTLS？", "mTLS 是双向 TLS 认证...")
     assert isinstance(result, list)
     assert len(result) == 3
-    assert all(isinstance(q, str) for q in result)
 
 
 def test_suggest_questions_returns_empty_on_error():
@@ -653,7 +778,7 @@ def test_suggest_questions_parses_numbered_list():
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_suggest.py -v --tb=short`
-Expected: FAIL — `ModuleNotFoundError: No module named 'rag.suggest'`
+Expected: FAIL — `ModuleNotFoundError`
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -681,13 +806,11 @@ def suggest_questions(question: str, answer: str) -> list[str]:
         prompt = SUGGEST_PROMPT.format(question=question, answer=answer[:500])
         messages = [{"role": "user", "content": prompt}]
         result = generate(messages)
-        # 解析编号列表
         questions = []
         for line in result.strip().split("\n"):
             line = line.strip()
             if not line:
                 continue
-            # 去掉编号前缀
             cleaned = re.sub(r"^\d+[\.\)、]\s*", "", line)
             if cleaned:
                 questions.append(cleaned)
@@ -702,12 +825,7 @@ def suggest_questions(question: str, answer: str) -> list[str]:
 Run: `python -m pytest tests/test_suggest.py -v --tb=short`
 Expected: PASS
 
-- [ ] **Step 5: Run full test suite**
-
-Run: `python -m pytest tests/ -q --tb=line`
-Expected: All tests PASS
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add rag/suggest.py tests/test_suggest.py
@@ -716,11 +834,11 @@ git commit -m "feat: add suggest_questions() for follow-up suggestions"
 
 ---
 
-## Task 6: 重新生成
+## Task 7: 重新生成
 
 **Files:**
-- Modify: `rag/api.py`
 - Modify: `rag/user_db.py`
+- Modify: `rag/api.py`
 - Create: `tests/test_regenerate.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -728,23 +846,14 @@ git commit -m "feat: add suggest_questions() for follow-up suggestions"
 ```python
 # tests/test_regenerate.py
 """重新生成测试。"""
+import os
+import tempfile
 from unittest.mock import patch, MagicMock
 
 
-def test_regenerate_endpoint_exists():
-    """POST /regenerate 端点应该存在。"""
-    from fastapi.testclient import TestClient
-    from rag.api import app
-    client = TestClient(app)
-    response = client.post("/regenerate", json={"conversation_id": 1, "message_id": 1})
-    assert response.status_code != 404
-
-
-def test_regenerate_updates_message():
-    """重新生成应该 UPDATE 原消息而非新增。"""
+def test_user_db_update_message():
+    """UserDB.update_message 应该更新消息内容。"""
     from rag.user_db import UserDB
-    import tempfile
-    import os
 
     db_path = tempfile.mktemp(suffix=".db")
     try:
@@ -758,20 +867,28 @@ def test_regenerate_updates_message():
         original_count = len(messages)
         assistant_msg_id = messages[-1]["id"]
 
-        # 模拟重新生成
         db.update_message(assistant_msg_id, "mTLS（双向 TLS）是一种安全协议...")
 
         messages_after = db.get_messages(conv_id, user_id)
-        assert len(messages_after) == original_count  # 消息数量不变
-        assert messages_after[-1]["content"] == "mTLS（双向 TLS）是一种安全协议..."  # 内容更新
+        assert len(messages_after) == original_count
+        assert messages_after[-1]["content"] == "mTLS（双向 TLS）是一种安全协议..."
     finally:
         os.unlink(db_path)
+
+
+def test_regenerate_endpoint_exists():
+    """POST /regenerate 端点应该存在。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app
+    client = TestClient(app)
+    response = client.post("/regenerate", json={"conversation_id": 1, "message_id": 1})
+    assert response.status_code != 404
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_regenerate.py -v --tb=short`
-Expected: FAIL — `AttributeError: 'UserDB' object has no attribute 'update_message'` (或 404)
+Expected: FAIL — `AttributeError: 'UserDB' object has no attribute 'update_message'`
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -801,14 +918,12 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(...)):
     token = authorization.replace("Bearer ", "")
     user = _get_current_user(token)
 
-    # 获取原消息
     messages = user_db.get_messages(req.conversation_id, user["id"])
     target = None
     user_question = None
     for i, msg in enumerate(messages):
         if msg["id"] == req.message_id and msg["role"] == "assistant":
             target = msg
-            # 找到前一条 user 消息
             if i > 0 and messages[i - 1]["role"] == "user":
                 user_question = messages[i - 1]["content"]
             break
@@ -818,27 +933,26 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(...)):
     if not user_question:
         raise HTTPException(status_code=400, detail="找不到对应的用户问题")
 
-    # 重新生成（用更高 temperature）
     with _pipeline_lock.read():
         if pipeline is None:
             raise HTTPException(status_code=400, detail="尚未索引文档")
         current_pipeline = pipeline
 
-    from rag.generator import generate
-    rewritten = current_pipeline.retriever.retrieve(user_question, top_k=5)
-    context = current_pipeline.reranker.rerank(user_question, rewritten)
+    # 复用 _prepare_context 获取检索结果
     session_id = f"conv_{req.conversation_id}"
-    msgs = current_pipeline.memory.build_messages(session_id, user_question, context)
+    prepared, error = current_pipeline._prepare_context(user_question, session_id, None)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
 
-    # 用更高 temperature 重新生成
-    import functools
-    original_generate = generate
-    # 临时修改 temperature 不现实，直接调用
-    new_answer = await asyncio.to_thread(original_generate, msgs)
+    if prepared["route"] == "agent":
+        # Agent 路由：重新运行 agent
+        new_answer = await asyncio.to_thread(current_pipeline.agent.run, user_question)
+    else:
+        # RAG 路径：用更高 temperature 重新生成
+        from rag.generator import generate
+        new_answer = await asyncio.to_thread(generate, prepared["messages"], 0.7)
 
-    # UPDATE 原消息
     user_db.update_message(req.message_id, new_answer)
-
     return {"message_id": req.message_id, "answer": new_answer}
 ```
 
@@ -847,34 +961,76 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(...)):
 Run: `python -m pytest tests/test_regenerate.py -v --tb=short`
 Expected: PASS
 
-- [ ] **Step 5: Run full test suite**
-
-Run: `python -m pytest tests/ -q --tb=line`
-Expected: All tests PASS
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add rag/user_db.py rag/api.py tests/test_regenerate.py
-git commit -m "feat: add POST /regenerate endpoint with message update"
+git commit -m "feat: add POST /regenerate with _prepare_context reuse"
 ```
 
 ---
 
-## Task 7: 全量回归 + 文档更新
+## Task 8: conftest.py 更新 + 全量回归
 
-- [ ] **Step 1: Run full test suite**
+**Files:**
+- Modify: `tests/conftest.py`
+
+- [ ] **Step 1: Update conftest.py**
+
+```python
+# tests/conftest.py — 新增 fixture
+
+@pytest.fixture(autouse=True)
+def reset_stream_state():
+    """重置流式相关全局状态，防止测试间污染。"""
+    import rag.generator as gen
+    yield
+    gen._async_client = None
+    # 重置熔断器
+    gen._breaker._failure_count = 0
+    gen._breaker.state = "closed"
+    gen._breaker._probe_admitted = False
+```
+
+- [ ] **Step 2: Run full test suite**
 
 Run: `python -m pytest tests/ -v --tb=short`
-Expected: All tests PASS (248 + new tests)
-
-- [ ] **Step 2: Update dev-log**
-
-在 `docs/plans/dev-log.md` 末尾新增章节。
+Expected: All PASS
 
 - [ ] **Step 3: Commit**
 
 ```bash
+git add tests/conftest.py
+git commit -m "fix: reset _async_client and _breaker state in conftest.py"
+```
+
+---
+
+## Task 9: 文档更新
+
+- [ ] **Step 1: Update dev-log**
+
+在 `docs/plans/dev-log.md` 末尾新增：
+
+```markdown
+## Phase 1：流式输出 + 追问建议 + 重新生成（2026-06-15）
+
+**新增功能：**
+- `generate_stream()` — AsyncOpenAI 流式生成器
+- `_prepare_context()` — 流式/非流式公共逻辑提取
+- `query_stream()` — SSE 流式查询
+- `POST /query/stream` — 流式 API 端点（POST + ReadableStream）
+- `POST /suggest` — 追问建议端点
+- `POST /regenerate` — 重新生成端点（覆盖原消息）
+- `generate()` 新增 temperature 参数
+- `UserDB.update_message()` — 消息更新
+
+**测试：** XXX 个全过
+```
+
+- [ ] **Step 2: Final commit**
+
+```bash
 git add -A
-git commit -m "feat: phase 1 complete - streaming + suggested questions + regenerate"
+git commit -m "feat: phase 1 complete - streaming + suggest + regenerate"
 ```
