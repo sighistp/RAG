@@ -40,3 +40,19 @@ def test_generate_passes_messages_through(mock_client):
     assert result == "answer"
     call_args = mock_client.chat.completions.create.call_args
     assert call_args.kwargs["messages"] == msgs
+
+
+def test_generate_accepts_temperature_parameter():
+    """generate() 应该接受 temperature 参数。"""
+    from rag.generator import generate
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "test answer"
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = MagicMock(return_value=mock_response)
+
+    with patch("rag.generator.client", mock_client):
+        result = generate([{"role": "user", "content": "test"}], temperature=0.7)
+
+    call_kwargs = mock_client.chat.completions.create.call_args[1]
+    assert call_kwargs.get("temperature") == 0.7
