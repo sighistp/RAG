@@ -2073,9 +2073,42 @@ e469427 feat: add POST /query/stream and POST /suggest endpoints
 
 ---
 
+---
+
+## Phase 2：数据能力（2026-06-15）✅
+
+**新增模块：**
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 反馈处理器 | `rag/feedback_processor.py` | chunk 级别权重管理（0.2~2.0），同用户去重，衰减回归 |
+| 检索空白分析 | `rag/gap_analyzer.py` | 记录未解答查询，低分检测 + 关键词检测，缺口报告 |
+| 文档标签 | `rag/vector_store.py` | Qdrant payload 存储 tags，检索时按标签过滤 |
+
+**集成改动：**
+
+| 文件 | 改动 |
+|------|------|
+| `rag/retriever.py` | `_rrf_fuse()` 支持 weights 参数 + tags 过滤 |
+| `rag/pipeline.py` | `_prepare_context()` 获取 chunk weights，query/query_stream 记录 chunk_hashes + 触发空白分析 |
+| `rag/tracker.py` | ExecutionTrace 新增 chunk_hashes 字段 |
+| `rag/api.py` | QueryRequest 新增 tags，新增 /analytics/gaps、/files/{name}/tags、/tags 端点 |
+
+**测试：** 298 个全过（原 265 + 新 33）
+
+**5 个提交：**
+```
+59de68f feat: add FeedbackProcessor for chunk-level weight management
+07dfb1f feat: add GapAnalyzer for retrieval gap analysis
+f86c4e7 feat: add weights parameter to retriever RRF fusion
+18051c0 feat: integrate feedback weights and gap analysis into pipeline
+76913d0 feat: add document tagging with Qdrant payload tags
+```
+
+---
+
 ## 下一步计划
 
-- Phase 2：反馈驱动优化 + 检索空白分析 + 标签管理
 - Phase 3：Vue 3 前端重写
 - Phase 4：后端异步化 + Docker + CI/CD
 - Phase 5：批量导入 + 数据源集成
