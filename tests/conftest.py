@@ -24,3 +24,14 @@ def reset_api_pipeline():
     import rag.api
     rag.api.pipeline = None
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_stream_state():
+    """重置流式相关全局状态，防止测试间污染。"""
+    import rag.generator as gen
+    yield
+    gen._async_client = None
+    gen._breaker._failure_count = 0
+    gen._breaker.state = "closed"
+    gen._breaker._probe_admitted = False
