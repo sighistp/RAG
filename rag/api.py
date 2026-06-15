@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Header, HTTPException, Security, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -77,6 +77,19 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str = Field(..., description="回答内容")
     sources: list[dict] = Field(default=[], description="引用来源")
+
+
+class StreamQueryRequest(BaseModel):
+    question: str
+    top_k: int = Field(default=5, ge=1)
+    session_id: str | None = None
+    conversation_id: int | None = None
+    doc_name: str | None = None
+
+
+class SuggestRequest(BaseModel):
+    question: str
+    answer: str
 
 
 class FeedbackRequest(BaseModel):
@@ -467,6 +480,46 @@ async def query(req: QueryRequest, user_id: str = Security(verify_api_key), auth
         user_db.add_message(req.conversation_id, "assistant", result.answer)
 
     return QueryResponse(answer=result.answer, sources=result.sources)
+
+
+@app.post("/query/stream", summary="流式查询知识库", description="SSE 流式返回查询结果")
+async def query_stream(
+    req: StreamQueryRequest,
+    user_id: str = Security(verify_api_key),
+    authorization: str = Header(default=""),
+):
+    global pipeline
+    with _pipeline_lock.read():
+        if pipeline is None:
+            return JSONResponse(status_code=400, content={"error": "尚未索引文档"})
+        current_pipeline = pipeline
+
+    user = None
+    if authorization:
+        try:
+            token = authorization.replace("Bearer ", "")
+            user = _get_current_user(token)
+        except HTTPException:
+            pass
+
+    session_id = req.session_id
+    if user and req.conversation_id is not None:
+        session_id = f"conv_{req.conversation_id}"
+
+    async def event_generator():
+        async for event in current_pipeline.query_stream(
+            req.question, top_k=req.top_k, session_id=session_id, doc_name=req.doc_name
+        ):
+            yield event
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/suggest", summary="生成追问建议", description="基于问答生成 3 个推荐追问")
+async def suggest(req: SuggestRequest):
+    from rag.suggest import suggest_questions
+    questions = await asyncio.to_thread(suggest_questions, req.question, req.answer)
+    return {"questions": questions}
 
 
 class CreateKBRequest(BaseModel):

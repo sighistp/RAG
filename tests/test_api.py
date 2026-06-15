@@ -97,3 +97,21 @@ def test_health_returns_component_status():
     data = response.json()
     assert "status" in data
     assert "components" in data
+
+
+def test_query_stream_endpoint_exists():
+    """POST /query/stream 端点应该存在。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app
+    client = TestClient(app)
+    response = client.post("/query/stream", json={"question": "test"})
+    assert response.status_code != 404
+
+
+def test_suggest_endpoint_exists():
+    """POST /suggest 端点应该存在。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app
+    client = TestClient(app)
+    response = client.post("/suggest", json={"question": "test", "answer": "test"})
+    assert response.status_code != 404
