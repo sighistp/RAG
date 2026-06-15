@@ -9,10 +9,10 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
 
-    # 百炼嵌入
+    # 嵌入模型（硅基流动 bge-m3，OpenAI 兼容 API）
     bailian_api_key: str = ""
-    bailian_base_url: str = ""
-    bailian_embed_model: str = "text-embedding-v4"
+    bailian_base_url: str = "https://api.siliconflow.cn/v1"
+    bailian_embed_model: str = "BAAI/bge-m3"
     embed_dimension: int = 1024
 
     # 百炼 Rerank
