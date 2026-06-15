@@ -184,6 +184,15 @@ class UserDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def update_message(self, message_id: int, new_content: str):
+        """更新消息内容（用于重新生成）。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE chat_messages SET content = ? WHERE id = ?",
+                (new_content, message_id),
+            )
+            self._conn.commit()
+
     # ------------------------------------------------------------------
     # Feedback
     # ------------------------------------------------------------------

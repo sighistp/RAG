@@ -85,6 +85,11 @@ class FeedbackRequest(BaseModel):
     comment: str = None
 
 
+class RegenerateRequest(BaseModel):
+    conversation_id: int
+    message_id: int
+
+
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=20)
     password: str = Field(..., min_length=6)
@@ -210,6 +215,46 @@ def submit_feedback(req: FeedbackRequest, authorization: str = Header(...)):
     value_int = 1 if req.value == "positive" else -1
     user_db.add_feedback(req.message_id, user["id"], value_int, req.comment or "")
     return {"status": "ok"}
+
+
+@app.post("/regenerate", summary="重新生成回答")
+async def regenerate(req: RegenerateRequest, authorization: str = Header(...)):
+    token = authorization.replace("Bearer ", "")
+    user = _get_current_user(token)
+
+    messages = user_db.get_messages(req.conversation_id, user["id"])
+    target = None
+    user_question = None
+    for i, msg in enumerate(messages):
+        if msg["id"] == req.message_id and msg["role"] == "assistant":
+            target = msg
+            if i > 0 and messages[i - 1]["role"] == "user":
+                user_question = messages[i - 1]["content"]
+            break
+
+    if not target:
+        raise HTTPException(status_code=404, detail="消息不存在")
+    if not user_question:
+        raise HTTPException(status_code=400, detail="找不到对应的用户问题")
+
+    with _pipeline_lock.read():
+        if pipeline is None:
+            raise HTTPException(status_code=400, detail="尚未索引文档")
+        current_pipeline = pipeline
+
+    session_id = f"conv_{req.conversation_id}"
+    prepared, error = current_pipeline._prepare_context(user_question, session_id, None)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    if prepared["route"] == "agent":
+        new_answer = await asyncio.to_thread(current_pipeline.agent.run, user_question)
+    else:
+        from rag.generator import generate
+        new_answer = await asyncio.to_thread(generate, prepared["messages"], 0.7)
+
+    user_db.update_message(req.message_id, new_answer)
+    return {"message_id": req.message_id, "answer": new_answer}
 
 
 @app.get("/files", summary="列出可索引文件", description="列出 data/upload/ 目录下的所有支持格式文件")
