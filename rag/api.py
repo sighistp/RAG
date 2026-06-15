@@ -59,6 +59,22 @@ async def request_id_middleware(request, call_next):
     return response
 
 
+# Vue Router SPA fallback: browser requests to known frontend paths → serve index.html
+_VUE_ROUTES = {"/files", "/knowledge", "/analytics"}
+
+
+@app.middleware("http")
+async def spa_fallback_middleware(request, call_next):
+    path = request.url.path
+    accept = request.headers.get("accept", "")
+    # Only for GET requests from browsers to known Vue routes
+    if request.method == "GET" and path in _VUE_ROUTES and "text/html" in accept:
+        index = STATIC_DIR / "index.html"
+        if index.exists():
+            return FileResponse(index, media_type="text/html")
+    return await call_next(request)
+
+
 # 数据目录
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "upload"
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv"}
@@ -800,10 +816,9 @@ def serve_frontend():
 
 
 # Vue Router catch-all: serve index.html for client-side routes
+# Only for paths that don't conflict with API endpoints
 @app.get("/chat/{path:path}", include_in_schema=False)
-@app.get("/files", include_in_schema=False)
-@app.get("/knowledge", include_in_schema=False)
-@app.get("/analytics", include_in_schema=False)
+@app.get("/login", include_in_schema=False)
 def serve_spa():
     index = STATIC_DIR / "index.html"
     if index.exists():
