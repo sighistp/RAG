@@ -1,3 +1,4 @@
+import random
 import threading
 
 from openai import AsyncOpenAI, OpenAI
@@ -45,8 +46,8 @@ _async_client = None
 _async_client_lock = threading.Lock()
 
 
-async def generate_stream(messages: list[dict]):
-    """流式生成，逐个 yield token。"""
+async def generate_stream(messages: list[dict], max_attempts: int = 3):
+    """流式生成，逐个 yield token。连接失败时自动重试。"""
     global _async_client
     if not _breaker.allow_request():
         yield "系统繁忙，请稍后重试。"
@@ -60,17 +61,32 @@ async def generate_stream(messages: list[dict]):
                     timeout=30.0,
                 )
     clean_msgs = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
-    try:
-        stream = _async_client.chat.completions.create(
-            model=settings.deepseek_model,
-            messages=clean_msgs,
-            extra_body={"thinking": {"type": "disabled"}},
-            stream=True,
-        )
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
-        _breaker.record_success()
-    except Exception:
-        _breaker.record_failure()
-        raise
+
+    last_exc = None
+    for attempt in range(max_attempts):
+        try:
+            stream = _async_client.chat.completions.create(
+                model=settings.deepseek_model,
+                messages=clean_msgs,
+                extra_body={"thinking": {"type": "disabled"}},
+                stream=True,
+            )
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            _breaker.record_success()
+            return  # 成功，退出重试循环
+        except (TimeoutError, ConnectionError, OSError) as e:
+            last_exc = e
+            if attempt < max_attempts - 1:
+                import asyncio
+                delay = 1.0 * (2 ** attempt) + random.uniform(0, 0.5)
+                await asyncio.sleep(delay)
+            continue
+        except Exception:
+            _breaker.record_failure()
+            raise
+
+    # 所有重试都失败
+    _breaker.record_failure()
+    raise last_exc
