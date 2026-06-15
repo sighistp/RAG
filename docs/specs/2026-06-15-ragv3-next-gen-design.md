@@ -153,7 +153,55 @@ data: {"type": "done"}
 |------|------|
 | `rag/generator.py` | 新增 `generate_stream(messages)` 返回 `AsyncGenerator[str, None]` |
 | `rag/api.py` | 新增 `/query/stream` 端点，`StreamingResponse` |
-| `rag/pipeline.py` | 新增 `query_stream()` 方法，流式完成后处理缓存/追踪/记忆 |
+| `rag/pipeline.py` | 提取 `_prepare_context()` 公共方法 + 新增 `query_stream()` |
+
+**实现要点（避免逻辑重复）：**
+
+提取公共逻辑到 `_prepare_context()`，流式和非流式共用：
+```python
+def _prepare_context(self, question, session_id, doc_name):
+    """公共逻辑：guard → cache → route → retrieve → rerank → build_messages"""
+    question = sanitize_input(question)
+    guard = check_injection(question)
+    if guard.blocked:
+        return None, guard.reason
+    route = route_question(question)
+    if route == "agent":
+        return {"route": "agent"}, None
+    rewritten = rewrite_query(question)
+    context = self.retriever.retrieve(rewritten, top_k=top_k, doc_name=doc_name)
+    context = self.reranker.rerank(rewritten, context)
+    messages = self.memory.build_messages(sid, question, context)
+    return {"route": "rag", "context": context, "messages": messages, "rewritten": rewritten}, None
+
+def query(self, question, ...):
+    prepared, error = self._prepare_context(question, session_id, doc_name)
+    if error:
+        return QueryResult(answer=f"请求被安全策略拦截：{error}", ...)
+    if prepared["route"] == "agent":
+        answer = self.agent.run(question)
+    else:
+        answer = generate(prepared["messages"])
+    # 后处理：tracker + memory + cache
+    ...
+
+async def query_stream(self, question, ...):
+    prepared, error = self._prepare_context(question, session_id, doc_name)
+    if error:
+        yield f'data: {{"type": "error", "reason": "{error}"}}\n\n'
+        return
+    if prepared["route"] == "agent":
+        answer = await asyncio.to_thread(self.agent.run, question)
+        yield f'data: {{"type": "answer", "content": "{answer}"}}\n\n'
+    else:
+        answer = ""
+        async for token in generate_stream(prepared["messages"]):
+            answer += token
+            yield f'data: {{"type": "token", "content": "{token}"}}\n\n'
+    # 后处理：tracker + memory + cache（流式完成后）
+    yield f'data: {{"type": "sources", "sources": [...]}}\n\n'
+    yield f'data: {{"type": "done"}}\n\n'
+```
 
 **thinking mode 防护体系（必须遵守）：**
 
@@ -222,16 +270,38 @@ POST /regenerate
 }
 ```
 
-**实现：**
-- 找到该 message 对应的原始 query 和 retrieval context
+**实现（方案 A — 覆盖模式）：**
+- 找到原 message 对应的原始 query 和 retrieval context（从 execution_logs 或 chat_messages 中获取）
 - 用 temperature=0.7 重新生成（比默认 0.3 更随机）
-- 保存为新 message，前端替换显示
+- **UPDATE 原 message 的 content**（覆盖，不新增）
+- memory 中只有一条 assistant 消息，不会产生矛盾
+
+**数据库操作：**
+```sql
+UPDATE chat_messages SET content = ? WHERE id = ? AND role = 'assistant'
+```
+
+**注意：** 重新生成不触发新的 retrieval（复用原回答的 context），只重新调用 generate()。
 
 ### 4.4 反馈驱动检索优化
 
 **现状：** feedback 只存数据库，没有用来改进检索。
 
 **方案：** chunk 级别权重调整
+
+**数据流（修正版）：**
+```
+pipeline.query() 生成回答时
+  → 记录本次使用的 chunk_hashes 到 ExecutionTrace.details
+  → tracker.save() 写入 execution_logs.details（JSON 数组）
+
+用户点反馈时
+  → feedback_processor 从 execution_logs.details 提取 chunk_hashes
+  → 更新 chunk_feedback 表的权重
+  → retriever RRF 融合时查 chunk_feedback 表获取 weight
+```
+
+**不需要新增字段到 chat_messages 表**，复用 execution_logs.details 中已有的 tool call 记录。
 
 **数据模型：**
 ```sql
@@ -253,7 +323,12 @@ CREATE TABLE chunk_feedback (
 **改动：**
 - `rag/retriever.py` — RRF 融合时乘以 weight 因子
 - `rag/feedback_processor.py` — 新建，处理反馈 → 更新权重
-- `rag/pipeline.py` — 反馈时触发权重更新
+- `rag/pipeline.py` — query() 记录 chunk_hashes 到 ExecutionTrace
+- `rag/tracker.py` — details 字段新增 chunk_hashes
+
+**reranker 分数配合（实现调整）：**
+- `rag/reranker.py` — 新增 `rerank_with_scores()` 方法，返回 `(list[Chunk], float)`
+- 最高分用于检索空白分析判断（rerank 后最高分 < 0.3）
 
 ### 4.5 检索空白分析
 
@@ -294,12 +369,29 @@ POST /analytics/gaps/{id}/resolve -- 标记已解决
 
 **方案：** Qdrant payload 中存储标签，检索时可按标签过滤
 
+**现有文档兼容：**
+- 标签是可选的，不影响现有检索流程
+- 无 tags 过滤时：行为完全不变
+- 有 tags 过滤时：Qdrant 查询时增加 `FieldCondition` 过滤
+- 现有文档 payload 中没有 tags 字段 → `payload.get("tags", [])` 返回空列表
+- 需要给现有文档打标签时：用 Qdrant 的 `set_payload` API 批量更新，或重新索引
+
 **API 端点：**
 ```
 POST /files/{name}/tags     -- 给文件打标签
 DELETE /files/{name}/tags/{tag} -- 删除标签
 GET /tags                   -- 列出所有标签
-POST /query (body: {tags: ["技术"]}) -- 按标签过滤检索
+```
+
+**QueryRequest 扩展：**
+```python
+class QueryRequest(BaseModel):
+    question: str
+    top_k: int = 5
+    session_id: str | None = None
+    conversation_id: int | None = None
+    doc_name: str | None = None
+    tags: list[str] | None = None  # 新增：按标签过滤
 ```
 
 **Qdrant payload 扩展：**
@@ -310,6 +402,19 @@ POST /query (body: {tags: ["技术"]}) -- 按标签过滤检索
     "chunk_index": 0,
     "tags": ["技术", "Python", "教程"]  # 新增
 }
+```
+
+**检索过滤逻辑（retriever.py）：**
+```python
+def retrieve(self, query, top_k=5, doc_name=None, tags=None):
+    ...
+    search_filter = Filter(must=[])
+    if doc_name:
+        search_filter.must.append(FieldCondition(key="doc_name", match=MatchValue(value=doc_name)))
+    if tags:
+        for tag in tags:
+            search_filter.must.append(FieldCondition(key="tags", match=MatchValue(value=tag)))
+    ...
 ```
 
 ---
@@ -339,6 +444,12 @@ POST /query (body: {tags: ["技术"]}) -- 按标签过滤检索
 ### API 端点改造
 
 所有端点改为 `async def`，IO 密集操作用 `await`，CPU 密集操作用 `asyncio.to_thread()`。
+
+### Agent 锁改造
+
+现有 `pipeline.py` 中的 `_agent_lock` 是 `threading.Lock()`，在 `async def` 中使用会阻塞事件循环。
+
+**方案：** 改为 `asyncio.Lock()`，Agent 路由的请求串行化（Agent 调用本身是同步的 LangChain，在 `asyncio.to_thread()` 中执行）。
 
 ### Docker 架构
 
