@@ -1,12 +1,12 @@
 # RAGv3 技术债修复设计
 
 > **日期：** 2026-06-12
-> **状态：** 待审批
+> **状态：** 部分完成（3/4）
 > **范围：** BM25 持久化 + SQLite 统一目录 + JWT secret 持久化 + 前端组件化
 
 ---
 
-## 1. BM25 持久化（SQLite 倒排索引）
+## 1. BM25 持久化（SQLite chunk 存储） ✅
 
 ### 问题
 
@@ -14,57 +14,53 @@
 
 ### 方案
 
-用 SQLite 存储倒排索引，索引文档时构建并持久化，查询时直接加载。
+用 SQLite 存储完整 chunks（非倒排索引），索引文档时持久化，查询时直接加载后在内存构建 BM25Okapi。
 
 ### 数据模型
 
 ```sql
 -- data/bm25_index.db
-CREATE TABLE IF NOT EXISTS bm25_terms (
-    term TEXT NOT NULL,
-    chunk_id INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS bm25_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection TEXT NOT NULL,
+    text TEXT NOT NULL,
     doc_name TEXT NOT NULL,
-    tf REAL NOT NULL,           -- 词频
-    chunk_text TEXT NOT NULL,   -- 原始文本（用于检索）
-    PRIMARY KEY (term, chunk_id)
+    chunk_index INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS bm25_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
--- 存储 avgdl、total_chunks 等元数据
 ```
 
 ### 工作流程
 
 ```
 索引时：
-  chunks → jieba 分词 → 计算 TF → 写入 SQLite bm25_terms 表
-  同时构建内存 BM25 索引（用于当次查询）
+  chunks → 存入 SQLite bm25_chunks 表
 
 查询时：
-  1. 检查 bm25_index.db 是否存在且有效
-  2. 有效 → 直接从 SQLite 加载倒排索引构建 BM25
-  3. 无效 → 从 Qdrant 全量加载 + 构建 + 持久化
-
-更新时：
-  新文档索引 → 增量更新 bm25_terms 表（不重建）
-  删除文档 → 删除对应 chunk_id 的条目
+  1. 检查 SQLite 是否有该 collection 的 chunks
+  2. 有 → 直接从 SQLite 加载 chunks，在内存构建 BM25Okapi
+  3. 无 → 从 Qdrant 全量 scroll + 构建 BM25Okapi + 存入 SQLite
 ```
+
+**注意：** 实际实现存储完整 chunks 而非倒排索引。每次查询仍需在内存构建 BM25Okapi，但避免了 Qdrant scroll 的网络开销。倒排索引方案（存储 term/tf）效率更高但复杂度也更高，当前方案是折中。
 
 ### 文件变更
 
 | 文件 | 改动 |
 |------|------|
-| `rag/bm25_store.py` | 新建 — SQLite 倒排索引存储 |
-| `rag/retriever.py` | 改造 — 优先从 SQLite 加载 BM25 |
-| `rag/pipeline.py` | 索引时调用 bm25_store 持久化 |
-| `tests/test_bm25_store.py` | 新建 — 测试 |
+| `rag/bm25_store.py` | 新建 — SQLite chunk 存储 |
+| `rag/retriever.py` | 改造 — 优先从 SQLite 加载 |
+| `config.py` | 新增 `bm25_db_path` 配置 |
+| `tests/test_bm25_store.py` | 新建 — 6 个测试 |
+| `tests/test_retriever_bm25_persistence.py` | 新建 — 2 个集成测试 |
 
 ---
 
-## 2. SQLite 统一目录
+## 2. SQLite 统一目录 ✅
 
 ### 问题
 
@@ -75,7 +71,7 @@ CREATE TABLE IF NOT EXISTS bm25_meta (
 
 ### 方案
 
-统一放到 `data/` 目录下：
+统一放到 `data/` 目录下（已完成）：
 
 ```
 data/
@@ -99,7 +95,7 @@ data/
 
 ---
 
-## 3. JWT Secret 持久化
+## 3. JWT Secret 持久化 ✅
 
 ### 问题
 
@@ -109,7 +105,7 @@ JWT secret 未设置时每次重启随机生成，导致：
 
 ### 方案
 
-首次启动生成 secret，写入 `data/jwt_secret.txt`，后续读取。
+首次启动生成 secret，写入 `data/jwt_secret.txt`，后续读取。（已完成）
 
 ### 实现
 
@@ -172,18 +168,18 @@ static/
 
 ## 实现顺序
 
-| 阶段 | 内容 | 依赖 |
-|------|------|------|
-| 1 | SQLite 统一目录 | 无 |
-| 2 | JWT Secret 持久化 | 无 |
-| 3 | BM25 持久化 | 阶段 1（需要 bm25_index.db 路径） |
-| 4 | 前端组件化 | 后续做 |
+| 阶段 | 内容 | 依赖 | 状态 |
+|------|------|------|------|
+| 1 | SQLite 统一目录 | 无 | ✅ 已完成 |
+| 2 | JWT Secret 持久化 | 无 | ✅ 已完成 |
+| 3 | BM25 持久化 | 阶段 1 | ✅ 已完成 |
+| 4 | 前端组件化 | — | 🔄 改为 Vue 3 重写（见 2026-06-15 设计文档） |
 
 ---
 
 ## 验收标准
 
-1. `data/` 目录下有 4 个 SQLite 文件（memory、users、analysis、bm25_index）
-2. 重启后 JWT token 不失效
-3. BM25 索引持久化到 SQLite，查询时不重建
-4. 220+ 测试全过
+1. ✅ `data/` 目录下有 4 个 SQLite 文件（memory、users、analysis、bm25_index）
+2. ✅ 重启后 JWT token 不失效（`data/jwt_secret.txt` 持久化）
+3. ✅ BM25 chunks 持久化到 SQLite，查询时不从 Qdrant scroll（从 SQLite 加载后在内存构建 BM25Okapi）
+4. ✅ 248 个测试全过
