@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
-import { useAuthStore } from '../stores/auth'
-
-const authStore = useAuthStore()
 
 interface GapSummary {
   total: number
@@ -20,9 +17,7 @@ onMounted(async () => {
 async function loadAnalytics() {
   loading.value = true
   try {
-    const res = await axios.get('/analytics/gaps/summary', {
-      headers: { 'X-API-Key': authStore.token }
-    })
+    const res = await axios.get('/analytics/gaps/summary')
     summary.value = res.data
   } catch {
     // Ignore

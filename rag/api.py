@@ -754,6 +754,32 @@ def query_knowledge_base(kb_id: str, req: QueryKBRequest, user_id: str = Securit
     return {"kb_id": kb_id, "results": results}
 
 
+# ── 分析端点 ──────────────────────────────────────────────────────
+
+@app.get("/analytics/gaps/summary", summary="检索空白分析统计")
+def get_gap_summary():
+    from rag.gap_analyzer import GapAnalyzer
+    from config import settings as _settings
+    ga = GapAnalyzer(_settings.memory_db_path)
+    try:
+        summary = ga.get_summary()
+        return summary
+    finally:
+        ga.close()
+
+
+@app.get("/analytics/gaps", summary="未解答问题列表")
+def get_gaps(limit: int = 50):
+    from rag.gap_analyzer import GapAnalyzer
+    from config import settings as _settings
+    ga = GapAnalyzer(_settings.memory_db_path)
+    try:
+        gaps = ga.get_gaps(limit=limit)
+        return {"gaps": gaps}
+    finally:
+        ga.close()
+
+
 # ── 静态文件 & 前端 ────────────────────────────────────────────────
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 DATA_DIR_PATH = Path(__file__).resolve().parent.parent / "data"
@@ -761,6 +787,18 @@ DATA_DIR_PATH = Path(__file__).resolve().parent.parent / "data"
 
 @app.get("/", summary="前端页面", description="返回知识库助手 Web 前端")
 def serve_frontend():
+    index = STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(index, media_type="text/html")
+    return JSONResponse(status_code=404, content={"error": "前端文件不存在"})
+
+
+# Vue Router catch-all: serve index.html for client-side routes
+@app.get("/chat/{path:path}", include_in_schema=False)
+@app.get("/files", include_in_schema=False)
+@app.get("/knowledge", include_in_schema=False)
+@app.get("/analytics", include_in_schema=False)
+def serve_spa():
     index = STATIC_DIR / "index.html"
     if index.exists():
         return FileResponse(index, media_type="text/html")

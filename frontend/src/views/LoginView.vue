@@ -17,7 +17,6 @@ async function handleSubmit() {
     ElMessage.warning('请填写用户名和密码')
     return
   }
-
   loading.value = true
   try {
     if (isLogin.value) {
@@ -36,57 +35,87 @@ async function handleSubmit() {
 
 <template>
   <div class="login-page">
-    <div class="login-card">
-      <div class="login-logo">
-        <div class="logo-icon">R</div>
-      </div>
-      <h1 class="login-title">RAG 知识库</h1>
-      <p class="login-subtitle">智能文档问答系统</p>
+    <!-- Decorative grid pattern -->
+    <div class="grid-pattern"></div>
 
-      <div class="login-tabs">
-        <button
-          :class="['tab', { active: isLogin }]"
-          @click="isLogin = true"
-        >
-          登录
-        </button>
-        <button
-          :class="['tab', { active: !isLogin }]"
-          @click="isLogin = false"
-        >
-          注册
-        </button>
+    <!-- Left brand panel -->
+    <div class="brand-panel">
+      <div class="brand-content">
+        <div class="brand-badge">RAGv3</div>
+        <h1 class="brand-title">智能知识库<br>问答系统</h1>
+        <p class="brand-desc">
+          基于检索增强生成的企业级知识库，<br>
+          支持多轮对话、Agent 工具调用、<br>
+          多知识库管理。
+        </p>
+        <div class="brand-stats">
+          <div class="stat">
+            <div class="stat-value">304</div>
+            <div class="stat-label">测试用例</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">24</div>
+            <div class="stat-label">核心模块</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">91%</div>
+            <div class="stat-label">Hit Rate</div>
+          </div>
+        </div>
       </div>
+    </div>
 
-      <form @submit.prevent="handleSubmit" class="login-form">
-        <div class="form-group">
-          <label class="form-label">用户名</label>
-          <el-input
-            v-model="username"
-            placeholder="输入用户名"
-            size="large"
-          />
+    <!-- Right login panel -->
+    <div class="login-panel">
+      <div class="login-card">
+        <h2 class="login-title">{{ isLogin ? '欢迎回来' : '创建账号' }}</h2>
+        <p class="login-subtitle">{{ isLogin ? '登录以继续使用知识库' : '注册以开始使用' }}</p>
+
+        <div class="tabs">
+          <button
+            :class="['tab', { active: isLogin }]"
+            @click="isLogin = true"
+          >
+            登录
+          </button>
+          <button
+            :class="['tab', { active: !isLogin }]"
+            @click="isLogin = false"
+          >
+            注册
+          </button>
         </div>
-        <div class="form-group">
-          <label class="form-label">密码</label>
-          <el-input
-            v-model="password"
-            type="password"
-            placeholder="输入密码"
+
+        <form @submit.prevent="handleSubmit" class="form">
+          <div class="field">
+            <label class="label">用户名</label>
+            <el-input
+              v-model="username"
+              placeholder="输入用户名"
+              size="large"
+            />
+          </div>
+          <div class="field">
+            <label class="label">密码</label>
+            <el-input
+              v-model="password"
+              type="password"
+              placeholder="输入密码"
+              size="large"
+              show-password
+            />
+          </div>
+          <el-button
+            type="primary"
             size="large"
-            show-password
-          />
-        </div>
-        <el-button
-          type="primary"
-          size="large"
-          :loading="loading"
-          @click="handleSubmit"
-          class="login-btn"
-        >
-          {{ isLogin ? '登录' : '注册' }}
-        </el-button>
-      </form>
+            :loading="loading"
+            @click="handleSubmit"
+            class="submit-btn"
+          >
+            {{ isLogin ? '登录' : '注册' }}
+          </el-button>
+        </form>
+      </div>
     </div>
   </div>
 </template>
@@ -94,131 +123,230 @@ async function handleSubmit() {
 <style scoped>
 .login-page {
   display: flex;
-  align-items: center;
-  justify-content: center;
   min-height: 100vh;
-  background: var(--color-background);
   position: relative;
   overflow: hidden;
 }
 
-.login-page::before {
+/* ── Grid Pattern Background ──────────────────────────── */
+.grid-pattern {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Brand Panel (Left) ───────────────────────────────── */
+.brand-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  background: var(--color-foreground);
+  position: relative;
+  z-index: 1;
+}
+
+.brand-panel::before {
   content: '';
   position: absolute;
-  top: -200px;
-  right: -200px;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, var(--color-accent-light) 0%, transparent 70%);
-  opacity: 0.5;
+  top: 0;
+  right: 0;
+  width: 200px;
+  height: 100%;
+  background: linear-gradient(to right, transparent, var(--color-background));
+  z-index: 2;
+}
+
+.brand-content {
+  max-width: 480px;
+  animation: slideUp 0.6s var(--ease-out);
+}
+
+.brand-badge {
+  display: inline-block;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-accent);
+  color: white;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.1em;
+  margin-bottom: var(--space-8);
+}
+
+.brand-title {
+  font-family: var(--font-heading);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: var(--font-bold);
+  color: white;
+  line-height: 1.2;
+  margin-bottom: var(--space-6);
+  letter-spacing: -0.02em;
+}
+
+.brand-desc {
+  font-size: var(--text-lg);
+  color: rgba(255, 255, 255, 0.6);
+  line-height: var(--leading-relaxed);
+  margin-bottom: var(--space-10);
+}
+
+.brand-stats {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.stat {
+  text-align: left;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  color: var(--color-accent);
+}
+
+.stat-label {
+  font-size: var(--text-xs);
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: var(--space-1);
+}
+
+/* ── Login Panel (Right) ──────────────────────────────── */
+.login-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  background: var(--color-background);
+  position: relative;
+  z-index: 1;
 }
 
 .login-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-  padding: var(--space-12) var(--space-10);
   width: 400px;
-  max-width: 90vw;
-  box-shadow: var(--shadow-lg);
-  position: relative;
-  z-index: 1;
-  animation: slideUp var(--duration-slow) var(--ease-out);
-}
-
-.login-logo {
-  text-align: center;
-  margin-bottom: var(--space-6);
-}
-
-.logo-icon {
-  width: 56px;
-  height: 56px;
-  background: var(--color-accent);
-  border-radius: var(--radius-lg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 28px;
-  font-weight: var(--font-bold);
-  font-family: var(--font-mono);
+  max-width: 100%;
+  animation: slideUp 0.6s var(--ease-out);
+  animation-delay: 0.1s;
+  animation-fill-mode: both;
 }
 
 .login-title {
-  font-family: var(--font-display);
+  font-family: var(--font-heading);
   font-size: var(--text-3xl);
   font-weight: var(--font-bold);
-  text-align: center;
-  margin-bottom: var(--space-1);
   color: var(--color-foreground);
+  margin-bottom: var(--space-2);
 }
 
 .login-subtitle {
-  text-align: center;
   font-size: var(--text-base);
   color: var(--color-secondary);
   margin-bottom: var(--space-8);
 }
 
-.login-tabs {
+/* ── Tabs ─────────────────────────────────────────────── */
+.tabs {
   display: flex;
-  background: var(--color-muted);
-  border-radius: var(--radius);
-  padding: 3px;
-  margin-bottom: var(--space-6);
+  gap: var(--space-1);
+  margin-bottom: var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-1);
 }
 
 .tab {
-  flex: 1;
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-  border: none;
-  background: none;
   color: var(--color-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: color var(--duration-normal) var(--ease-out);
   font-family: var(--font-body);
 }
 
+.tab::after {
+  content: '';
+  position: absolute;
+  bottom: calc(-1 * var(--space-1) - 1px);
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
 .tab.active {
-  background: var(--color-surface);
-  color: var(--color-foreground);
-  box-shadow: var(--shadow-xs);
-}
-
-.form-group {
-  margin-bottom: var(--space-4);
-}
-
-.form-label {
-  display: block;
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-  color: var(--color-secondary);
-  margin-bottom: var(--space-2);
-}
-
-.login-btn {
-  width: 100%;
-  margin-top: var(--space-2);
-  height: 44px;
-  font-size: var(--text-base);
+  color: var(--color-accent);
   font-weight: var(--font-semibold);
 }
 
-:deep(.el-input__wrapper) {
-  border-radius: var(--radius);
-  box-shadow: 0 0 0 1px var(--color-border);
+.tab.active::after {
+  transform: scaleX(1);
 }
 
-:deep(.el-input__wrapper:hover) {
-  box-shadow: 0 0 0 1px var(--color-secondary);
+/* ── Form ─────────────────────────────────────────────── */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
 }
 
-:deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px var(--color-accent);
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-foreground);
+}
+
+.submit-btn {
+  width: 100%;
+  height: 48px;
+  font-size: var(--text-base) !important;
+  font-weight: var(--font-semibold) !important;
+  margin-top: var(--space-2);
+}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media (max-width: 768px) {
+  .login-page {
+    flex-direction: column;
+  }
+
+  .brand-panel {
+    padding: var(--space-8) var(--space-6);
+    min-height: auto;
+  }
+
+  .brand-panel::before {
+    display: none;
+  }
+
+  .brand-stats {
+    gap: var(--space-6);
+  }
+
+  .login-panel {
+    padding: var(--space-8) var(--space-6);
+  }
 }
 </style>

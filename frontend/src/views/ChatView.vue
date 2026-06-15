@@ -6,242 +6,201 @@ const chatStore = useChatStore()
 const inputText = ref('')
 const messagesContainer = ref<HTMLElement>()
 
-// Auto-scroll to bottom when messages change
 watch(() => chatStore.messages.length, () => {
-  nextTick(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-    }
-  })
+  nextTick(() => { messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }) })
 })
 
-// Also scroll during streaming
 watch(() => chatStore.messages[chatStore.messages.length - 1]?.content, () => {
-  nextTick(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-    }
-  })
+  nextTick(() => { messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }) })
 })
 
 async function handleSend() {
-  const question = inputText.value.trim()
-  if (!question || chatStore.isStreaming) return
-
+  const q = inputText.value.trim()
+  if (!q || chatStore.isStreaming) return
   inputText.value = ''
-  await chatStore.sendMessage(question)
+  await chatStore.sendMessage(q)
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    handleSend()
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
 }
 
-function askSuggested(question: string) {
-  inputText.value = question
-  handleSend()
-}
-
-function handleFeedback(index: number, value: 'positive' | 'negative') {
-  chatStore.sendFeedback(index, value)
-}
-
-function handleRegenerate(index: number) {
-  chatStore.regenerate(index)
-}
+function askSuggested(q: string) { inputText.value = q; handleSend() }
 
 function formatContent(text: string): string {
   if (!text) return ''
   return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\n/g, '<br>')
-    .replace(/\[([^\]]+)\]/g, '<span class="source-ref">$1</span>')
+    .replace(/\[([^\]]+)\]/g, '<span class="ref">$1</span>')
 }
 </script>
 
 <template>
-  <div class="chat-container">
-    <!-- Messages -->
+  <div class="chat">
     <div ref="messagesContainer" class="messages">
-      <div v-if="!chatStore.messages.length" class="empty-state">
-        <el-icon class="empty-icon"><ChatDotRound /></el-icon>
-        <h3 class="empty-title">开始一个新对话</h3>
-        <p class="empty-hint">上传文档后，向知识库提问</p>
+      <!-- Empty state -->
+      <div v-if="!chatStore.messages.length" class="empty">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+          </svg>
+        </div>
+        <h3>开始一个新对话</h3>
+        <p>上传文档后，向知识库提问</p>
       </div>
 
+      <!-- Messages -->
       <div
-        v-for="(msg, index) in chatStore.messages"
-        :key="index"
-        :class="['message', msg.role]"
+        v-for="(msg, i) in chatStore.messages"
+        :key="i"
+        :class="['msg', msg.role]"
       >
-        <div class="message-avatar">
-          <template v-if="msg.role === 'user'">
-            <el-icon><User /></el-icon>
-          </template>
-          <template v-else>
-            <span class="ai-avatar">R</span>
-          </template>
+        <div v-if="msg.role === 'user'" class="msg-avatar user-avatar">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 8a3 3 0 100-6 3 3 0 000 6zm5 6a5 5 0 00-10 0h10z"/>
+          </svg>
         </div>
+        <div v-else class="msg-avatar ai-avatar">R</div>
 
-        <div class="message-content">
-          <div class="message-bubble" v-html="formatContent(msg.content)" />
+        <div class="msg-body">
+          <div class="bubble" v-html="formatContent(msg.content)" />
 
           <!-- Sources -->
           <div v-if="msg.sources?.length" class="sources">
-            <el-tag
-              v-for="(src, i) in msg.sources"
-              :key="i"
-              size="small"
-              type="info"
-              class="source-tag"
-            >
-              [{{ i + 1 }}] {{ src.doc_name }}
-            </el-tag>
+            <span v-for="(src, j) in msg.sources" :key="j" class="source-chip">
+              {{ j + 1 }}. {{ src.doc_name }}
+            </span>
           </div>
 
-          <!-- Action buttons (for assistant messages) -->
+          <!-- Actions -->
           <div v-if="msg.role === 'assistant' && msg.content" class="actions">
-            <el-button-group size="small">
-              <el-button
-                :type="msg.feedback === 'positive' ? 'success' : 'default'"
-                @click="handleFeedback(index, 'positive')"
-              >
-                <el-icon><Select /></el-icon>
-              </el-button>
-              <el-button
-                :type="msg.feedback === 'negative' ? 'danger' : 'default'"
-                @click="handleFeedback(index, 'negative')"
-              >
-                <el-icon><CloseBold /></el-icon>
-              </el-button>
-            </el-button-group>
-            <el-button
-              size="small"
-              @click="handleRegenerate(index)"
-              :disabled="chatStore.isStreaming"
+            <button
+              :class="['action-btn', { active: msg.feedback === 'positive' }]"
+              @click="chatStore.sendFeedback(i, 'positive')"
+              title="有用"
             >
-              <el-icon><RefreshRight /></el-icon>
-              重新生成
-            </el-button>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M4 13V6L7 2l4 4v7H4z"/>
+              </svg>
+            </button>
+            <button
+              :class="['action-btn', { active: msg.feedback === 'negative' }]"
+              @click="chatStore.sendFeedback(i, 'negative')"
+              title="没用"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M10 1V8L7 12l-4-4V1h7z" transform="rotate(180 7 7)"/>
+              </svg>
+            </button>
+            <button class="action-btn" @click="chatStore.regenerate(i)" :disabled="chatStore.isStreaming" title="重新生成">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M1 7a6 6 0 0111.5-2.3M13 7a6 6 0 01-11.5 2.3"/>
+                <path d="M13 1v4h-4M1 13v-4h4"/>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
 
-      <!-- Typing indicator -->
-      <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="message assistant">
-        <div class="message-avatar">
-          <span class="ai-avatar">R</span>
-        </div>
-        <div class="message-content">
-          <div class="typing-indicator">
-            <span class="dot"></span>
-            <span class="dot"></span>
-            <span class="dot"></span>
+      <!-- Typing -->
+      <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="msg assistant">
+        <div class="msg-avatar ai-avatar">R</div>
+        <div class="msg-body">
+          <div class="typing">
+            <span></span><span></span><span></span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Suggested questions -->
+    <!-- Suggestions -->
     <div v-if="chatStore.suggestedQuestions.length" class="suggestions">
-      <el-button
-        v-for="q in chatStore.suggestedQuestions"
-        :key="q"
-        class="suggest-btn"
-        @click="askSuggested(q)"
-      >
+      <button v-for="q in chatStore.suggestedQuestions" :key="q" class="suggest-btn" @click="askSuggested(q)">
         {{ q }}
-      </el-button>
+      </button>
     </div>
 
-    <!-- Input area -->
+    <!-- Input -->
     <div class="input-area">
-      <div class="input-wrapper">
+      <div class="input-box">
         <el-input
           v-model="inputText"
           type="textarea"
           :rows="1"
-          :autosize="{ minRows: 1, maxRows: 6 }"
+          :autosize="{ minRows: 1, maxRows: 5 }"
           placeholder="输入你的问题..."
           @keydown="handleKeydown"
           :disabled="chatStore.isStreaming"
-          class="chat-input"
         />
-        <el-button
-          type="primary"
-          :icon="Promotion"
-          circle
-          size="large"
-          :disabled="!inputText.trim() || chatStore.isStreaming"
-          @click="handleSend"
-          class="send-btn"
-        />
+        <button class="send-btn" :disabled="!inputText.trim() || chatStore.isStreaming" @click="handleSend">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 2L8 10M16 2l-5 14-3-7-7-3 14-4z"/>
+          </svg>
+        </button>
       </div>
-      <div class="input-hint">Enter 发送，Shift + Enter 换行</div>
+      <div class="input-hint">Enter 发送 · Shift + Enter 换行</div>
     </div>
   </div>
 </template>
 
-<script lang="ts">
-import { Promotion } from '@element-plus/icons-vue'
-export default { data: () => ({ Promotion }) }
-</script>
-
 <style scoped>
-.chat-container {
+.chat {
   display: flex;
   flex-direction: column;
   height: 100%;
+  background: var(--color-background);
 }
 
 /* ── Messages ─────────────────────────────────────────── */
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-6) 0;
+  padding: var(--space-8) 0;
 }
 
-.empty-state {
+.empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
   color: var(--color-secondary);
+  animation: fadeIn 0.5s var(--ease-out);
 }
 
 .empty-icon {
-  font-size: 64px;
   color: var(--color-border);
   margin-bottom: var(--space-4);
 }
 
-.empty-title {
+.empty h3 {
+  font-family: var(--font-heading);
   font-size: var(--text-xl);
   font-weight: var(--font-semibold);
   color: var(--color-foreground);
   margin-bottom: var(--space-2);
 }
 
-.empty-hint {
+.empty p {
   font-size: var(--text-base);
-  color: var(--color-secondary);
 }
 
-.message {
+/* ── Message ──────────────────────────────────────────── */
+.msg {
   display: flex;
   gap: var(--space-4);
   max-width: var(--content-max-width);
   margin: 0 auto;
-  padding: var(--space-4) var(--space-6);
-  animation: slideUp var(--duration-slow) var(--ease-out);
+  padding: var(--space-3) var(--space-6);
+  animation: slideUp 0.3s var(--ease-out);
 }
 
-.message-avatar {
+.msg.user {
+  flex-direction: row-reverse;
+}
+
+.msg-avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -249,34 +208,36 @@ export default { data: () => ({ Promotion }) }
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  font-size: var(--text-lg);
+  font-size: 14px;
+  font-weight: var(--font-bold);
 }
 
-.message.user .message-avatar {
+.user-avatar {
   background: var(--color-accent-light);
   color: var(--color-accent);
 }
 
 .ai-avatar {
-  width: 36px;
-  height: 36px;
-  background: var(--color-primary);
+  background: var(--color-foreground);
   color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-sm);
-  font-weight: var(--font-bold);
   font-family: var(--font-mono);
+  font-size: 13px;
 }
 
-.message-content {
+.msg-body {
   flex: 1;
   min-width: 0;
+  max-width: 85%;
 }
 
-.message-bubble {
+.msg.user .msg-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+/* ── Bubble ───────────────────────────────────────────── */
+.bubble {
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-lg);
   font-size: var(--text-base);
@@ -284,24 +245,24 @@ export default { data: () => ({ Promotion }) }
   word-break: break-word;
 }
 
-.message.user .message-bubble {
-  background: var(--color-accent);
+.msg.user .bubble {
+  background: var(--color-foreground);
   color: white;
   border-bottom-right-radius: var(--radius-sm);
 }
 
-.message.assistant .message-bubble {
+.msg.assistant .bubble {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-bottom-left-radius: var(--radius-sm);
 }
 
-:deep(.source-ref) {
+:deep(.ref) {
   display: inline;
   padding: 1px 6px;
   background: var(--color-accent-light);
   color: var(--color-accent);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
 }
@@ -314,13 +275,20 @@ export default { data: () => ({ Promotion }) }
   margin-top: var(--space-3);
 }
 
-.source-tag {
+.source-chip {
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-muted);
+  color: var(--color-secondary);
+  border-radius: var(--radius-full);
   font-size: var(--text-xs);
+  font-weight: var(--font-medium);
   cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
 }
 
-.source-tag:hover {
+.source-chip:hover {
   background: var(--color-accent-light);
+  color: var(--color-accent);
 }
 
 /* ── Actions ──────────────────────────────────────────── */
@@ -332,29 +300,59 @@ export default { data: () => ({ Promotion }) }
   transition: opacity var(--duration-fast);
 }
 
-.message:hover .actions {
+.msg:hover .actions {
   opacity: 1;
 }
 
-/* ── Typing Indicator ─────────────────────────────────── */
-.typing-indicator {
+.action-btn {
+  width: 28px;
+  height: 28px;
   display: flex;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  color: var(--color-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
 }
 
-.dot {
+.action-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.action-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Typing ───────────────────────────────────────────── */
+.typing {
+  display: flex;
+  gap: 6px;
+  padding: var(--space-5);
+}
+
+.typing span {
   width: 8px;
   height: 8px;
-  background: var(--color-secondary);
+  background: var(--color-border);
   border-radius: 50%;
-  animation: typingBounce 1.4s infinite;
+  animation: bounce 1.4s infinite;
 }
 
-.dot:nth-child(2) { animation-delay: 0.2s; }
-.dot:nth-child(3) { animation-delay: 0.4s; }
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
 
-@keyframes typingBounce {
+@keyframes bounce {
   0%, 60%, 100% { transform: translateY(0); }
   30% { transform: translateY(-8px); }
 }
@@ -367,21 +365,35 @@ export default { data: () => ({ Promotion }) }
   max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 0 var(--space-6) var(--space-4);
-  animation: slideUp var(--duration-slow) var(--ease-out);
+  animation: slideUp 0.3s var(--ease-out);
 }
 
 .suggest-btn {
-  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
-/* ── Input Area ───────────────────────────────────────── */
+.suggest-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Input ────────────────────────────────────────────── */
 .input-area {
   padding: var(--space-4) var(--space-6) var(--space-6);
   background: linear-gradient(to top, var(--color-background) 60%, transparent);
 }
 
-.input-wrapper {
+.input-box {
   max-width: var(--content-max-width);
   margin: 0 auto;
   display: flex;
@@ -390,31 +402,50 @@ export default { data: () => ({ Promotion }) }
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   box-shadow: var(--shadow);
   transition: all var(--duration-normal) var(--ease-out);
 }
 
-.input-wrapper:focus-within {
+.input-box:focus-within {
   border-color: var(--color-accent);
   box-shadow: var(--shadow), 0 0 0 3px var(--color-accent-light);
 }
 
-.chat-input {
-  flex: 1;
-}
-
 :deep(.el-textarea__inner) {
-  border: none;
-  box-shadow: none;
-  padding: var(--space-2) 0;
-  font-family: var(--font-body);
-  font-size: var(--text-base);
-  resize: none;
+  border: none !important;
+  box-shadow: none !important;
+  padding: var(--space-2) 0 !important;
+  font-family: var(--font-body) !important;
+  font-size: var(--text-base) !important;
+  resize: none !important;
+  background: transparent !important;
 }
 
 .send-btn {
+  width: 40px;
+  height: 40px;
+  background: var(--color-accent);
+  border: none;
+  border-radius: var(--radius);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.send-btn:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-accent);
+}
+
+.send-btn:disabled {
+  background: var(--color-border);
+  cursor: not-allowed;
 }
 
 .input-hint {
@@ -422,5 +453,6 @@ export default { data: () => ({ Promotion }) }
   font-size: var(--text-xs);
   color: var(--color-secondary);
   margin-top: var(--space-2);
+  opacity: 0.7;
 }
 </style>
