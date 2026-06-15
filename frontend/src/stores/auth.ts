@@ -27,7 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchUser() {
-    if (!token.value) return
+    if (!token.value || user.value) return
     try {
       const res = await axios.get(`${API}/me`, {
         headers: { Authorization: `Bearer ${token.value}` }

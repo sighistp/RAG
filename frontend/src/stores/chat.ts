@@ -25,17 +25,20 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref<Message[]>([])
   const isStreaming = ref(false)
   const suggestedQuestions = ref<string[]>([])
+  let _loaded = false
 
   const currentConversation = computed(() =>
     conversations.value.find(c => c.id === currentConvId.value)
   )
 
-  async function loadConversations() {
+  async function loadConversations(force = false) {
+    if (_loaded && !force) return
     const auth = useAuthStore()
     const res = await axios.get(`${API}/conversations`, {
       headers: auth.getAuthHeaders()
     })
     conversations.value = res.data
+    _loaded = true
   }
 
   async function createConversation() {
@@ -129,7 +132,7 @@ export const useChatStore = defineStore('chat', () => {
       assistantMsg.sources = sources
 
       // Reload conversations to update title
-      await loadConversations()
+      await loadConversations(true)
 
     } catch (err) {
       assistantMsg.content = '请求失败，请稍后重试。'

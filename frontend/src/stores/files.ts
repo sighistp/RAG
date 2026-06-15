@@ -15,12 +15,15 @@ interface FileInfo {
 export const useFilesStore = defineStore('files', () => {
   const files = ref<FileInfo[]>([])
   const loading = ref(false)
+  let _loaded = false
 
-  async function loadFiles() {
+  async function loadFiles(force = false) {
+    if (_loaded && !force) return
     loading.value = true
     try {
       const res = await axios.get(`${API}/files`)
       files.value = res.data.files
+      _loaded = true
     } finally {
       loading.value = false
     }
@@ -38,7 +41,7 @@ export const useFilesStore = defineStore('files', () => {
       }
     })
 
-    await loadFiles()
+    await loadFiles(true)
     return res.data
   }
 
@@ -47,7 +50,7 @@ export const useFilesStore = defineStore('files', () => {
     await axios.delete(`${API}/files/${encodeURIComponent(name)}`, {
       headers: auth.getAuthHeaders()
     })
-    await loadFiles()
+    await loadFiles(true)
   }
 
   return {
