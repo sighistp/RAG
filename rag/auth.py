@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
@@ -16,16 +17,24 @@ from config import settings
 # ---------------------------------------------------------------------------
 # JWT Configuration
 # ---------------------------------------------------------------------------
-_JWT_SECRET: str = os.environ.get("RAG_JWT_SECRET", "")
-if not _JWT_SECRET:
-    import warnings
-
-    warnings.warn(
-        "RAG_JWT_SECRET 未设置，使用随机密钥（重启后 token 失效）。生产环境请设置 RAG_JWT_SECRET 环境变量。",
-        stacklevel=2,
-    )
-    _JWT_SECRET = secrets.token_hex(32)
 _JWT_ALGORITHM: str = "HS256"
+_JWT_SECRET_FILE = Path(__file__).resolve().parent.parent / "data" / "jwt_secret.txt"
+
+
+def _load_or_create_secret(secret_file: Path = _JWT_SECRET_FILE) -> str:
+    """Load JWT secret from env > file > generate new."""
+    env_secret = os.environ.get("RAG_JWT_SECRET")
+    if env_secret:
+        return env_secret
+    if secret_file.exists():
+        return secret_file.read_text().strip()
+    secret = secrets.token_urlsafe(32)
+    secret_file.parent.mkdir(parents=True, exist_ok=True)
+    secret_file.write_text(secret)
+    return secret
+
+
+_JWT_SECRET: str = _load_or_create_secret()
 
 
 # ---------------------------------------------------------------------------
