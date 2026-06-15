@@ -2187,8 +2187,90 @@ f86c4e7 feat: add weights parameter to retriever RRF fusion
 
 ---
 
+## Embedding + Reranker 切换到硅基流动（2026-06-15）✅
+
+**背景：** 百炼（阿里云 DashScope）欠费，Embedding 和 Rerank API 均返回 401。
+
+**方案：** 切换到硅基流动（SiliconFlow），API 兼容 OpenAI 格式，免费额度。
+
+| 组件 | 原方案 | 新方案 |
+|------|--------|--------|
+| Embedding | 百炼 `text-embedding-v4` | 硅基流动 `BAAI/bge-m3`（1024 维） |
+| Reranker | 百炼 `gte-rerank-v2` | 硅基流动 `BAAI/bge-reranker-v2-m3` |
+
+**改动文件：**
+- `config.py` — 默认 base_url 改为 `https://api.siliconflow.cn/v1`，模型改为 `BAAI/bge-m3`
+- `rag/reranker.py` — 端点从 `dashscope.aliyuncs.com` 改为 `api.siliconflow.cn/v1/rerank`，响应格式从 `output.results` 改为 `results`
+- `.env` — 更新 API Key 和 base_url
+- `.env.example` — 更新配置模板
+- `tests/test_reranker.py` — 适配新的 API 响应格式
+
+**踩坑：**
+- 硅基流动 rerank 端点是 `/v1/rerank`（不是 `/v1/reranking`），404 试出来的
+- 旧的 Qdrant 向量数据需要重建（不同模型生成的向量不兼容）
+
+**向量重建：** 删除 `qdrant_data/` + `data/bm25_index.db`，重新索引 3 文件 31 分块。
+
+**测试：** 304 个全过
+
+---
+
+## Vue 3 前端重写（2026-06-16）✅
+
+**背景：** 原前端是 1690 行单文件 `static/index.html`（原生 HTML/CSS/JS，暗黑科技风），用户反馈：视觉设计丑、交互体验差、功能不完整、代码质量差。
+
+**方案：** Vue 3 + Vite + TypeScript + Element Plus 全面重写，使用 UI/UX Pro Max skill 生成设计系统。
+
+**设计系统（Exaggerated Minimalism）：**
+- 风格：粗犷极简，大字体，高对比，大量留白
+- 配色：灰蓝主调 `#475569` + 蓝色强调 `#2563EB` + 浅灰背景 `#F8FAFC`
+- 字体：Fira Sans（正文）+ Fira Code（代码/数据）
+- 响应式：375px / 768px / 1024px / 1440px 断点
+
+**项目结构：**
+```
+frontend/
+├── src/
+│   ├── views/          # 6 个页面组件
+│   │   ├── LoginView.vue
+│   │   ├── MainLayout.vue
+│   │   ├── ChatView.vue
+│   │   ├── FilesView.vue
+│   │   ├── KnowledgeView.vue
+│   │   └── AnalyticsView.vue
+│   ├── stores/         # Pinia 状态管理
+│   │   ├── auth.ts
+│   │   ├── chat.ts
+│   │   └── files.ts
+│   ├── router/         # Vue Router
+│   │   └── index.ts
+│   ├── styles/         # 设计系统 tokens
+│   │   └── design-tokens.css
+│   ├── App.vue
+│   └── main.ts
+├── vite.config.ts      # API 代理 + 构建输出到 static/
+└── package.json
+```
+
+**功能：**
+- 登录/注册页面（Element Plus 表单）
+- 主布局（280px 侧边栏 + 顶部 Tab 导航 + 内容区）
+- 对话页面（流式 SSE 打字机效果 + 来源引用 + 反馈按钮 + 追问建议 + 重新生成）
+- 文件管理页面（拖拽上传 + 文件卡片网格）
+- 知识库管理页面（KB 卡片 + 文档统计）
+- 分析报告页面（统计卡片 + 未解答问题表格）
+- 路由守卫（未登录跳转登录页）
+- Pinia 状态管理（auth/chat/files stores）
+
+**构建：** `npm run build` 输出到 `static/`，FastAPI 直接 serve。
+
+**清理：** 删除旧前端相关文件（CHANGELOG.md 内容移入 dev-log、Vite 默认模板文件、空目录等）。
+
+**测试：** 304 个后端测试全过（前端无额外测试）
+
+---
+
 ## 下一步计划
 
-- Phase 3：Vue 3 前端重写
 - Phase 4：后端异步化 + Docker + CI/CD
 - Phase 5（剩余）：数据源集成（RSS/数据库/API，可选）
