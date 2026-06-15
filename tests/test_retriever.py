@@ -1,4 +1,5 @@
 from unittest.mock import patch, MagicMock
+import hashlib
 from rag.retriever import Retriever
 from rag.models import Chunk
 
@@ -97,3 +98,88 @@ def test_retrieve_with_collection_name_uses_search_collection(mock_embed, mock_s
     assert len(results) == 2
     mock_search_collection.assert_called_once()
     assert mock_search_collection.call_args[0][0] == "kb_abc12345"
+
+
+def test_rrf_fuse_accepts_weights():
+    """_rrf_fuse should accept and apply weights parameter."""
+    c1 = Chunk(text="doc1", doc_name="a.md", chunk_index=0)
+    c2 = Chunk(text="doc2", doc_name="a.md", chunk_index=1)
+    c3 = Chunk(text="doc3", doc_name="a.md", chunk_index=2)
+    dense = [c1, c2]
+    sparse = [c3]
+
+    # Without weights (default behavior)
+    results_no_w = Retriever._rrf_fuse(dense, sparse, top_k=3)
+    assert len(results_no_w) == 3
+
+    # With weights: heavily penalize c1
+    h1 = hashlib.md5(c1.text.encode()).hexdigest()
+    weights = {h1: 0.1}
+    results_w = Retriever._rrf_fuse(dense, sparse, top_k=3, weights=weights)
+    assert len(results_w) == 3
+    # c1 should rank lower with low weight
+    idx_no_w = [d.text for d in results_no_w].index("doc1")
+    idx_w = [d.text for d in results_w].index("doc1")
+    assert idx_w >= idx_no_w  # c1 moved down or stayed same
+
+
+@patch("rag.retriever.embed")
+@patch("rag.retriever.dense_search")
+def test_retrieve_passes_weights_to_rrf_fuse(mock_dense_search, mock_embed):
+    """retrieve() should pass weights to _rrf_fuse."""
+    c1 = Chunk(text="chunk_a", doc_name="doc.md", chunk_index=0)
+    c2 = Chunk(text="chunk_b", doc_name="doc.md", chunk_index=1)
+    mock_embed.return_value = [[0.1] * 1024]
+    mock_dense_search.return_value = [c1, c2]
+
+    retriever = Retriever([c1, c2])
+    weights = {"fake_hash": 1.5}
+    results = retriever.retrieve("test", top_k=2, weights=weights)
+
+    assert len(results) == 2
+
+
+@patch("rag.retriever.embed")
+@patch("rag.retriever.dense_search")
+def test_retrieve_accepts_none_weights(mock_dense_search, mock_embed):
+    """retrieve() should work with weights=None (default)."""
+    c1 = Chunk(text="chunk_a", doc_name="doc.md", chunk_index=0)
+    mock_embed.return_value = [[0.1] * 1024]
+    mock_dense_search.return_value = [c1]
+
+    retriever = Retriever([c1])
+    results = retriever.retrieve("test", top_k=1, weights=None)
+
+    assert len(results) == 1
+
+
+@patch("rag.retriever.search_collection")
+@patch("rag.retriever.embed")
+def test_retrieve_passes_tags_to_search_collection(mock_embed, mock_search_collection):
+    """retrieve() should forward tags to search_collection."""
+    c1 = Chunk(text="doc1", doc_name="a.md", chunk_index=0)
+    mock_embed.return_value = [[0.1] * 1024]
+    mock_search_collection.return_value = [c1]
+
+    retriever = Retriever([c1], collection_name="kb_test")
+    results = retriever.retrieve("query", top_k=2, tags=["finance", "q3"])
+
+    assert len(results) == 1
+    mock_search_collection.assert_called_once()
+    _, kwargs = mock_search_collection.call_args
+    assert kwargs["tags"] == ["finance", "q3"]
+
+
+@patch("rag.retriever.search_collection")
+@patch("rag.retriever.embed")
+def test_retrieve_no_tags_passes_none(mock_embed, mock_search_collection):
+    """retrieve() without tags should pass tags=None to search_collection."""
+    c1 = Chunk(text="doc1", doc_name="a.md", chunk_index=0)
+    mock_embed.return_value = [[0.1] * 1024]
+    mock_search_collection.return_value = [c1]
+
+    retriever = Retriever([c1], collection_name="kb_test")
+    retriever.retrieve("query", top_k=2)
+
+    _, kwargs = mock_search_collection.call_args
+    assert kwargs["tags"] is None

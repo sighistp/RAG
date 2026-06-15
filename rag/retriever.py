@@ -93,10 +93,10 @@ class Retriever:
         else:
             self.bm25 = None
 
-    def retrieve(self, query: str, top_k: int = 5, doc_name: str = None) -> list[Chunk]:
+    def retrieve(self, query: str, top_k: int = 5, doc_name: str = None, tags: list[str] = None, weights: dict[str, float] = None) -> list[Chunk]:
         query_vec = embed([query])[0]
         if self.collection_name:
-            dense_hits = search_collection(self.collection_name, query_vec, top_k=top_k * 2, doc_name=doc_name)
+            dense_hits = search_collection(self.collection_name, query_vec, top_k=top_k * 2, doc_name=doc_name, tags=tags)
         else:
             dense_hits = dense_search(query_vec, top_k=top_k * 2)
 
@@ -115,13 +115,23 @@ class Retriever:
         if doc_name:
             sparse_hits = [c for c in sparse_hits if c.doc_name == doc_name]
 
-        return self._rrf_fuse(dense_hits, sparse_hits, top_k, rrf_k=settings.rrf_k)
+        return self._rrf_fuse(dense_hits, sparse_hits, top_k, rrf_k=settings.rrf_k, weights=weights)
 
     @staticmethod
-    def _rrf_fuse(dense: list[Chunk], sparse: list[Chunk], top_k: int, rrf_k: int = 60) -> list[Chunk]:
+    def _rrf_fuse(dense: list[Chunk], sparse: list[Chunk], top_k: int, rrf_k: int = 60, weights: dict[str, float] = None) -> list[Chunk]:
+        import hashlib as _hashlib
+
         scores: dict[Chunk, float] = {}
         for rank, doc in enumerate(dense):
-            scores[doc] = scores.get(doc, 0) + 1 / (rrf_k + rank + 1)
+            base = 1 / (rrf_k + rank + 1)
+            if weights:
+                h = _hashlib.md5(doc.text.encode()).hexdigest()
+                base *= weights.get(h, 1.0)
+            scores[doc] = scores.get(doc, 0) + base
         for rank, doc in enumerate(sparse):
-            scores[doc] = scores.get(doc, 0) + 1 / (rrf_k + rank + 1)
+            base = 1 / (rrf_k + rank + 1)
+            if weights:
+                h = _hashlib.md5(doc.text.encode()).hexdigest()
+                base *= weights.get(h, 1.0)
+            scores[doc] = scores.get(doc, 0) + base
         return sorted(scores, key=lambda d: -scores[d])[:top_k]
