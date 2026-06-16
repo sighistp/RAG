@@ -65,7 +65,7 @@ async def generate_stream(messages: list[dict], max_attempts: int = 3):
     last_exc = None
     for attempt in range(max_attempts):
         try:
-            stream = _async_client.chat.completions.create(
+            stream = await _async_client.chat.completions.create(
                 model=settings.deepseek_model,
                 messages=clean_msgs,
                 extra_body={"thinking": {"type": "disabled"}},

@@ -4,6 +4,11 @@ import inspect
 from unittest.mock import patch, MagicMock
 
 
+async def _coroutine_wrap(async_gen):
+    """Wrap async generator in a coroutine (mimics AsyncOpenAI create() behavior)."""
+    return async_gen
+
+
 def test_generate_stream_returns_async_generator():
     """generate_stream 应该返回一个 async generator。"""
     from rag.generator import generate_stream
@@ -14,7 +19,7 @@ def test_generate_stream_returns_async_generator():
 def test_generate_stream_yields_tokens():
     """generate_stream 应该逐个 yield token。"""
     import rag.generator as _gen
-    _gen._async_client = None  # reset global so patch takes effect
+    _gen._async_client = None
     from rag.generator import generate_stream
     mock_chunks = []
     for text in ["你好", "世界"]:
@@ -32,7 +37,9 @@ def test_generate_stream_yields_tokens():
             yield c
 
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(return_value=mock_stream())
+    mock_client.chat.completions.create = MagicMock(
+        return_value=_coroutine_wrap(mock_stream())
+    )
 
     with patch("rag.generator.AsyncOpenAI", return_value=mock_client):
         tokens = []
@@ -49,7 +56,7 @@ def test_generate_stream_yields_tokens():
 def test_generate_stream_strips_reasoning_content():
     """generate_stream 应该过滤 reasoning_content 字段。"""
     import rag.generator as _gen
-    _gen._async_client = None  # reset global so patch takes effect
+    _gen._async_client = None
     from rag.generator import generate_stream
     messages = [{"role": "user", "content": "hello", "reasoning_content": "thinking..."}]
     mock_chunk = MagicMock()
@@ -69,7 +76,7 @@ def test_generate_stream_strips_reasoning_content():
     def capture_create(**kwargs):
         nonlocal captured_messages
         captured_messages = kwargs.get("messages")
-        return mock_stream()
+        return _coroutine_wrap(mock_stream())
 
     mock_client.chat.completions.create = capture_create
 
