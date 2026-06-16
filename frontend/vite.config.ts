@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite'
+/// <reference types="vitest" />
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
@@ -17,5 +18,11 @@ export default defineConfig({
   build: {
     outDir: '../static',
     emptyOutDir: true
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    include: ['src/**/*.{test,spec}.{js,ts}'],
+    setupFiles: ['src/test-setup.ts']
   }
 })
