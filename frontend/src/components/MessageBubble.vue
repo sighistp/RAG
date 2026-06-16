@@ -14,6 +14,10 @@ const props = defineProps<{
   index: number
 }>()
 
+const emit = defineEmits<{
+  (e: 'add-to-analysis', content: string): void
+}>()
+
 const chatStore = useChatStore()
 
 function formatContent(text: string): string {
@@ -24,6 +28,10 @@ function formatContent(text: string): string {
     .replace(/\n/g, '<br>')
     .replace(/\[([^\]]+)\]/g, '<span class="ref">$1</span>')
   return DOMPurify.sanitize(escaped, { ALLOWED_TAGS: ['br', 'span'], ALLOWED_ATTR: ['class'] })
+}
+
+function handleAddToAnalysis() {
+  emit('add-to-analysis', props.message.content)
 }
 </script>
 
@@ -71,6 +79,13 @@ function formatContent(text: string): string {
             <path d="M1 7a6 6 0 0111.5-2.3M13 7a6 6 0 01-11.5 2.3"/>
             <path d="M13 1v4h-4M1 13v-4h4"/>
           </svg>
+        </button>
+        <button class="action-btn action-btn--accent" @click="handleAddToAnalysis" title="添加到分析">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="1" y="1" width="12" height="12" rx="2"/>
+            <path d="M4 7h6M7 4v6"/>
+          </svg>
+          <span class="action-label">添加到分析</span>
         </button>
       </div>
     </div>
@@ -196,17 +211,19 @@ function formatContent(text: string): string {
 }
 
 .action-btn {
-  width: 28px;
   height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   border-radius: var(--radius-sm);
   color: var(--color-secondary);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
+  padding: 0 var(--space-2);
+  font-family: var(--font-body);
 }
 
 .action-btn:hover {
@@ -223,5 +240,22 @@ function formatContent(text: string): string {
 .action-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.action-btn--accent {
+  border-color: var(--color-accent-subtle);
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+
+.action-btn--accent:hover {
+  background: var(--color-accent);
+  color: white;
+}
+
+.action-label {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
 }
 </style>

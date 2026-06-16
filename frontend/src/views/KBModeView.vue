@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
+import { useAnalysis } from '../composables/useAnalysis'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -12,6 +13,7 @@ import { Plus, Collection, Document, ArrowLeft, Delete, Upload } from '@element-
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const { addToAnalysis } = useAnalysis()
 
 const messagesContainer = ref<HTMLElement>()
 
@@ -48,6 +50,7 @@ const addingFile = ref(false)
 const selectedKB = computed(() => knowledgeBases.value.find(kb => kb.kb_id === selectedKBId.value))
 
 onMounted(async () => {
+  await chatStore.loadConversations('kb')
   await loadKBs()
 })
 
@@ -58,6 +61,29 @@ watch(() => chatStore.messages.length, () => {
 watch(() => chatStore.messages[chatStore.messages.length - 1]?.content, () => {
   nextTick(() => { messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }) })
 })
+
+// ── Conversation management ──
+async function newConversation() {
+  await chatStore.createConversation('kb')
+}
+
+async function selectConversation(id: number) {
+  await chatStore.selectConversation(id)
+}
+
+async function deleteConversation(id: number) {
+  await chatStore.deleteConversation(id)
+}
+
+function formatTime(ts: string | number) {
+  if (!ts) return ''
+  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
 
 function askSuggested(q: string) {
   chatStore.sendMessage(q)
@@ -177,7 +203,7 @@ async function removeDocument(filename: string) {
 }
 
 function goToDetail(kb: KnowledgeBase) {
-  router.push(`/knowledge/${kb.kb_id}`)
+  router.push(`/kb/${kb.kb_id}`)
 }
 
 function getStatusLabel(status: string) {
@@ -192,12 +218,62 @@ function getStatusLabel(status: string) {
 
 <template>
   <div class="kb-mode">
-    <!-- Left panel: KB list / documents -->
-    <div class="kb-left">
-      <div class="kb-left-header">
+    <!-- Conversation sidebar -->
+    <aside class="conv-sidebar">
+      <div class="conv-sidebar-header">
+        <span class="conv-sidebar-title">对话历史</span>
+        <button class="new-chat-btn" @click="newConversation">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="2" x2="8" y2="14"/>
+            <line x1="2" y1="8" x2="14" y2="8"/>
+          </svg>
+          新建
+        </button>
+      </div>
+
+      <div class="conv-list">
+        <div
+          v-for="conv in chatStore.conversations"
+          :key="conv.id"
+          :class="['conv-item', { active: conv.id === chatStore.currentConvId }]"
+          @click="selectConversation(conv.id)"
+        >
+          <div class="conv-icon">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 3h12v8H4l-2 2V3z"/>
+            </svg>
+          </div>
+          <div class="conv-info">
+            <div class="conv-title">{{ conv.title || '新对话' }}</div>
+            <div class="conv-time">{{ formatTime(conv.created_at) }}</div>
+          </div>
+          <button class="conv-delete" @click.stop="deleteConversation(conv.id)" title="删除">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <line x1="3" y1="3" x2="11" y2="11"/>
+              <line x1="11" y1="3" x2="3" y2="11"/>
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="!chatStore.conversations.length" class="empty-conv">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+          </svg>
+          <span>暂无对话</span>
+        </div>
+      </div>
+
+      <div class="conv-sidebar-footer">
+        {{ chatStore.conversations.length }} 个对话
+      </div>
+    </aside>
+
+    <!-- KB management panel -->
+    <div class="kb-panel">
+      <div class="kb-panel-header">
         <div v-if="!selectedKBId">
-          <div class="kb-left-title-row">
-            <span class="kb-left-title">知识库</span>
+          <div class="kb-panel-title-row">
+            <span class="kb-panel-title">知识库</span>
             <el-button size="small" type="primary" @click="openCreateDialog" :icon="Plus" circle />
           </div>
           <div class="kb-list">
@@ -220,9 +296,9 @@ function getStatusLabel(status: string) {
         </div>
 
         <div v-else>
-          <div class="kb-left-title-row">
+          <div class="kb-panel-title-row">
             <el-button text size="small" @click="selectedKBId = null; kbDocuments = []" :icon="ArrowLeft" />
-            <span class="kb-left-title">{{ selectedKB?.name }}</span>
+            <span class="kb-panel-title">{{ selectedKB?.name }}</span>
             <el-button size="small" type="primary" text @click="openAddDialog" :icon="Upload">添加</el-button>
           </div>
           <div class="kb-doc-list">
@@ -244,8 +320,8 @@ function getStatusLabel(status: string) {
       </div>
     </div>
 
-    <!-- Right panel: chat -->
-    <div class="kb-right">
+    <!-- Chat area -->
+    <div class="kb-chat">
       <div ref="messagesContainer" class="messages">
         <div v-if="!chatStore.messages.length" class="empty">
           <div class="empty-icon">
@@ -260,6 +336,7 @@ function getStatusLabel(status: string) {
           :key="i"
           :message="msg"
           :index="i"
+          @add-to-analysis="addToAnalysis"
         />
 
         <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="msg assistant">
@@ -315,11 +392,165 @@ function getStatusLabel(status: string) {
 .kb-mode {
   display: flex;
   height: 100%;
+  overflow: hidden;
 }
 
-/* ── Left Panel ───────────────────────────────────────── */
-.kb-left {
-  width: 300px;
+/* ── Conversation Sidebar ─────────────────────────────── */
+.conv-sidebar {
+  width: 240px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.conv-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.conv-sidebar-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-foreground);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.new-chat-btn:hover {
+  background: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conv-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.conv-item:hover {
+  background: var(--color-muted);
+}
+
+.conv-item.active {
+  background: var(--color-accent-light);
+}
+
+.conv-icon {
+  width: 28px;
+  height: 28px;
+  background: var(--color-muted);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-secondary);
+  flex-shrink: 0;
+}
+
+.conv-item.active .conv-icon {
+  background: var(--color-accent);
+  color: white;
+}
+
+.conv-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.conv-title {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-foreground);
+}
+
+.conv-time {
+  font-size: 10px;
+  color: var(--color-secondary);
+  margin-top: 1px;
+}
+
+.conv-delete {
+  opacity: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--color-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  flex-shrink: 0;
+}
+
+.conv-item:hover .conv-delete {
+  opacity: 1;
+}
+
+.conv-delete:hover {
+  background: var(--color-destructive-light);
+  color: var(--color-destructive);
+}
+
+.empty-conv {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-4);
+  color: var(--color-secondary);
+  font-size: var(--text-xs);
+}
+
+.conv-sidebar-footer {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: 11px;
+  color: var(--color-secondary);
+}
+
+/* ── KB Panel ─────────────────────────────────────────── */
+.kb-panel {
+  width: 280px;
   border-right: 1px solid var(--color-border);
   background: var(--color-surface);
   display: flex;
@@ -327,7 +558,7 @@ function getStatusLabel(status: string) {
   flex-shrink: 0;
 }
 
-.kb-left-header {
+.kb-panel-header {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -335,14 +566,14 @@ function getStatusLabel(status: string) {
   overflow: hidden;
 }
 
-.kb-left-title-row {
+.kb-panel-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-4);
 }
 
-.kb-left-title {
+.kb-panel-title {
   font-family: var(--font-heading);
   font-size: var(--text-base);
   font-weight: var(--font-semibold);
@@ -473,8 +704,8 @@ function getStatusLabel(status: string) {
   margin-top: var(--space-2);
 }
 
-/* ── Right Panel ──────────────────────────────────────── */
-.kb-right {
+/* ── Chat Area ────────────────────────────────────────── */
+.kb-chat {
   flex: 1;
   display: flex;
   flex-direction: column;

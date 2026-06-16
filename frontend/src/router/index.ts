@@ -17,30 +17,27 @@ const router = createRouter({
       children: [
         {
           path: '',
-          redirect: '/mode/file'
+          redirect: '/files'
         },
         {
-          path: 'mode/file',
-          name: 'mode-file',
-          component: () => import('../views/ModeRouter.vue'),
-          props: { mode: 'file' }
+          path: 'files',
+          name: 'files',
+          component: () => import('../views/FileModeView.vue')
         },
         {
-          path: 'mode/kb',
-          name: 'mode-kb',
-          component: () => import('../views/ModeRouter.vue'),
-          props: { mode: 'kb' }
+          path: 'kb',
+          name: 'kb',
+          component: () => import('../views/KBModeView.vue')
         },
         {
-          path: 'mode/analysis',
-          name: 'mode-analysis',
-          component: () => import('../views/ModeRouter.vue'),
-          props: { mode: 'analysis' }
-        },
-        {
-          path: 'knowledge/:id',
-          name: 'knowledge-detail',
+          path: 'kb/:id',
+          name: 'kb-detail',
           component: () => import('../views/KnowledgeDetailView.vue')
+        },
+        {
+          path: 'analysis',
+          name: 'analysis',
+          component: () => import('../views/AnalysisModeView.vue')
         }
       ]
     }

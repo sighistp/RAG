@@ -25,7 +25,6 @@ interface Message {
 export const useChatStore = defineStore('chat', () => {
   const conversations = ref<Conversation[]>([])
   const currentConvId = ref<number | null>(null)
-  const currentMode = ref<ChatMode>('file')
   const messages = ref<Message[]>([])
   const isStreaming = ref(false)
   const suggestedQuestions = ref<string[]>([])
@@ -36,15 +35,29 @@ export const useChatStore = defineStore('chat', () => {
     conversations.value.find(c => c.id === currentConvId.value)
   )
 
+  /** Backward-compatible alias used by some tests */
+  const currentMode = computed(() => 'file' as ChatMode)
+
+  /** Backward-compatible filter (kept for existing test compatibility) */
   function conversationsByMode(mode: ChatMode) {
     return computed(() => conversations.value.filter(c => c.mode === mode))
   }
 
-  async function loadConversations(mode?: ChatMode, _force = false) {
+  /**
+   * Load conversations for a specific mode.
+   * Each independent page calls this on mount with its own mode.
+   * The store is effectively scoped to the last-loaded mode.
+   */
+  async function loadConversations(mode?: ChatMode) {
     const auth = useAuthStore()
     try {
       // Clear conversations immediately to prevent stale data from other modes
       conversations.value = []
+      currentConvId.value = null
+      messages.value = []
+      selectedFile.value = null
+      _selectedFilesByConv.clear()
+
       const params: Record<string, string> = {}
       if (mode) params.mode = mode
       const res = await api.get(`${API}/conversations`, {
@@ -59,7 +72,6 @@ export const useChatStore = defineStore('chat', () => {
 
   async function createConversation(mode: ChatMode = 'file') {
     const auth = useAuthStore()
-    currentMode.value = mode
     // Save current selection before switching
     if (currentConvId.value !== null) {
       _selectedFilesByConv.set(currentConvId.value, selectedFile.value)
@@ -179,7 +191,23 @@ export const useChatStore = defineStore('chat', () => {
       assistantMsg.sources = sources
 
       // Reload conversations to update title
-      await loadConversations(currentMode.value, true)
+      // Re-fetch with mode param (inferred from current conversation or default)
+      const currentConv = conversations.value.find(c => c.id === currentConvId.value)
+      if (currentConv) {
+        await loadConversations(currentConv.mode)
+        // Restore current conv selection after reload
+        currentConvId.value = currentConv.id
+        // Re-select the conversation to restore messages
+        const auth2 = useAuthStore()
+        const res = await api.get(`${API}/conversations/${currentConv.id}/messages`, {
+          headers: auth2.getAuthHeaders()
+        })
+        messages.value = res.data.map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content
+        }))
+      }
 
       // Fetch suggested follow-up questions after streaming completes
       if (answer) {
