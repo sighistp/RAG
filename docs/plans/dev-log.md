@@ -2381,10 +2381,72 @@ frontend/
 
 ---
 
+---
+
+## Phase 3：知识库后端扩展（2026-06-16）✅
+
+**新增模块：**
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| KB 元数据生成 | `rag/kb_metadata.py` | LLM 生成目录（TOC）+ 文档概述（summary），含错误处理和 JSON 提取 |
+
+**数据库扩展：**
+
+| 表 | 数据库 | 说明 |
+|----|--------|------|
+| kb_metadata | users.db | 知识库名称、描述、概述 |
+| kb_documents | users.db | 文档详情：toc、summary、chunk_count、status |
+
+**API 端点：**
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/knowledge-bases/{id}` | GET | 知识库详情（含文档列表、概述） |
+| `/knowledge-bases/{id}/overview` | PUT | 更新知识库概述 |
+| `/knowledge-bases/{id}/documents/{name}/toc` | PUT | 编辑文档目录 |
+| `/knowledge-bases/{id}/documents/{name}/summary` | PUT | 编辑文档概述 |
+| `/files` | GET | 新增 `in_kb` 字段 |
+
+**代码审查修复：**
+- add_document_to_kb 现在插入 kb_documents + kb_metadata
+- delete_knowledge_base 清理关联数据
+- /files 批量查询 in_kb（避免逐文件阻塞事件循环）
+
+**测试：** 318 个全过（原 304 + 新 14）
+
+---
+
+## Phase 4：知识库前端 + 侧边栏文件选择器（2026-06-16）✅
+
+**知识库列表页（KnowledgeView.vue）：**
+- 卡片网格布局
+- 创建知识库弹窗
+- 删除知识库（二次确认）
+- 点击进入详情页
+
+**知识库详情页（KnowledgeDetailView.vue）：**
+- 概述显示 + 内联编辑
+- 文档列表（文件名、chunk_count、状态、概述）
+- 从 KB 移除按钮（灰色）
+- 删除文件按钮（红色，二次确认）
+- 添加文件弹窗（从暂存区选择）
+- "在此知识库中提问"按钮
+
+**侧边栏文件选择器：**
+- 侧边栏"检索范围"区域
+- 单选模式（全部文件 / 某个文件）
+- 切换对话时自动恢复选中状态
+- 输入框上方显示当前检索范围 + 清除按钮
+
+**路由：** 新增 `/knowledge/:id` 路由
+
+**测试：** 318 个全过
+
+---
+
 ## 下一步计划
 
-- Phase 1：前端布局重构（侧边栏导航、用户右上角、文件选择器）
-- Phase 2：流式+反馈+追问前端对接
-- Phase 3：知识库后端扩展
-- Phase 4：知识库前端
+- Phase 2：流式+反馈+追问前端对接（后端已就绪，前端需要对接）
 - Phase 5：细节打磨 + Docker + CI/CD
+- Phase 6：批量导入 + 数据源（可选）
