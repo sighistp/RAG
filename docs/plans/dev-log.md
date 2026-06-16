@@ -2509,7 +2509,80 @@ frontend/
 
 ---
 
+---
+
+## Phase 5：细节打磨（2026-06-16）✅
+
+**改动文件：**
+
+| 文件 | 改动 |
+|------|------|
+| `frontend/src/utils/api.ts` | 新建 — 全局 axios 错误拦截器（401 自动登出、403/500/网络错误提示） |
+| `frontend/src/stores/auth.ts` | 改用共享 api 实例 |
+| `frontend/src/stores/chat.ts` | 改用共享 api 实例 |
+| `frontend/src/stores/files.ts` | 改用共享 api 实例 + loadFiles 加 try/catch |
+
+**错误处理：**
+- 401 → 自动跳转登录页
+- 403 → 显示"权限不足"
+- 500+ → 显示"服务器错误"
+- 网络错误 → 显示"网络连接失败"
+
+**已验证无需改动：**
+- ChatView 输入框已在流式时禁用
+- 侧边栏已有空状态提示
+- 文件上传已有错误提示
+
+**测试：** 318 个全过
+
+---
+
+---
+
+## Phase 6：批量导入前端（2026-06-16）✅
+
+**改动文件：** `frontend/src/views/FilesView.vue`
+
+**功能：**
+- 批量导入按钮（与上传按钮并列）
+- 导入弹窗：文件选择 + 模式选择（qa_pair/document/table）+ 动态配置字段
+- qa_pair 模式：question_col + answer_col 输入
+- document 模式：content_col 输入
+- table 模式：无额外配置
+- 导入结果展示（chunks 数量）
+- 调用 `POST /batch-import` 端点
+
+**测试：** 318 个全过
+
+---
+
+## 本轮迭代完成总结（2026-06-15 ~ 2026-06-16）
+
+**完成的 Phase：**
+
+| Phase | 内容 | 新增测试 |
+|-------|------|---------|
+| Phase 1 | 前端布局重构（侧边栏导航、用户右上角、页面标题） | +8 |
+| Phase 2 | 流式+反馈+追问前端对接 | +8 |
+| Phase 3 | 知识库后端（表、元数据生成、详情端点、in_kb） | +14 |
+| Phase 4 | 知识库前端（列表页、详情页、文件选择器） | +4 |
+| Phase 5 | 错误处理完善（全局 axios 拦截器） | 0 |
+| Phase 6 | 批量导入前端 | 0 |
+
+**代码审查修复：**
+- /data/upload 挂载暴露敏感文件
+- kb_documents 未被填充
+- KB 删除不清理关联数据
+- 文件路径存储已删除的临时路径
+- 反馈按钮 toggle 支持
+
+**最终状态：** 318 个测试全过，已推送到 GitHub main 分支。
+
+---
+
 ## 下一步计划
 
-- Phase 5：细节打磨 + Docker + CI/CD
-- Phase 6：批量导入 + 数据源（可选）
+- Docker 容器化
+- CI/CD（GitHub Actions）
+- 前端测试（当前 0 个前端测试）
+- 数据源集成（RSS/数据库/API，可选）
