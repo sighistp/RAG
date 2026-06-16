@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -50,7 +50,7 @@ onMounted(async () => {
 async function loadDetail() {
   loading.value = true
   try {
-    const res = await axios.get(`/knowledge-bases/${kbId}`, {
+    const res = await api.get(`/knowledge-bases/${kbId}`, {
       headers: authStore.getAuthHeaders()
     })
     const data = res.data
@@ -92,7 +92,7 @@ function cancelEditOverview() {
 async function saveOverview() {
   savingOverview.value = true
   try {
-    await axios.put(`/knowledge-bases/${kbId}/overview`, { overview: overviewDraft.value }, {
+    await api.put(`/knowledge-bases/${kbId}/overview`, { overview: overviewDraft.value }, {
       headers: authStore.getAuthHeaders()
     })
     kbOverview.value = overviewDraft.value
@@ -114,7 +114,7 @@ async function removeFromKB(doc: any) {
       { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' }
     )
     removingDoc.value = doc.filename
-    await axios.delete(`/knowledge-bases/${kbId}/documents/${encodeURIComponent(doc.filename)}`, {
+    await api.delete(`/knowledge-bases/${kbId}/documents/${encodeURIComponent(doc.filename)}`, {
       headers: authStore.getAuthHeaders()
     })
     ElMessage.success('已从知识库移除')
@@ -136,7 +136,7 @@ async function deleteFile(doc: any) {
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'error' }
     )
     removingDoc.value = doc.filename
-    await axios.delete(`/files/${encodeURIComponent(doc.filename)}`, {
+    await api.delete(`/files/${encodeURIComponent(doc.filename)}`, {
       headers: authStore.getAuthHeaders()
     })
     ElMessage.success('文件已删除')
@@ -160,7 +160,7 @@ async function openAddDialog() {
 async function loadAvailableFiles() {
   loadingFiles.value = true
   try {
-    const res = await axios.get('/files', {
+    const res = await api.get('/files', {
       headers: authStore.getAuthHeaders()
     })
     // Filter out files already in this KB
@@ -189,7 +189,7 @@ async function addFileToKB() {
     const blob = await res.blob()
     formData.append('file', blob, selectedFile.value.name)
 
-    await axios.post(`/knowledge-bases/${kbId}/documents`, formData, {
+    await api.post(`/knowledge-bases/${kbId}/documents`, formData, {
       headers: {
         ...authStore.getAuthHeaders(),
         'Content-Type': 'multipart/form-data'

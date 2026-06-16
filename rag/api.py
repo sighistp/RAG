@@ -626,8 +626,8 @@ async def query(req: QueryRequest, user_id: str = Security(verify_api_key), auth
     if authorization:
         try:
             token = authorization.replace("Bearer ", "")
-            user = _get_current_user(token)
-        except HTTPException:
+            user = await asyncio.to_thread(_get_current_user, token)
+        except (HTTPException, Exception):
             logger.debug("Query auth failed (non-critical): token invalid or expired")
 
     # Determine session_id: use conversation-based session if user + conversation_id provided
@@ -647,8 +647,8 @@ async def query(req: QueryRequest, user_id: str = Security(verify_api_key), auth
 
     # Save messages to chat_messages if user and conversation_id are provided
     if user and req.conversation_id is not None:
-        user_db.add_message(req.conversation_id, "user", req.question)
-        user_db.add_message(req.conversation_id, "assistant", result.answer)
+        await asyncio.to_thread(user_db.add_message, req.conversation_id, "user", req.question)
+        await asyncio.to_thread(user_db.add_message, req.conversation_id, "assistant", result.answer)
 
     return QueryResponse(answer=result.answer, sources=result.sources)
 
@@ -669,8 +669,8 @@ async def query_stream(
     if authorization:
         try:
             token = authorization.replace("Bearer ", "")
-            user = _get_current_user(token)
-        except HTTPException:
+            user = await asyncio.to_thread(_get_current_user, token)
+        except (HTTPException, Exception):
             pass
 
     session_id = req.session_id
@@ -693,8 +693,8 @@ async def query_stream(
             yield event
         # 流式完成后持久化到 chat_messages
         if user and req.conversation_id is not None and answer_buffer:
-            user_db.add_message(req.conversation_id, "user", req.question)
-            user_db.add_message(req.conversation_id, "assistant", answer_buffer)
+            await asyncio.to_thread(user_db.add_message, req.conversation_id, "user", req.question)
+            await asyncio.to_thread(user_db.add_message, req.conversation_id, "assistant", answer_buffer)
 
     return StreamingResponse(
         event_generator(),

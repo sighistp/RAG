@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Collection, Delete } from '@element-plus/icons-vue'
@@ -30,7 +30,7 @@ onMounted(async () => {
 async function loadKBs() {
   loading.value = true
   try {
-    const res = await axios.get('/knowledge-bases', {
+    const res = await api.get('/knowledge-bases', {
       headers: authStore.getAuthHeaders()
     })
     knowledgeBases.value = res.data
@@ -54,7 +54,7 @@ async function createKB() {
   }
   creating.value = true
   try {
-    await axios.post('/knowledge-bases', { name }, {
+    await api.post('/knowledge-bases', { name }, {
       headers: authStore.getAuthHeaders()
     })
     ElMessage.success('知识库创建成功')
@@ -78,7 +78,7 @@ async function deleteKB(kb: KnowledgeBase) {
         type: 'warning'
       }
     )
-    await axios.delete(`/knowledge-bases/${kb.kb_id}`, {
+    await api.delete(`/knowledge-bases/${kb.kb_id}`, {
       headers: authStore.getAuthHeaders()
     })
     ElMessage.success('知识库已删除')

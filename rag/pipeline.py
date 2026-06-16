@@ -92,8 +92,10 @@ class RAGPipeline:
 
         chunk_hashes = [hashlib.md5(c.text.encode()).hexdigest() for c in context]
         fp = FeedbackProcessor(settings.memory_db_path)
-        weights = fp.get_weights(chunk_hashes)
-        fp.close()
+        try:
+            weights = fp.get_weights(chunk_hashes)
+        finally:
+            fp.close()
 
         sid = session_id or self.session_id or "default"
         messages = self.memory.build_messages(sid, question, context)
