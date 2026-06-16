@@ -329,17 +329,6 @@ def _check_files_in_kb(filenames: list[str]) -> set[str]:
         return {r[0] for r in rows}
     except Exception:
         return set()
-    conn = sqlite3.connect(db_path)
-    try:
-        row = conn.execute(
-            "SELECT COUNT(*) FROM kb_documents WHERE filename = ? AND status = 'indexed'",
-            (filename,)
-        ).fetchone()
-        return row[0] > 0
-    except:
-        return False
-    finally:
-        conn.close()
 
 
 def _human_size(size: int) -> str:
@@ -805,11 +794,13 @@ async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: 
         try:
             conn.execute(
                 "INSERT OR REPLACE INTO kb_documents (kb_id, filename, file_path, chunk_count, status) VALUES (?, ?, ?, ?, 'indexed')",
-                (kb_id, filename, tmp_path, count)
+                (kb_id, filename, None, count)
             )
+            # Derive human-readable name from kb_id (format: kb_slug_hex)
+            readable_name = kb_id.split("_")[1] if "_" in kb_id else kb_id
             conn.execute(
                 "INSERT OR IGNORE INTO kb_metadata (kb_id, name) VALUES (?, ?)",
-                (kb_id, kb_id)
+                (kb_id, readable_name)
             )
             conn.commit()
         finally:
@@ -825,6 +816,16 @@ async def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Secu
         manager.remove_document(kb_id, doc_name)
     except Exception:
         raise HTTPException(status_code=404, detail=f"文档 {doc_name} 不存在")
+    # Clean up kb_documents record
+    def _cleanup():
+        import sqlite3
+        conn = sqlite3.connect(str(_DB_PATH))
+        try:
+            conn.execute("DELETE FROM kb_documents WHERE kb_id = ? AND filename = ?", (kb_id, doc_name))
+            conn.commit()
+        finally:
+            conn.close()
+    await asyncio.to_thread(_cleanup)
     return {"status": "removed", "kb_id": kb_id, "doc_name": doc_name}
 
 
@@ -1024,12 +1025,13 @@ def serve_spa():
 
 
 # Serve only safe subdirectories (NOT the entire data/ which contains .db, jwt_secret, etc.)
-DATA_CHARTS_DIR = DATA_DIR_PATH.parent / "data" / "charts"
+DATA_CHARTS_DIR = DATA_DIR_PATH / "charts"
 DATA_CHARTS_DIR.mkdir(exist_ok=True)
 if DATA_CHARTS_DIR.is_dir():
     app.mount("/data/charts", StaticFiles(directory=str(DATA_CHARTS_DIR)), name="data-charts")
-if DATA_DIR_PATH.is_dir():
-    app.mount("/data/upload", StaticFiles(directory=str(DATA_DIR_PATH)), name="data-upload")
+DATA_UPLOAD_DIR = DATA_DIR_PATH / "upload"
+if DATA_UPLOAD_DIR.is_dir():
+    app.mount("/data/upload", StaticFiles(directory=str(DATA_UPLOAD_DIR)), name="data-upload")
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
