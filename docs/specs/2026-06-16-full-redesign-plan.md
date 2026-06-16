@@ -98,7 +98,7 @@ const pageTitle = computed(() => {
 
 ### 2.4 侧边栏文件选择器
 
-**功能：** 显示 `data/upload/` 下的暂存文件，带勾选框。勾选后自动限定检索范围。
+**功能：** 侧边栏底部显示 `data/upload/` 下的**暂存文件**（未编入任何知识库的文件），带勾选框。已编入知识库的文件在知识库详情页管理，不在侧边栏显示。
 
 **数据流：**
 ```
@@ -108,7 +108,7 @@ const pageTitle = computed(() => {
 ```
 
 **实现：**
-- 侧边栏底部显示文件列表（从 `/files` API 获取）
+- 侧边栏底部显示暂存文件列表（从 `/files` API 获取）
 - 每个文件有勾选框
 - 选中状态存入 `chatStore.selectedFiles`
 - 切换对话时恢复该对话的选中文件
@@ -119,7 +119,7 @@ const pageTitle = computed(() => {
 
 ### 2.5 检索范围状态提示
 
-**功能：** 输入框上方显示当前检索范围。
+**功能：** 输入框上方显示当前检索范围。检索范围绑定到对话，切换对话时自动恢复。
 
 ```
 未选择文件时：
@@ -137,6 +137,12 @@ const pageTitle = computed(() => {
 │  🔍 在「运维知识库」中搜索  [× 清除]       │
 └─────────────────────────────────────────┘
 ```
+
+**行为规则：**
+- **新建对话：** 默认"搜索全部文件"，用户可在侧边栏勾选文件或选择知识库
+- **已有对话：** 显示该对话上次使用的检索范围（只读），点击可切换
+- **切换对话：** 自动恢复该对话的检索范围
+- **知识库详情页点"提问"：** 自动创建新对话，锁定为该知识库
 
 **改动文件：** `frontend/src/views/ChatView.vue`
 
@@ -247,6 +253,25 @@ if (!currentConvId.value) {
 | `/knowledge-bases/{id}/documents/{name}/toc` | PUT | 编辑文件目录 |
 | `/knowledge-bases/{id}/documents/{name}/summary` | PUT | 编辑文件概述 |
 
+### 3.2.1 知识库详情页"提问"按钮行为
+
+点击 [在此知识库中提问] 按钮：
+1. 跳转到对话页（`/`）
+2. 自动创建新对话
+3. 检索范围自动锁定为该知识库
+4. 输入框上方显示"🔍 在「运维知识库」中搜索"
+
+实现方式：通过 router query 参数传递 `kb_id`，ChatView 在 `onMounted` 时读取并设置检索范围。
+
+### 3.2.2 文档操作按钮区分
+
+知识库详情页的文档列表每行有两个操作按钮：
+
+| 操作 | 按钮样式 | 行为 | 确认 |
+|------|---------|------|------|
+| 从知识库移除 | 灰色按钮 | 只移除索引，文件保留在 data/upload/ | 无需确认 |
+| 删除文件 | 红色按钮 | 从磁册删除文件 | 二次确认弹窗 |
+
 ### 3.3 数据模型扩展
 
 **SQLite (data/users.db) 新增表：**
@@ -270,7 +295,7 @@ CREATE TABLE kb_documents (
     file_path TEXT,
     toc TEXT,                        -- LLM 生成的目录（JSON）
     summary TEXT,                    -- LLM 生成的文档概述
-    chunk_count INTEGER DEFAULT 0,
+    chunk_count INTEGER DEFAULT 0,   -- 该文档的 chunk 数量
     status TEXT DEFAULT 'pending',   -- pending / indexed / error
     added_at TEXT DEFAULT (datetime('now')),
     UNIQUE(kb_id, filename)
