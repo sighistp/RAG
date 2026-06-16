@@ -2447,6 +2447,45 @@ frontend/
 
 ## 下一步计划
 
+---
+
+## Phase 3+4 代码审查（2026-06-16）
+
+**审查范围：** Phase 3（知识库后端）+ Phase 4（知识库前端 + 侧边栏文件选择器）
+
+### Critical 修复（4 项）
+
+| 问题 | 修复 |
+|------|------|
+| /data/upload 挂载暴露整个 data/ 目录 | 改为 DATA_DIR_PATH / "upload" |
+| _check_files_in_kb 有不可达死代码 | 删除死代码块 |
+| kb_documents.file_path 存储已删除的临时路径 | 改为存储 None |
+| KB 端点无用户隔离（任何用户可操作任何 KB） | 记录为已知问题，后续加 user_id 校验 |
+
+### Important 修复（3 项）
+
+| 问题 | 修复 |
+|------|------|
+| remove_document_from_kb 不清理 kb_documents | 添加 DELETE FROM kb_documents |
+| kb_metadata.name 存的是 kb_id 而非可读名称 | 从 kb_id slug 提取可读名称 |
+| DATA_CHARTS_DIR 路径重复 | 简化为 DATA_DIR_PATH / "charts" |
+
+### 已知遗留（未修复）
+
+| 问题 | 级别 | 说明 |
+|------|------|------|
+| KB 端点无 user_id 隔离 | Critical | 需要统一认证方案后再修 |
+| /files 端点无认证 | Important | 需要和认证方案一起改 |
+| generate_toc/generate_summary 未被调用 | Important | 函数已实现但未集成到 add_document_to_kb |
+| SQLite 连接不一致 | Important | KB 端点用 raw sqlite3 而非 user_db 实例 |
+| kb_metadata.user_id 从未被填充 | Minor | 等认证方案确定后再修 |
+
+**测试：** 318 个全过
+
+---
+
+## 下一步计划
+
 - Phase 2：流式+反馈+追问前端对接（后端已就绪，前端需要对接）
 - Phase 5：细节打磨 + Docker + CI/CD
 - Phase 6：批量导入 + 数据源（可选）
