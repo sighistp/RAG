@@ -61,6 +61,7 @@ async def request_id_middleware(request, call_next):
 
 # Vue Router SPA fallback: browser requests to known frontend paths → serve index.html
 _VUE_ROUTES = {"/files", "/knowledge", "/analytics"}
+_VUE_ROUTE_PREFIXES = {"/knowledge/"}
 
 
 @app.middleware("http")
@@ -68,10 +69,11 @@ async def spa_fallback_middleware(request, call_next):
     path = request.url.path
     accept = request.headers.get("accept", "")
     # Only for GET requests from browsers to known Vue routes
-    if request.method == "GET" and path in _VUE_ROUTES and "text/html" in accept:
-        index = STATIC_DIR / "index.html"
-        if index.exists():
-            return FileResponse(index, media_type="text/html")
+    if request.method == "GET" and "text/html" in accept:
+        if path in _VUE_ROUTES or any(path.startswith(p) for p in _VUE_ROUTE_PREFIXES):
+            index = STATIC_DIR / "index.html"
+            if index.exists():
+                return FileResponse(index, media_type="text/html")
     return await call_next(request)
 
 
