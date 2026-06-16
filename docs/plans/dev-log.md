@@ -2292,7 +2292,99 @@ frontend/
 
 ---
 
+---
+
+## 全面代码审查（2026-06-16）
+
+**审查范围：** 全部后端（rag/）+ 全部前端（frontend/src/）+ 前后端对齐
+
+**评分：** 7.5/10 → 修复后预计 8.5/10
+
+### Critical 修复（4 项）
+
+| 问题 | 文件 | 修复 |
+|------|------|------|
+| `/data` 目录暴露 users.db、jwt_secret.txt | api.py | 只挂载 data/upload/ 和 data/charts/ |
+| `update_message` 无权限校验 | user_db.py | 加 user_id 所有权检查 |
+| XSS：v-html 渲染 LLM 输出 | ChatView.vue | 加 DOMPurify 清理 |
+| SQL 注入可绕过关键词黑名单 | tools.py | 加 PRAGMA query_only = ON |
+
+### Important 修复（9 项）
+
+| 问题 | 修复 |
+|------|------|
+| Auth 方案混乱（X-API-Key vs JWT） | verify_api_key 同时接受两种认证 |
+| SSE 缺少响应头 | 加 Cache-Control/Connection/X-Accel-Buffering |
+| SSE 解析器丢 token | 加行缓冲处理 TCP 分片 |
+| fetchUser 网络错误误登出 | 只在 401 时登出 |
+| sendFeedback 没调后端 | 改为调用 /feedback API |
+| KnowledgeView auth header 错误 | 改为 Authorization: Bearer |
+| regenerate 没调后端 | 改为调用 /regenerate API |
+| UserDB 未使用的密码哈希 | 删除 |
+| formatTime 时间戳解析错误 | 处理 Unix timestamp * 1000 |
+
+**测试：** 304 个全过
+
+---
+
+## 前端全面重构设计（2026-06-16）
+
+**来源：** 用户使用反馈 + 代码审查
+
+**设计文档：** `docs/specs/2026-06-16-full-redesign-plan.md`
+**实现计划：** `docs/plans/2026-06-16-full-redesign-impl-plan.md`
+
+### 用户反馈
+
+1. 导航（对话/文件/知识库/分析）应在侧边栏，不在顶部
+2. 用户头像应在右上角，点击弹出下拉菜单
+3. 点击文件/知识库/分析页面时标题仍显示"新对话"（bug）
+4. 不知道当前对话用了哪个文件/知识库
+5. 不能选择检索范围（单一文件或知识库）
+
+### 设计方案
+
+**前端布局重构：**
+- 侧边栏：品牌 → 新建对话 → 导航菜单 → 文件选择器 → 对话列表
+- 右上角：用户头像 + 下拉菜单（退出登录）
+- 页面标题根据路由切换
+
+**文件选择器：**
+- 侧边栏底部显示暂存文件列表
+- 单选模式（后端 doc_name 只支持单文件）
+- 选中后自动限定检索范围
+- 输入框上方显示当前范围状态
+
+**知识库系统：**
+- 后端已有完整 CRUD 端点（6 个）
+- 新增：目录/概述自动生成（LLM）、手动编辑、详情页
+- 新增：kb_metadata + kb_documents 两张表
+- 新增：/files 接口返回 in_kb 字段
+- 前端：知识库列表页、详情页、文件编入/移除/删除
+
+**流式/反馈/追问对接：**
+- 后端 /query/stream、/feedback、/suggest 已实现
+- 前端需要对接 SSE 流式显示、反馈按钮调 API、追问建议显示
+
+### 实现计划
+
+| Phase | 内容 | 时间 | 测试 |
+|-------|------|------|------|
+| 1 | 前端布局重构 | 第 1 天 | +8 |
+| 2 | 流式+反馈+追问对接 | 第 2 天 | +8 |
+| 3 | 知识库后端扩展 | 第 3-5 天 | +15 |
+| 4 | 知识库前端 | 第 6-7 天 | +10 |
+| 5 | 细节打磨 | 第 8 天 | +5 |
+| 6 | 批量导入+数据源（可选） | 第 9+ 天 | +5 |
+
+**总计：** 约 8-9 天，350+ 测试
+
+---
+
 ## 下一步计划
 
-- Phase 4：后端异步化（已完成核心部分）+ Docker + CI/CD
-- Phase 5（剩余）：数据源集成（RSS/数据库/API，可选）
+- Phase 1：前端布局重构（侧边栏导航、用户右上角、文件选择器）
+- Phase 2：流式+反馈+追问前端对接
+- Phase 3：知识库后端扩展
+- Phase 4：知识库前端
+- Phase 5：细节打磨 + Docker + CI/CD
