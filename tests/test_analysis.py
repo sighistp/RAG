@@ -87,37 +87,64 @@ class TestAnalysisCardsDB:
     def test_delete_card(self, db):
         uid = db.create_user("alice", "s3cret")
         card_id = db.create_card(uid, "Temp Card")
-        assert db.delete_card(card_id) is True
+        assert db.delete_card(card_id, uid) is True
         assert db.list_cards(uid) == []
+
+    def test_delete_card_wrong_user(self, db):
+        """User should not be able to delete another user's card."""
+        uid1 = db.create_user("alice", "s3cret")
+        uid2 = db.create_user("bob", "s3cret")
+        card_id = db.create_card(uid1, "Alice Card")
+        assert db.delete_card(card_id, uid2) is False
+        assert len(db.list_cards(uid1)) == 1
 
     def test_delete_card_cascades_questions(self, db):
         uid = db.create_user("alice", "s3cret")
         card_id = db.create_card(uid, "Temp Card")
-        db.add_question(card_id, "What is X?")
-        db.add_question(card_id, "What is Y?")
-        assert db.delete_card(card_id) is True
+        db.add_question(card_id, "What is X?", user_id=uid)
+        db.add_question(card_id, "What is Y?", user_id=uid)
+        assert db.delete_card(card_id, uid) is True
         assert db.list_cards(uid) == []
 
     def test_rename_card(self, db):
         uid = db.create_user("alice", "s3cret")
         card_id = db.create_card(uid, "Old Name")
-        assert db.rename_card(card_id, "New Name") is True
+        assert db.rename_card(card_id, "New Name", uid) is True
         cards = db.list_cards(uid)
         assert cards[0]["name"] == "New Name"
 
+    def test_rename_card_wrong_user(self, db):
+        """User should not be able to rename another user's card."""
+        uid1 = db.create_user("alice", "s3cret")
+        uid2 = db.create_user("bob", "s3cret")
+        card_id = db.create_card(uid1, "Alice Card")
+        assert db.rename_card(card_id, "Hacked", uid2) is False
+        cards = db.list_cards(uid1)
+        assert cards[0]["name"] == "Alice Card"
+
     def test_rename_card_nonexistent(self, db):
-        assert db.rename_card(9999, "New") is False
+        uid = db.create_user("alice", "s3cret")
+        assert db.rename_card(9999, "New", uid) is False
 
     def test_add_question(self, db):
         uid = db.create_user("alice", "s3cret")
         card_id = db.create_card(uid, "Card")
-        qid = db.add_question(card_id, "What is AI?")
+        qid = db.add_question(card_id, "What is AI?", user_id=uid)
         assert isinstance(qid, int) and qid > 0
+
+    def test_add_question_wrong_user(self, db):
+        """User should not be able to add questions to another user's card."""
+        uid1 = db.create_user("alice", "s3cret")
+        uid2 = db.create_user("bob", "s3cret")
+        card_id = db.create_card(uid1, "Alice Card")
+        qid = db.add_question(card_id, "Hacked?", user_id=uid2)
+        assert qid is None
+        assert db.get_questions(card_id) == []
 
     def test_add_question_with_defaults(self, db):
         uid = db.create_user("alice", "s3cret")
         card_id = db.create_card(uid, "Card")
-        qid = db.add_question(card_id, "What is ML?")
+        qid = db.add_question(card_id, "What is ML?", user_id=uid)
         questions = db.get_questions(card_id)
         assert len(questions) == 1
         q = questions[0]
@@ -136,6 +163,7 @@ class TestAnalysisCardsDB:
             answer="Retrieval-Augmented Generation",
             source_mode="chat",
             source_message_id=42,
+            user_id=uid,
         )
         questions = db.get_questions(card_id)
         assert len(questions) == 1
@@ -160,12 +188,22 @@ class TestAnalysisCardsDB:
     def test_delete_question(self, db):
         uid = db.create_user("alice", "s3cret")
         card_id = db.create_card(uid, "Card")
-        qid = db.add_question(card_id, "What?")
-        assert db.delete_question(qid) is True
+        qid = db.add_question(card_id, "What?", user_id=uid)
+        assert db.delete_question(qid, uid) is True
         assert db.get_questions(card_id) == []
 
+    def test_delete_question_wrong_user(self, db):
+        """User should not be able to delete questions from another user's card."""
+        uid1 = db.create_user("alice", "s3cret")
+        uid2 = db.create_user("bob", "s3cret")
+        card_id = db.create_card(uid1, "Alice Card")
+        qid = db.add_question(card_id, "Alice Q?", user_id=uid1)
+        assert db.delete_question(qid, uid2) is False
+        assert len(db.get_questions(card_id)) == 1
+
     def test_delete_question_nonexistent(self, db):
-        assert db.delete_question(9999) is False
+        uid = db.create_user("alice", "s3cret")
+        assert db.delete_question(9999, uid) is False
 
 
 # ═══════════════════════════════════════════════════════════════════════════

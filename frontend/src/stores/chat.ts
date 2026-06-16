@@ -25,6 +25,7 @@ interface Message {
 export const useChatStore = defineStore('chat', () => {
   const conversations = ref<Conversation[]>([])
   const currentConvId = ref<number | null>(null)
+  const currentMode = ref<ChatMode>('file')
   const messages = ref<Message[]>([])
   const isStreaming = ref(false)
   const suggestedQuestions = ref<string[]>([])
@@ -59,6 +60,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function createConversation(mode: ChatMode = 'file') {
     const auth = useAuthStore()
+    currentMode.value = mode
     // Save current selection before switching
     if (currentConvId.value !== null) {
       _selectedFilesByConv.set(currentConvId.value, selectedFile.value)
@@ -178,7 +180,7 @@ export const useChatStore = defineStore('chat', () => {
       assistantMsg.sources = sources
 
       // Reload conversations to update title
-      await loadConversations(undefined, true)
+      await loadConversations(currentMode.value, true)
 
       // Fetch suggested follow-up questions after streaming completes
       if (answer) {
@@ -250,6 +252,7 @@ export const useChatStore = defineStore('chat', () => {
   return {
     conversations,
     currentConvId,
+    currentMode,
     messages,
     isStreaming,
     suggestedQuestions,

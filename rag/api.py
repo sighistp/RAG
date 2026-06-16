@@ -60,7 +60,7 @@ async def request_id_middleware(request, call_next):
 
 
 # Vue Router SPA fallback: browser requests to known frontend paths → serve index.html
-_VUE_ROUTES = {"/files", "/knowledge", "/analytics"}
+_VUE_ROUTES = {"/files", "/knowledge", "/analytics", "/mode/file", "/mode/kb", "/mode/analysis"}
 _VUE_ROUTE_PREFIXES = {"/knowledge/"}
 
 
@@ -1091,6 +1091,21 @@ async def create_analysis_card(req: CreateCardRequest, authorization: str = Head
     return {"id": card_id, "name": req.name}
 
 
+@app.get("/analysis/cards/{card_id}/questions", summary="获取卡片问题列表")
+async def list_analysis_questions(card_id: int, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    # Verify card ownership
+    cards = await asyncio.to_thread(user_db.list_cards, user["id"])
+    if not any(c["id"] == card_id for c in cards):
+        raise HTTPException(status_code=404, detail="卡片不存在或无权操作")
+    return await asyncio.to_thread(user_db.get_questions, card_id)
+
+
 @app.delete("/analysis/cards/{card_id}", summary="删除分析卡片")
 async def delete_analysis_card(card_id: int, authorization: str = Header(default="")):
     if not authorization:
@@ -1099,7 +1114,7 @@ async def delete_analysis_card(card_id: int, authorization: str = Header(default
     user = await asyncio.to_thread(_get_current_user, token)
     if not user:
         raise HTTPException(status_code=401, detail="token 无效或已过期")
-    deleted = await asyncio.to_thread(user_db.delete_card, card_id)
+    deleted = await asyncio.to_thread(user_db.delete_card, card_id, user["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="卡片不存在")
     return {"status": "deleted"}
@@ -1113,7 +1128,7 @@ async def rename_analysis_card(card_id: int, req: RenameCardRequest, authorizati
     user = await asyncio.to_thread(_get_current_user, token)
     if not user:
         raise HTTPException(status_code=401, detail="token 无效或已过期")
-    updated = await asyncio.to_thread(user_db.rename_card, card_id, req.name)
+    updated = await asyncio.to_thread(user_db.rename_card, card_id, req.name, user["id"])
     if not updated:
         raise HTTPException(status_code=404, detail="卡片不存在")
     return {"id": card_id, "name": req.name}
@@ -1134,7 +1149,10 @@ async def add_analysis_question(card_id: int, req: AddQuestionRequest, authoriza
         req.answer,
         req.source_mode,
         req.source_message_id,
+        user["id"],
     )
+    if qid is None:
+        raise HTTPException(status_code=404, detail="卡片不存在或无权操作")
     return {"id": qid, "question": req.question, "answer": req.answer}
 
 
@@ -1146,7 +1164,7 @@ async def delete_analysis_question(card_id: int, qid: int, authorization: str = 
     user = await asyncio.to_thread(_get_current_user, token)
     if not user:
         raise HTTPException(status_code=401, detail="token 无效或已过期")
-    deleted = await asyncio.to_thread(user_db.delete_question, qid)
+    deleted = await asyncio.to_thread(user_db.delete_question, qid, user["id"])
     if not deleted:
         raise HTTPException(status_code=404, detail="问题不存在")
     return {"status": "deleted"}

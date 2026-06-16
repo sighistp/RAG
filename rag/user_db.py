@@ -376,24 +376,33 @@ class UserDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def delete_card(self, card_id: int) -> bool:
-        """Delete an analysis card and its questions. Returns True if deleted."""
+    def delete_card(self, card_id: int, user_id: int) -> bool:
+        """Delete an analysis card and its questions. Returns True if deleted.
+
+        Only deletes if the card belongs to *user_id*.
+        """
         with self._lock:
             self._conn.execute(
-                "DELETE FROM analysis_questions WHERE card_id = ?", (card_id,)
+                "DELETE FROM analysis_questions WHERE card_id = ? "
+                "AND card_id IN (SELECT id FROM analysis_cards WHERE id = ? AND user_id = ?)",
+                (card_id, card_id, user_id),
             )
             cur = self._conn.execute(
-                "DELETE FROM analysis_cards WHERE id = ?", (card_id,)
+                "DELETE FROM analysis_cards WHERE id = ? AND user_id = ?",
+                (card_id, user_id),
             )
             self._conn.commit()
             return cur.rowcount > 0
 
-    def rename_card(self, card_id: int, name: str) -> bool:
-        """Rename an analysis card. Returns True if updated."""
+    def rename_card(self, card_id: int, name: str, user_id: int) -> bool:
+        """Rename an analysis card. Returns True if updated.
+
+        Only renames if the card belongs to *user_id*.
+        """
         with self._lock:
             cur = self._conn.execute(
-                "UPDATE analysis_cards SET name = ? WHERE id = ?",
-                (name, card_id),
+                "UPDATE analysis_cards SET name = ? WHERE id = ? AND user_id = ?",
+                (name, card_id, user_id),
             )
             self._conn.commit()
             return cur.rowcount > 0
@@ -409,9 +418,22 @@ class UserDB:
         answer: str = "",
         source_mode: str = "",
         source_message_id: int | None = None,
-    ) -> int:
-        """Add a question to a card and return its id."""
+        user_id: int | None = None,
+    ) -> int | None:
+        """Add a question to a card and return its id.
+
+        If *user_id* is provided, only adds if the card belongs to that user.
+        Returns ``None`` if the card does not belong to the user.
+        """
         with self._lock:
+            if user_id is not None:
+                # Verify card ownership
+                row = self._conn.execute(
+                    "SELECT 1 FROM analysis_cards WHERE id = ? AND user_id = ?",
+                    (card_id, user_id),
+                ).fetchone()
+                if row is None:
+                    return None
             cur = self._conn.execute(
                 "INSERT INTO analysis_questions "
                 "(card_id, question, answer, source_mode, source_message_id) "
@@ -432,11 +454,16 @@ class UserDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def delete_question(self, question_id: int) -> bool:
-        """Delete a question. Returns True if deleted."""
+    def delete_question(self, question_id: int, user_id: int) -> bool:
+        """Delete a question. Returns True if deleted.
+
+        Only deletes if the question's card belongs to *user_id*.
+        """
         with self._lock:
             cur = self._conn.execute(
-                "DELETE FROM analysis_questions WHERE id = ?", (question_id,)
+                "DELETE FROM analysis_questions WHERE id = ? "
+                "AND card_id IN (SELECT id FROM analysis_cards WHERE user_id = ?)",
+                (question_id, user_id),
             )
             self._conn.commit()
             return cur.rowcount > 0

@@ -2,16 +2,21 @@
 import { ref } from 'vue'
 import { Delete, Plus, ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 
+interface Question {
+  id: number
+  question: string
+}
+
 const props = defineProps<{
+  cardId: number
   title: string
-  questions: string[]
-  index: number
+  questions: Question[]
 }>()
 
 const emit = defineEmits<{
   (e: 'update:title', value: string): void
   (e: 'add-question', value: string): void
-  (e: 'remove-question', index: number): void
+  (e: 'remove-question', questionId: number): void
 }>()
 
 const editing = ref(false)
@@ -44,8 +49,8 @@ function handleAddQuestion() {
   showInput.value = false
 }
 
-function handleRemoveQuestion(i: number) {
-  emit('remove-question', i)
+function handleRemoveQuestion(questionId: number) {
+  emit('remove-question', questionId)
 }
 </script>
 
@@ -76,9 +81,9 @@ function handleRemoveQuestion(i: number) {
 
     <div v-if="!collapsed" class="card-body">
       <div v-if="!questions.length" class="card-empty">暂无问题</div>
-      <div v-for="(q, i) in questions" :key="i" class="card-question">
-        <span class="question-text">{{ q }}</span>
-        <button class="question-delete" @click="handleRemoveQuestion(i)" title="删除">
+      <div v-for="q in questions" :key="q.id" class="card-question">
+        <span class="question-text">{{ q.question }}</span>
+        <button class="question-delete" @click="handleRemoveQuestion(q.id)" title="删除">
           <el-icon><Delete /></el-icon>
         </button>
       </div>

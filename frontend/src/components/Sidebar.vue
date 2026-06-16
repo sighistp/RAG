@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore, type ChatMode } from '../stores/chat'
@@ -13,6 +13,11 @@ const currentMode = computed<ChatMode>(() => {
   const m = route.path.match(/\/mode\/(\w+)/)
   return (m?.[1] as ChatMode) || 'file'
 })
+
+// Sync route-derived mode to store so sendMessage reloads the right conversations
+watch(currentMode, (mode) => {
+  chatStore.currentMode = mode
+}, { immediate: true })
 
 const modes: Array<{ key: ChatMode; icon: string; label: string }> = [
   { key: 'file', icon: '📄', label: '文件' },

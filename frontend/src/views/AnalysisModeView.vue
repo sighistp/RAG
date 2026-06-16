@@ -8,10 +8,15 @@ import { Plus, DataAnalysis } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 
+interface Question {
+  id: number
+  question: string
+}
+
 interface CardGroup {
-  id: string
+  id: number
   name: string
-  questions: string[]
+  questions: Question[]
 }
 
 const cards = ref<CardGroup[]>([])
@@ -25,7 +30,13 @@ async function loadCards() {
   loading.value = true
   try {
     const res = await api.get('/analysis/cards', { headers: authStore.getAuthHeaders() })
-    cards.value = res.data || []
+    // Backend returns cards without questions; fetch questions for each card
+    const cardList: CardGroup[] = res.data || []
+    for (const card of cardList) {
+      const qRes = await api.get(`/analysis/cards/${card.id}/questions`, { headers: authStore.getAuthHeaders() }).catch(() => ({ data: [] }))
+      card.questions = qRes.data || []
+    }
+    cards.value = cardList
   } catch {
     cards.value = []
   } finally {
@@ -35,8 +46,8 @@ async function loadCards() {
 
 async function createCard() {
   try {
-    const res = await api.post('/analysis/cards', { name: '新建卡片组', questions: [] }, { headers: authStore.getAuthHeaders() })
-    cards.value.push(res.data)
+    const res = await api.post('/analysis/cards', { name: '新建卡片组' }, { headers: authStore.getAuthHeaders() })
+    cards.value.push({ ...res.data, questions: [] })
     ElMessage.success('卡片组已创建')
   } catch {
     ElMessage.error('创建失败')
@@ -46,25 +57,25 @@ async function createCard() {
 async function updateCardTitle(card: CardGroup, newTitle: string) {
   card.name = newTitle
   try {
-    await api.put(`/analysis/cards/${card.id}`, { name: card.name }, { headers: authStore.getAuthHeaders() })
+    await api.put(`/analysis/cards/${card.id}/name`, { name: card.name }, { headers: authStore.getAuthHeaders() })
   } catch {
     ElMessage.error('保存失败')
   }
 }
 
 async function addQuestion(card: CardGroup, question: string) {
-  card.questions.push(question)
   try {
-    await api.put(`/analysis/cards/${card.id}`, { questions: card.questions }, { headers: authStore.getAuthHeaders() })
+    const res = await api.post(`/analysis/cards/${card.id}/questions`, { question }, { headers: authStore.getAuthHeaders() })
+    card.questions.push({ id: res.data.id, question })
   } catch {
     ElMessage.error('保存失败')
   }
 }
 
-async function removeQuestion(card: CardGroup, index: number) {
-  card.questions.splice(index, 1)
+async function removeQuestion(card: CardGroup, questionId: number) {
   try {
-    await api.put(`/analysis/cards/${card.id}`, { questions: card.questions }, { headers: authStore.getAuthHeaders() })
+    await api.delete(`/analysis/cards/${card.id}/questions/${questionId}`, { headers: authStore.getAuthHeaders() })
+    card.questions = card.questions.filter(q => q.id !== questionId)
   } catch {
     ElMessage.error('保存失败')
   }
@@ -96,14 +107,14 @@ async function deleteCard(card: CardGroup) {
     <div v-if="loading" class="analysis-loading">加载中...</div>
 
     <div v-else-if="cards.length" class="cards-grid">
-      <div v-for="(card, idx) in cards" :key="card.id" class="card-wrapper">
+      <div v-for="card in cards" :key="card.id" class="card-wrapper">
         <AnalysisCard
+          :card-id="card.id"
           :title="card.name"
           :questions="card.questions"
-          :index="idx"
           @update:title="(v: string) => updateCardTitle(card, v)"
           @add-question="(q: string) => addQuestion(card, q)"
-          @remove-question="(i: number) => removeQuestion(card, i)"
+          @remove-question="(qid: number) => removeQuestion(card, qid)"
         />
         <button class="card-delete-btn" @click="deleteCard(card)" title="删除卡片组">
           <el-icon><Delete /></el-icon>
