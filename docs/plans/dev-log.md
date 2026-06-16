@@ -2445,7 +2445,59 @@ frontend/
 
 ---
 
+## 前端测试 + 代码审查（2026-06-16）
+
+### 前端测试
+
+**框架：** vitest + @vue/test-utils + jsdom
+
+**新增测试文件：**
+
+| 文件 | 测试数 | 覆盖内容 |
+|------|--------|---------|
+| auth.test.ts | 5 | login、fetchUser、logout、401 处理 |
+| chat.test.ts | 7 | loadConversations、create/delete/select、sendMessage、feedback、regenerate |
+| files.test.ts | 3 | loadFiles、uploadFile、deleteFile |
+| api.test.ts | 3 | 401/403/500 错误拦截 |
+
+**测试总数：** 318 后端 + 18 前端 = 336
+
+### 代码审查修复
+
+**Critical（4 项）：**
+
+| 问题 | 修复 |
+|------|------|
+| /query 端点 _get_current_user 阻塞事件循环 | 改为 asyncio.to_thread |
+| /query 端点 user_db.add_message 阻塞事件循环 | 改为 asyncio.to_thread |
+| /query/stream 端点 _get_current_user 阻塞事件循环 | 改为 asyncio.to_thread |
+| /query/stream 端点 user_db.add_message 阻塞事件循环 | 改为 asyncio.to_thread |
+
+**Important（2 项）：**
+
+| 问题 | 修复 |
+|------|------|
+| KnowledgeView/KnowledgeDetailView 用原生 axios 而非 api 实例 | 改为 import api from utils/api |
+| FeedbackProcessor 连接泄漏 | 加 try/finally |
+
+**遗留（未修复）：**
+
+| 问题 | 级别 | 说明 |
+|------|------|------|
+| /feedback 不验证消息所有权 | Important | 需要统一认证方案 |
+| /me 端点无 verify_api_key | Important | 需要统一认证方案 |
+| HTTPException 在 to_thread 中变为 500 | Important | 需要重构错误处理 |
+| list_tags 全量加载到内存 | Important | 需要 Qdrant payload index |
+| FileInfo 缺 in_kb 字段 | Minor | TypeScript 类型补全 |
+| LoginView 测试数过时（304→336） | Minor | 前端显示更新 |
+
+---
+
 ## 下一步计划
+
+- Docker 容器化
+- CI/CD（GitHub Actions）
+- 数据源集成（可选）
 
 ---
 
