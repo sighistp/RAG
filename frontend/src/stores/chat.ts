@@ -160,8 +160,6 @@ export const useChatStore = defineStore('chat', () => {
               assistantMsg.content = answer
             } else if (event.type === 'sources') {
               sources = event.sources
-            } else if (event.type === 'suggested') {
-              suggestedQuestions.value = event.questions || []
             }
           } catch {}
         }
@@ -171,6 +169,26 @@ export const useChatStore = defineStore('chat', () => {
 
       // Reload conversations to update title
       await loadConversations(true)
+
+      // Fetch suggested follow-up questions after streaming completes
+      if (answer) {
+        try {
+          const suggestRes = await fetch(`${API}/suggest`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...auth.getAuthHeaders()
+            },
+            body: JSON.stringify({ question, answer })
+          })
+          if (suggestRes.ok) {
+            const suggestData = await suggestRes.json()
+            suggestedQuestions.value = suggestData.questions || []
+          }
+        } catch {
+          // Suggestions are non-critical, ignore errors
+        }
+      }
 
     } catch (err) {
       assistantMsg.content = '请求失败，请稍后重试。'
@@ -182,7 +200,11 @@ export const useChatStore = defineStore('chat', () => {
   async function sendFeedback(messageIndex: number, value: 'positive' | 'negative') {
     const msg = messages.value[messageIndex]
     if (!msg) return
-    msg.feedback = value
+
+    // Toggle: clicking the same feedback again cancels it visually
+    const newValue = msg.feedback === value ? undefined : value
+    msg.feedback = newValue
+
     if (msg.id) {
       const auth = useAuthStore()
       try {
