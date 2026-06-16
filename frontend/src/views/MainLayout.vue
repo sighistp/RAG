@@ -1,18 +1,12 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useChatStore } from '../stores/chat'
-import { useFilesStore } from '../stores/files'
 import Sidebar from '../components/Sidebar.vue'
-import Topbar from '../components/Topbar.vue'
 
 const chatStore = useChatStore()
-const filesStore = useFilesStore()
 
 onMounted(async () => {
-  await Promise.all([
-    chatStore.loadConversations(),
-    filesStore.loadFiles()
-  ])
+  await chatStore.loadConversations()
 })
 </script>
 
@@ -20,10 +14,7 @@ onMounted(async () => {
   <div class="layout">
     <Sidebar />
 
-    <!-- Main -->
     <main class="main">
-      <Topbar />
-
       <div class="page-content">
         <router-view />
       </div>

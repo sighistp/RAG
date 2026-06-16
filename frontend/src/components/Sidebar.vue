@@ -1,31 +1,40 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { useChatStore } from '../stores/chat'
-import { useFilesStore } from '../stores/files'
+import { useChatStore, type ChatMode } from '../stores/chat'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
-const filesStore = useFilesStore()
+
+const currentMode = computed<ChatMode>(() => {
+  const m = route.path.match(/\/mode\/(\w+)/)
+  return (m?.[1] as ChatMode) || 'file'
+})
+
+const modes: Array<{ key: ChatMode; icon: string; label: string }> = [
+  { key: 'file', icon: '📄', label: '文件' },
+  { key: 'kb', icon: '📚', label: '知识库' },
+  { key: 'analysis', icon: '📊', label: '分析' }
+]
+
+function switchMode(mode: ChatMode) {
+  router.push(`/mode/${mode}`)
+}
 
 async function newConversation() {
-  await chatStore.createConversation()
-  router.push('/')
+  await chatStore.createConversation(currentMode.value)
+  router.push(`/mode/${currentMode.value}`)
 }
 
 async function selectConversation(id: number) {
   await chatStore.selectConversation(id)
-  router.push(`/chat/${id}`)
 }
 
 async function deleteConversation(id: number) {
   await chatStore.deleteConversation(id)
-}
-
-function logout() {
-  authStore.logout()
-  router.push('/login')
 }
 
 function formatTime(ts: string | number) {
@@ -52,6 +61,22 @@ function formatTime(ts: string | number) {
     </div>
 
     <div class="sidebar-body">
+      <!-- Mode switcher -->
+      <div class="mode-switcher">
+        <button
+          v-for="m in modes"
+          :key="m.key"
+          :class="['mode-btn', { active: currentMode === m.key }]"
+          @click="switchMode(m.key)"
+        >
+          <span class="mode-icon">{{ m.icon }}</span>
+          <span class="mode-label">{{ m.label }}</span>
+        </button>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- New conversation button -->
       <button class="new-chat-btn" @click="newConversation">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="8" y1="2" x2="8" y2="14"/>
@@ -60,42 +85,12 @@ function formatTime(ts: string | number) {
         新建对话
       </button>
 
-      <!-- File Selector -->
-      <div class="section-label">检索范围</div>
-      <div class="file-select-list">
-        <div
-          :class="['file-select-item', { active: chatStore.selectedFile === null }]"
-          @click="chatStore.selectFile(null)"
-        >
-          <div class="file-select-icon">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="5.5" cy="5.5" r="4.5"/>
-              <line x1="9" y1="9" x2="13" y2="13"/>
-            </svg>
-          </div>
-          <span class="file-select-name">全部文件</span>
-        </div>
-        <div
-          v-for="file in filesStore.files"
-          :key="file.name"
-          :class="['file-select-item', { active: chatStore.selectedFile === file.name }]"
-          @click="chatStore.selectFile(file.name)"
-        >
-          <div class="file-select-icon file-icon">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M3 1h5l3 3v8a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z"/>
-              <path d="M8 1v3h3"/>
-            </svg>
-          </div>
-          <span class="file-select-name" :title="file.name">{{ file.name }}</span>
-        </div>
-      </div>
-
-      <div class="section-label">对话历史</div>
+      <!-- Conversation list filtered by mode -->
+      <div class="conv-section-label">对话历史</div>
 
       <div class="conv-list">
         <div
-          v-for="conv in chatStore.conversations"
+          v-for="conv in chatStore.conversationsByMode(currentMode).value"
           :key="conv.id"
           :class="['conv-item', { active: conv.id === chatStore.currentConvId }]"
           @click="selectConversation(conv.id)"
@@ -117,7 +112,7 @@ function formatTime(ts: string | number) {
           </button>
         </div>
 
-        <div v-if="!chatStore.conversations.length" class="empty-conv">
+        <div v-if="!chatStore.conversationsByMode(currentMode).value.length" class="empty-conv">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
             <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
           </svg>
@@ -127,12 +122,7 @@ function formatTime(ts: string | number) {
     </div>
 
     <div class="sidebar-footer">
-      <div class="user-avatar">
-        {{ authStore.user?.username?.[0]?.toUpperCase() || 'U' }}
-      </div>
-      <div class="user-info">
-        <div class="user-name">{{ authStore.user?.username || '用户' }}</div>
-      </div>
+      <div class="conv-count">{{ chatStore.conversationsByMode(currentMode).value.length }} 个对话</div>
       <el-dropdown trigger="click">
         <button class="settings-btn" title="设置">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -142,7 +132,7 @@ function formatTime(ts: string | number) {
         </button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item @click="logout">退出登录</el-dropdown-item>
+            <el-dropdown-item @click="authStore.logout(); router.push('/login')">退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -212,13 +202,65 @@ function formatTime(ts: string | number) {
   overflow: hidden;
 }
 
+/* ── Mode Switcher ────────────────────────────────────── */
+.mode-switcher {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.mode-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: none;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-family: var(--font-body);
+}
+
+.mode-btn:hover {
+  border-color: var(--color-border-hover);
+  background: var(--color-muted);
+}
+
+.mode-btn.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+
+.mode-icon {
+  font-size: 16px;
+}
+
+.mode-label {
+  font-size: 11px;
+  font-weight: var(--font-medium);
+  color: var(--color-secondary);
+}
+
+.mode-btn.active .mode-label {
+  color: var(--color-accent);
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin-bottom: var(--space-4);
+}
+
 .new-chat-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
   width: 100%;
-  height: 44px;
+  height: 40px;
   background: var(--color-foreground);
   color: white;
   border: none;
@@ -228,7 +270,7 @@ function formatTime(ts: string | number) {
   font-family: var(--font-body);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
 }
 
 .new-chat-btn:hover {
@@ -237,7 +279,7 @@ function formatTime(ts: string | number) {
   box-shadow: var(--shadow);
 }
 
-.section-label {
+.conv-section-label {
   font-size: 11px;
   font-weight: var(--font-semibold);
   text-transform: uppercase;
@@ -346,86 +388,18 @@ function formatTime(ts: string | number) {
   font-size: var(--text-sm);
 }
 
-/* ── File Selector ───────────────────────────────────── */
-.file-select-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin-bottom: var(--space-4);
-  max-height: 160px;
-  overflow-y: auto;
-}
-
-.file-select-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-  font-size: var(--text-xs);
-  color: var(--color-secondary);
-}
-
-.file-select-item:hover {
-  background: var(--color-muted);
-  color: var(--color-foreground);
-}
-
-.file-select-item.active {
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-  font-weight: var(--font-medium);
-}
-
-.file-select-icon {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.file-select-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-/* ── Sidebar Footer ───────────────────────────────────── */
+/* ── Footer ───────────────────────────────────────────── */
 .sidebar-footer {
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: space-between;
 }
 
-.user-avatar {
-  width: 36px;
-  height: 36px;
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  font-family: var(--font-heading);
-}
-
-.user-info {
-  flex: 1;
-}
-
-.user-name {
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-  color: var(--color-foreground);
+.conv-count {
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
 }
 
 .settings-btn {

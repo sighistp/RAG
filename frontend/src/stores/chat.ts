@@ -3,11 +3,14 @@ import { ref, computed } from 'vue'
 import api from '../utils/api'
 import { useAuthStore } from './auth'
 
+export type ChatMode = 'file' | 'kb' | 'analysis'
+
 const API = ''
 
 interface Conversation {
   id: number
   title: string
+  mode: ChatMode
   created_at: string
 }
 
@@ -33,12 +36,19 @@ export const useChatStore = defineStore('chat', () => {
     conversations.value.find(c => c.id === currentConvId.value)
   )
 
-  async function loadConversations(force = false) {
-    if (_loaded && !force) return
+  function conversationsByMode(mode: ChatMode) {
+    return computed(() => conversations.value.filter(c => c.mode === mode))
+  }
+
+  async function loadConversations(mode?: ChatMode, force = false) {
+    if (_loaded && !force && !mode) return
     const auth = useAuthStore()
     try {
+      const params: Record<string, string> = {}
+      if (mode) params.mode = mode
       const res = await api.get(`${API}/conversations`, {
-        headers: auth.getAuthHeaders()
+        headers: auth.getAuthHeaders(),
+        params
       })
       conversations.value = res.data
       _loaded = true
@@ -47,13 +57,13 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function createConversation() {
+  async function createConversation(mode: ChatMode = 'file') {
     const auth = useAuthStore()
     // Save current selection before switching
     if (currentConvId.value !== null) {
       _selectedFilesByConv.set(currentConvId.value, selectedFile.value)
     }
-    const res = await api.post(`${API}/conversations`, {}, {
+    const res = await api.post(`${API}/conversations`, { mode }, {
       headers: auth.getAuthHeaders()
     })
     conversations.value.unshift(res.data)
@@ -168,7 +178,7 @@ export const useChatStore = defineStore('chat', () => {
       assistantMsg.sources = sources
 
       // Reload conversations to update title
-      await loadConversations(true)
+      await loadConversations(undefined, true)
 
       // Fetch suggested follow-up questions after streaming completes
       if (answer) {
@@ -245,6 +255,7 @@ export const useChatStore = defineStore('chat', () => {
     suggestedQuestions,
     selectedFile,
     currentConversation,
+    conversationsByMode,
     loadConversations,
     createConversation,
     selectConversation,

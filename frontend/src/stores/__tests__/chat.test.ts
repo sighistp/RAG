@@ -27,8 +27,8 @@ beforeEach(() => {
 describe('chat store', () => {
   it('loadConversations fills the list', async () => {
     const convos = [
-      { id: 1, title: 'First', created_at: '2026-01-01' },
-      { id: 2, title: 'Second', created_at: '2026-01-02' }
+      { id: 1, title: 'First', mode: 'file', created_at: '2026-01-01' },
+      { id: 2, title: 'Second', mode: 'file', created_at: '2026-01-02' }
     ]
     vi.mocked(api.get).mockResolvedValue({ data: convos } as any)
 
@@ -39,7 +39,7 @@ describe('chat store', () => {
   })
 
   it('createConversation adds to list and sets currentConvId', async () => {
-    const newConv = { id: 3, title: 'New', created_at: '2026-01-03' }
+    const newConv = { id: 3, title: 'New', mode: 'file', created_at: '2026-01-03' }
     vi.mocked(api.post).mockResolvedValue({ data: newConv } as any)
 
     const store = useChatStore()
@@ -53,8 +53,8 @@ describe('chat store', () => {
   it('deleteConversation removes from list', async () => {
     const store = useChatStore()
     store.conversations = [
-      { id: 1, title: 'A', created_at: '2026-01-01' },
-      { id: 2, title: 'B', created_at: '2026-01-02' }
+      { id: 1, title: 'A', mode: 'file', created_at: '2026-01-01' },
+      { id: 2, title: 'B', mode: 'file', created_at: '2026-01-02' }
     ]
     store.currentConvId = 1
 

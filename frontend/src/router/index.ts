@@ -17,33 +17,30 @@ const router = createRouter({
       children: [
         {
           path: '',
-          name: 'chat',
-          component: () => import('../views/ChatView.vue')
+          redirect: '/mode/file'
         },
         {
-          path: 'chat/:id',
-          name: 'chat-conversation',
-          component: () => import('../views/ChatView.vue')
+          path: 'mode/file',
+          name: 'mode-file',
+          component: () => import('../views/ModeRouter.vue'),
+          props: { mode: 'file' }
         },
         {
-          path: 'files',
-          name: 'files',
-          component: () => import('../views/FilesView.vue')
+          path: 'mode/kb',
+          name: 'mode-kb',
+          component: () => import('../views/ModeRouter.vue'),
+          props: { mode: 'kb' }
         },
         {
-          path: 'knowledge',
-          name: 'knowledge',
-          component: () => import('../views/KnowledgeView.vue')
+          path: 'mode/analysis',
+          name: 'mode-analysis',
+          component: () => import('../views/ModeRouter.vue'),
+          props: { mode: 'analysis' }
         },
         {
           path: 'knowledge/:id',
           name: 'knowledge-detail',
           component: () => import('../views/KnowledgeDetailView.vue')
-        },
-        {
-          path: 'analytics',
-          name: 'analytics',
-          component: () => import('../views/AnalyticsView.vue')
         }
       ]
     }
