@@ -272,7 +272,9 @@ async def list_conversations(authorization: str = Header(default=""), mode: str 
     user = await asyncio.to_thread(_get_current_user, token)
     if not user:
         raise HTTPException(status_code=401, detail="token 无效或已过期")
-    return await asyncio.to_thread(user_db.list_conversations, user["id"], mode)
+    result = await asyncio.to_thread(user_db.list_conversations, user["id"], mode)
+    logger.debug("list_conversations mode=%s user=%s count=%d modes=%s", mode, user["id"], len(result), [c.get("mode") for c in result])
+    return result
 
 
 @app.delete("/conversations/{cid}", summary="删除对话")

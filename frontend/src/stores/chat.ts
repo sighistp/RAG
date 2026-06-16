@@ -43,6 +43,8 @@ export const useChatStore = defineStore('chat', () => {
   async function loadConversations(mode?: ChatMode, _force = false) {
     const auth = useAuthStore()
     try {
+      // Clear conversations immediately to prevent stale data from other modes
+      conversations.value = []
       const params: Record<string, string> = {}
       if (mode) params.mode = mode
       const res = await api.get(`${API}/conversations`, {
