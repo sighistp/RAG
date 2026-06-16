@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
+import api from '../utils/api'
 
 const API = ''
 
@@ -11,7 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
 
   async function login(username: string, password: string) {
-    const res = await axios.post(`${API}/login`, { username, password })
+    const res = await api.post(`${API}/login`, { username, password })
     token.value = res.data.token
     localStorage.setItem('rag_token', token.value)
     user.value = { id: 0, username: res.data.username }
@@ -19,7 +19,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function register(username: string, password: string) {
-    const res = await axios.post(`${API}/register`, { username, password })
+    const res = await api.post(`${API}/register`, { username, password })
     token.value = res.data.token
     localStorage.setItem('rag_token', token.value)
     user.value = { id: 0, username: res.data.username }
@@ -29,7 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchUser() {
     if (!token.value || user.value) return
     try {
-      const res = await axios.get(`${API}/me`, {
+      const res = await api.get(`${API}/me`, {
         headers: { Authorization: `Bearer ${token.value}` }
       })
       user.value = res.data

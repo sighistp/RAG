@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import axios from 'axios'
+import api from '../utils/api'
 import { useAuthStore } from './auth'
 
 const API = ''
@@ -37,7 +37,7 @@ export const useChatStore = defineStore('chat', () => {
     if (_loaded && !force) return
     const auth = useAuthStore()
     try {
-      const res = await axios.get(`${API}/conversations`, {
+      const res = await api.get(`${API}/conversations`, {
         headers: auth.getAuthHeaders()
       })
       conversations.value = res.data
@@ -53,7 +53,7 @@ export const useChatStore = defineStore('chat', () => {
     if (currentConvId.value !== null) {
       _selectedFilesByConv.set(currentConvId.value, selectedFile.value)
     }
-    const res = await axios.post(`${API}/conversations`, {}, {
+    const res = await api.post(`${API}/conversations`, {}, {
       headers: auth.getAuthHeaders()
     })
     conversations.value.unshift(res.data)
@@ -72,7 +72,7 @@ export const useChatStore = defineStore('chat', () => {
     currentConvId.value = id
     // Restore selection for this conversation
     selectedFile.value = _selectedFilesByConv.has(id) ? _selectedFilesByConv.get(id)! : null
-    const res = await axios.get(`${API}/conversations/${id}/messages`, {
+    const res = await api.get(`${API}/conversations/${id}/messages`, {
       headers: auth.getAuthHeaders()
     })
     messages.value = res.data.map((m: any) => ({
@@ -84,7 +84,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function deleteConversation(id: number) {
     const auth = useAuthStore()
-    await axios.delete(`${API}/conversations/${id}`, {
+    await api.delete(`${API}/conversations/${id}`, {
       headers: auth.getAuthHeaders()
     })
     conversations.value = conversations.value.filter(c => c.id !== id)
@@ -208,7 +208,7 @@ export const useChatStore = defineStore('chat', () => {
     if (msg.id) {
       const auth = useAuthStore()
       try {
-        await axios.post(`${API}/feedback`, {
+        await api.post(`${API}/feedback`, {
           message_id: msg.id,
           value
         }, { headers: auth.getAuthHeaders() })
@@ -225,7 +225,7 @@ export const useChatStore = defineStore('chat', () => {
     const auth = useAuthStore()
     isStreaming.value = true
     try {
-      const res = await axios.post(`${API}/regenerate`, {
+      const res = await api.post(`${API}/regenerate`, {
         conversation_id: currentConvId.value,
         message_id: msg.id
       }, { headers: auth.getAuthHeaders() })

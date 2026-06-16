@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import axios from 'axios'
+import api from '../utils/api'
 import { useAuthStore } from './auth'
 
 const API = ''
@@ -21,9 +21,11 @@ export const useFilesStore = defineStore('files', () => {
     if (_loaded && !force) return
     loading.value = true
     try {
-      const res = await axios.get(`${API}/files`)
+      const res = await api.get(`${API}/files`)
       files.value = res.data.files
       _loaded = true
+    } catch {
+      // Error already shown by global interceptor
     } finally {
       loading.value = false
     }
@@ -34,7 +36,7 @@ export const useFilesStore = defineStore('files', () => {
     const formData = new FormData()
     formData.append('file', file)
 
-    const res = await axios.post(`${API}/upload`, formData, {
+    const res = await api.post(`${API}/upload`, formData, {
       headers: {
         ...auth.getAuthHeaders(),
         'Content-Type': 'multipart/form-data'
@@ -47,7 +49,7 @@ export const useFilesStore = defineStore('files', () => {
 
   async function deleteFile(name: string) {
     const auth = useAuthStore()
-    await axios.delete(`${API}/files/${encodeURIComponent(name)}`, {
+    await api.delete(`${API}/files/${encodeURIComponent(name)}`, {
       headers: auth.getAuthHeaders()
     })
     await loadFiles(true)
