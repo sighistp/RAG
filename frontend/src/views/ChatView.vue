@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
+import DOMPurify from 'dompurify'
 
 const chatStore = useChatStore()
 const inputText = ref('')
@@ -29,10 +30,12 @@ function askSuggested(q: string) { inputText.value = q; handleSend() }
 
 function formatContent(text: string): string {
   if (!text) return ''
-  return text
+  const escaped = text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#x27;')
     .replace(/\n/g, '<br>')
     .replace(/\[([^\]]+)\]/g, '<span class="ref">$1</span>')
+  return DOMPurify.sanitize(escaped, { ALLOWED_TAGS: ['br', 'span'], ALLOWED_ATTR: ['class'] })
 }
 </script>
 

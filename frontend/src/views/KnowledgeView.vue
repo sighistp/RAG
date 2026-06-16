@@ -22,7 +22,7 @@ async function loadKBs() {
   loading.value = true
   try {
     const res = await axios.get('/knowledge-bases', {
-      headers: { 'X-API-Key': authStore.token }
+      headers: authStore.getAuthHeaders()
     })
     knowledgeBases.value = res.data
   } catch {

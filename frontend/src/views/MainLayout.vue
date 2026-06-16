@@ -43,9 +43,10 @@ function logout() {
   router.push('/login')
 }
 
-function formatTime(ts: string) {
+function formatTime(ts: string | number) {
   if (!ts) return ''
-  const d = new Date(ts)
+  // Handle Unix timestamps (numbers) and ISO strings
+  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts)
   const now = new Date()
   if (d.toDateString() === now.toDateString()) {
     return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })

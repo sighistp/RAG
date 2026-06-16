@@ -9,7 +9,7 @@ from rag.prompt_manager import PromptManager
 _pm = PromptManager()
 
 
-def create_agent_tools(retriever, db_path: str, output_dir: str = "data") -> list:
+def create_agent_tools(retriever, db_path: str, output_dir: str = "data/charts") -> list:
     """Create the list of tools available to the Agent."""
     from langchain_core.tools import Tool
 
@@ -116,7 +116,7 @@ def _extract_chart_paths(messages: list, output_dir: str) -> list[str]:
 class RAGAgent:
     """Wraps a LangChain Agent with tools."""
 
-    def __init__(self, retriever, db_path: str = ":memory:", max_iterations: int = 5, output_dir: str = "data"):
+    def __init__(self, retriever, db_path: str = ":memory:", max_iterations: int = 5, output_dir: str = "data/charts"):
         from langchain.agents import create_agent
         from langchain_openai import ChatOpenAI
 

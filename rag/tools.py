@@ -77,6 +77,7 @@ def create_sql_tool(db_path: str):
             if token in _BLOCKED_KEYWORDS:
                 raise ValueError(f"禁止使用 {token} 关键字")
         conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA query_only = ON")  # Hard defense: SQLite refuses all writes
         try:
             cursor = conn.execute(sql)
             columns = [desc[0] for desc in cursor.description]
@@ -100,7 +101,7 @@ def create_sql_tool(db_path: str):
 ALLOWED_CHART_TYPES = {"bar", "line", "pie", "scatter"}
 
 
-def plot_chart(data: dict, chart_type: str, title: str = "", output_dir: str = "data") -> str:
+def plot_chart(data: dict, chart_type: str, title: str = "", output_dir: str = "data/charts") -> str:
     """生成图表 PNG 文件，返回文件路径。"""
     if chart_type not in ALLOWED_CHART_TYPES:
         raise ValueError(f"不支持的图表类型: {chart_type}，可选: {ALLOWED_CHART_TYPES}")

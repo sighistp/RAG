@@ -143,24 +143,38 @@ export const useChatStore = defineStore('chat', () => {
 
   async function sendFeedback(messageIndex: number, value: 'positive' | 'negative') {
     const msg = messages.value[messageIndex]
-    if (msg) {
-      msg.feedback = value
+    if (!msg) return
+    msg.feedback = value
+    if (msg.id) {
+      const auth = useAuthStore()
+      try {
+        await axios.post(`${API}/feedback`, {
+          message_id: msg.id,
+          value
+        }, { headers: auth.getAuthHeaders() })
+      } catch {
+        // Ignore feedback API errors
+      }
     }
-    // TODO: send to API when message_id is available
-    void 0 // Placeholder for future API call
   }
 
   async function regenerate(messageIndex: number) {
     const msg = messages.value[messageIndex]
-    if (!msg || msg.role !== 'assistant') return
+    if (!msg || msg.role !== 'assistant' || !msg.id || !currentConvId.value) return
 
-    // Find the user question before this message
-    const userMsg = messages.value[messageIndex - 1]
-    if (!userMsg || userMsg.role !== 'user') return
-
-    // Re-send the question
-    messages.value.splice(messageIndex, 1)
-    await sendMessage(userMsg.content)
+    const auth = useAuthStore()
+    isStreaming.value = true
+    try {
+      const res = await axios.post(`${API}/regenerate`, {
+        conversation_id: currentConvId.value,
+        message_id: msg.id
+      }, { headers: auth.getAuthHeaders() })
+      msg.content = res.data.answer
+    } catch {
+      // Ignore
+    } finally {
+      isStreaming.value = false
+    }
   }
 
   return {

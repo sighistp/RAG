@@ -65,19 +65,6 @@ class UserDB:
             )
 
     # ------------------------------------------------------------------
-    # Password helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _hash_password(password: str, salt: bytes) -> str:
-        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
-        return dk.hex()
-
-    @staticmethod
-    def _generate_salt() -> bytes:
-        return os.urandom(16)
-
-    # ------------------------------------------------------------------
     # Users
     # ------------------------------------------------------------------
 
@@ -184,13 +171,21 @@ class UserDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def update_message(self, message_id: int, new_content: str):
-        """更新消息内容（用于重新生成）。"""
+    def update_message(self, message_id: int, new_content: str, user_id: int = None):
+        """更新消息内容（用于重新生成）。可选 user_id 校验所有权。"""
         with self._lock:
-            self._conn.execute(
-                "UPDATE chat_messages SET content = ? WHERE id = ?",
-                (new_content, message_id),
-            )
+            if user_id is not None:
+                # Verify the message belongs to a conversation owned by this user
+                self._conn.execute(
+                    "UPDATE chat_messages SET content = ? WHERE id = ? "
+                    "AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)",
+                    (new_content, message_id, user_id),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE chat_messages SET content = ? WHERE id = ?",
+                    (new_content, message_id),
+                )
             self._conn.commit()
 
     # ------------------------------------------------------------------

@@ -284,7 +284,7 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(...)):
         from rag.generator import generate
         new_answer = await asyncio.to_thread(generate, prepared["messages"], 0.7)
 
-    user_db.update_message(req.message_id, new_answer)
+    await asyncio.to_thread(user_db.update_message, req.message_id, new_answer, user["id"])
     return {"message_id": req.message_id, "answer": new_answer}
 
 
@@ -826,9 +826,13 @@ def serve_spa():
     return JSONResponse(status_code=404, content={"error": "前端文件不存在"})
 
 
-# Serve chart images from data/ directory
+# Serve only safe subdirectories (NOT the entire data/ which contains .db, jwt_secret, etc.)
+DATA_CHARTS_DIR = DATA_DIR_PATH.parent / "data" / "charts"
+DATA_CHARTS_DIR.mkdir(exist_ok=True)
+if DATA_CHARTS_DIR.is_dir():
+    app.mount("/data/charts", StaticFiles(directory=str(DATA_CHARTS_DIR)), name="data-charts")
 if DATA_DIR_PATH.is_dir():
-    app.mount("/data", StaticFiles(directory=str(DATA_DIR_PATH)), name="data")
+    app.mount("/data/upload", StaticFiles(directory=str(DATA_DIR_PATH)), name="data-upload")
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
