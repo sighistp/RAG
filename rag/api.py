@@ -780,6 +780,18 @@ async def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Secu
     return {"status": "removed", "kb_id": kb_id, "doc_name": doc_name}
 
 
+class KBOverviewRequest(BaseModel):
+    overview: str
+
+
+class KBTocRequest(BaseModel):
+    toc: dict
+
+
+class KBSummaryRequest(BaseModel):
+    summary: str
+
+
 class QueryKBRequest(BaseModel):
     question: str = Field(..., description="用户提问")
     top_k: int = Field(default=5, ge=1, description="返回相关文档数量")
@@ -794,6 +806,121 @@ async def query_knowledge_base(kb_id: str, req: QueryKBRequest, user_id: str = S
         raise HTTPException(status_code=400, detail=str(e))
     results = [{"doc_name": c.doc_name, "chunk_index": c.chunk_index, "text": c.text} for c in chunks]
     return {"kb_id": kb_id, "results": results}
+
+
+@app.get("/knowledge-bases/{kb_id}", summary="获取知识库详情")
+async def get_knowledge_base_detail(kb_id: str, user_id: str = Security(verify_api_key)):
+    """获取知识库详情，包括元数据、文档列表、概述、目录。"""
+    def _get():
+        import sqlite3
+        from config import settings as _settings
+        from pathlib import Path
+
+        manager = KnowledgeBaseManager()
+        kbs = manager.list_kbs()
+        kb = next((k for k in kbs if k.kb_id == kb_id), None)
+        if not kb:
+            return None
+
+        # 从 SQLite 获取元数据
+        db_path = str(Path(__file__).resolve().parent.parent / "data" / "users.db")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            meta = conn.execute("SELECT * FROM kb_metadata WHERE kb_id = ?", (kb_id,)).fetchone()
+            docs = conn.execute("SELECT * FROM kb_documents WHERE kb_id = ?", (kb_id,)).fetchall()
+            return {
+                "kb_id": kb_id,
+                "name": meta["name"] if meta else kb.name,
+                "description": meta["description"] if meta else "",
+                "overview": meta["overview"] if meta else "",
+                "doc_count": kb.doc_count,
+                "documents": [dict(d) for d in docs],
+            }
+        finally:
+            conn.close()
+
+    result = await asyncio.to_thread(_get)
+    if not result:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    return result
+
+
+@app.put("/knowledge-bases/{kb_id}/overview", summary="更新知识库概述")
+async def update_kb_overview(kb_id: str, req: KBOverviewRequest, user_id: str = Security(verify_api_key)):
+    def _update():
+        import sqlite3
+        from config import settings as _settings
+        from pathlib import Path
+
+        db_path = str(Path(__file__).resolve().parent.parent / "data" / "users.db")
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "INSERT INTO kb_metadata (kb_id, name, overview) VALUES (?, '', ?) "
+                "ON CONFLICT(kb_id) DO UPDATE SET overview = ?",
+                (kb_id, req.overview, req.overview)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    await asyncio.to_thread(_update)
+    return {"status": "updated"}
+
+
+@app.put("/knowledge-bases/{kb_id}/documents/{doc_name}/toc", summary="更新文档目录")
+async def update_doc_toc(kb_id: str, doc_name: str, req: KBTocRequest, user_id: str = Security(verify_api_key)):
+    import json
+    def _update():
+        import sqlite3
+        from pathlib import Path
+
+        db_path = str(Path(__file__).resolve().parent.parent / "data" / "users.db")
+        conn = sqlite3.connect(db_path)
+        try:
+            toc_str = json.dumps(req.toc, ensure_ascii=False)
+            cur = conn.execute(
+                "UPDATE kb_documents SET toc = ? WHERE kb_id = ? AND filename = ?",
+                (toc_str, kb_id, doc_name)
+            )
+            if cur.rowcount == 0:
+                return False
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    result = await asyncio.to_thread(_update)
+    if not result:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {"status": "updated"}
+
+
+@app.put("/knowledge-bases/{kb_id}/documents/{doc_name}/summary", summary="更新文档概述")
+async def update_doc_summary(kb_id: str, doc_name: str, req: KBSummaryRequest, user_id: str = Security(verify_api_key)):
+    def _update():
+        import sqlite3
+        from pathlib import Path
+
+        db_path = str(Path(__file__).resolve().parent.parent / "data" / "users.db")
+        conn = sqlite3.connect(db_path)
+        try:
+            cur = conn.execute(
+                "UPDATE kb_documents SET summary = ? WHERE kb_id = ? AND filename = ?",
+                (req.summary, kb_id, doc_name)
+            )
+            if cur.rowcount == 0:
+                return False
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    result = await asyncio.to_thread(_update)
+    if not result:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    return {"status": "updated"}
 
 
 # ── 分析端点 ──────────────────────────────────────────────────────
