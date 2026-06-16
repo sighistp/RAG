@@ -108,13 +108,42 @@ const pageTitle = computed(() => {
 ```
 
 **实现：**
-- 侧边栏底部显示暂存文件列表（从 `/files` API 获取）
+- 侧边栏底部显示暂存文件列表（从 `/files` API 获取，过滤 `in_kb=false`）
 - 每个文件有勾选框
 - 选中状态存入 `chatStore.selectedFiles`
 - 切换对话时恢复该对话的选中文件
 
+**后端配合：** `/files` 接口增加 `in_kb` 字段：
+
+```python
+@app.get("/files")
+async def list_files():
+    files = []
+    if DATA_DIR.is_dir():
+        for fpath in sorted(DATA_DIR.iterdir()):
+            if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
+                size = fpath.stat().st_size
+                # 检查是否已编入任何知识库
+                in_kb = await asyncio.to_thread(_check_file_in_kb, fpath.name)
+                files.append({
+                    "name": fpath.name,
+                    "size": size,
+                    "size_human": _human_size(size),
+                    "ext": fpath.suffix.lower(),
+                    "in_kb": in_kb,
+                })
+    return {"files": files, "count": len(files)}
+
+
+def _check_file_in_kb(filename: str) -> bool:
+    """检查文件是否已编入任何知识库。"""
+    # 查询 kb_documents 表
+    ...
+```
+
 **改动文件：**
-- `frontend/src/views/MainLayout.vue` — 侧边栏文件列表
+- `rag/api.py` — `/files` 增加 `in_kb` 字段
+- `frontend/src/views/MainLayout.vue` — 侧边栏文件列表，过滤 `in_kb=false`
 - `frontend/src/stores/chat.ts` — 新增 `selectedFiles` 状态
 
 ### 2.5 检索范围状态提示
@@ -309,29 +338,61 @@ CREATE TABLE kb_documents (
 **实现：** 新建 `rag/kb_metadata.py`
 
 ```python
+import json
+import re
+import logging
+from rag.generator import generate
+
+logger = logging.getLogger(__name__)
+
+
 def generate_toc(content: str) -> dict:
-    """LLM 提取文档标题层级结构。"""
+    """LLM 提取文档标题层级结构。失败时返回兜底结构。"""
     prompt = f"""请从以下文档中提取标题层级结构，输出 JSON 格式：
 {{"title": "文档标题", "sections": [{{"title": "章节标题", "subsections": [...]}}, ...]}}
 
 文档内容：
 {content[:3000]}"""
-    result = generate([{"role": "user", "content": prompt}])
-    return json.loads(result)
+    try:
+        result = generate([{"role": "user", "content": prompt}])
+        # 提取 JSON（LLM 可能包裹在 markdown 代码块中）
+        json_str = re.search(r'\{.*\}', result, re.DOTALL)
+        if json_str:
+            return json.loads(json_str.group())
+        return {"title": "未知", "sections": []}
+    except Exception as e:
+        logger.warning("目录生成失败: %s", e)
+        return {"title": "未知", "sections": []}
 
 
 def generate_summary(content: str) -> str:
-    """LLM 生成文档概述。"""
+    """LLM 生成文档概述。失败时返回空字符串。"""
     prompt = f"""请用 100-200 字概括以下文档的核心内容，包括：主题、覆盖范围、关键知识点。
 
 文档内容：
 {content[:2000]}"""
-    return generate([{"role": "user", "content": prompt}])
+    try:
+        return generate([{"role": "user", "content": prompt}])
+    except Exception as e:
+        logger.warning("概述生成失败: %s", e)
+        return ""
+```
+
+**chunk_count 填充：** 在 `knowledge_base.py` 的 `add_document()` 中，chunk 完成后统计：
+
+```python
+chunks = chunk(cleaned_text, doc_name=doc_name)
+# ... embed and add to collection ...
+# 更新 chunk_count 和状态
+conn.execute(
+    "UPDATE kb_documents SET chunk_count = ?, status = 'indexed' WHERE kb_id = ? AND filename = ?",
+    (len(chunks), kb_id, doc_name)
+)
 ```
 
 **改动文件：**
-- `rag/kb_metadata.py` — 新建
-- `rag/knowledge_base.py` — `add_document()` 中调用生成
+- `rag/kb_metadata.py` — 新建（目录/概述生成，含错误处理）
+- `rag/knowledge_base.py` — `add_document()` 中调用生成 + 填充 chunk_count
 - `rag/api.py` — 新增端点
 
 ---
@@ -363,11 +424,11 @@ def generate_summary(content: str) -> str:
 | **阶段 1** | 前端布局重构（侧边栏导航、用户右上角、页面标题） | 1 天 |
 | **阶段 2** | 流式聊天 + 反馈 + 追问前端对接 | 1 天 |
 | **阶段 3** | 侧边栏文件选择器 + 检索范围状态 | 1 天 |
-| **阶段 4** | 知识库后端扩展（目录/概述生成、详情端点） | 1 天 |
+| **阶段 4** | 知识库后端扩展（目录/概述生成、详情端点、/files in_kb） | 2 天 |
 | **阶段 5** | 知识库前端（列表页、详情页、文件管理） | 2 天 |
 | **阶段 6** | 对话标题 + 侧边栏折叠 + 细节打磨 | 1 天 |
 
-**总计：约 7 天**
+**总计：约 8 天**
 
 ---
 
@@ -375,8 +436,11 @@ def generate_summary(content: str) -> str:
 
 | 阶段 | 新增测试 | 累计 |
 |------|---------|------|
-| 阶段 1-3 | +10（前端交互测试） | 314 |
-| 阶段 4 | +15（kb_metadata 测试） | 329 |
-| 阶段 5-6 | +5 | 334 |
+| 阶段 1 | +5（布局、导航、标题） | 309 |
+| 阶段 2 | +8（流式 token、sources、追问、反馈） | 317 |
+| 阶段 3 | +7（文件勾选、状态持久化、检索范围） | 324 |
+| 阶段 4 | +15（kb_metadata、目录生成、概述生成、in_kb） | 339 |
+| 阶段 5 | +10（KB 列表、详情、文件管理） | 349 |
+| 阶段 6 | +5（标题、折叠、细节） | 354 |
 
-**目标：330+ 测试全过**
+**目标：350+ 测试全过**
