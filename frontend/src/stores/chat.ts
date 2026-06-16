@@ -25,6 +25,8 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref<Message[]>([])
   const isStreaming = ref(false)
   const suggestedQuestions = ref<string[]>([])
+  const selectedFile = ref<string | null>(null)
+  const _selectedFilesByConv = new Map<number, string | null>()
   let _loaded = false
 
   const currentConversation = computed(() =>
@@ -47,18 +49,29 @@ export const useChatStore = defineStore('chat', () => {
 
   async function createConversation() {
     const auth = useAuthStore()
+    // Save current selection before switching
+    if (currentConvId.value !== null) {
+      _selectedFilesByConv.set(currentConvId.value, selectedFile.value)
+    }
     const res = await axios.post(`${API}/conversations`, {}, {
       headers: auth.getAuthHeaders()
     })
     conversations.value.unshift(res.data)
     currentConvId.value = res.data.id
     messages.value = []
+    selectedFile.value = null
     return res.data
   }
 
   async function selectConversation(id: number) {
     const auth = useAuthStore()
+    // Save current selection for the previous conversation
+    if (currentConvId.value !== null) {
+      _selectedFilesByConv.set(currentConvId.value, selectedFile.value)
+    }
     currentConvId.value = id
+    // Restore selection for this conversation
+    selectedFile.value = _selectedFilesByConv.has(id) ? _selectedFilesByConv.get(id)! : null
     const res = await axios.get(`${API}/conversations/${id}/messages`, {
       headers: auth.getAuthHeaders()
     })
@@ -75,10 +88,16 @@ export const useChatStore = defineStore('chat', () => {
       headers: auth.getAuthHeaders()
     })
     conversations.value = conversations.value.filter(c => c.id !== id)
+    _selectedFilesByConv.delete(id)
     if (currentConvId.value === id) {
       currentConvId.value = null
       messages.value = []
+      selectedFile.value = null
     }
+  }
+
+  function selectFile(name: string | null) {
+    selectedFile.value = name
   }
 
   async function sendMessage(question: string) {
@@ -94,17 +113,22 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(assistantMsg)
 
     try {
+      const payload: Record<string, any> = {
+        question,
+        conversation_id: currentConvId.value,
+        session_id: currentConvId.value ? `conv_${currentConvId.value}` : undefined
+      }
+      if (selectedFile.value) {
+        payload.doc_name = selectedFile.value
+      }
+
       const response = await fetch(`${API}/query/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...auth.getAuthHeaders()
         },
-        body: JSON.stringify({
-          question,
-          conversation_id: currentConvId.value,
-          session_id: currentConvId.value ? `conv_${currentConvId.value}` : undefined
-        })
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) {
@@ -197,11 +221,13 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     isStreaming,
     suggestedQuestions,
+    selectedFile,
     currentConversation,
     loadConversations,
     createConversation,
     selectConversation,
     deleteConversation,
+    selectFile,
     sendMessage,
     sendFeedback,
     regenerate

@@ -3,11 +3,13 @@ import { onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
+import { useFilesStore } from '../stores/files'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
+const filesStore = useFilesStore()
 
 const activePage = computed(() => {
   if (route.name === 'files') return 'files'
@@ -17,7 +19,10 @@ const activePage = computed(() => {
 })
 
 onMounted(async () => {
-  await chatStore.loadConversations()
+  await Promise.all([
+    chatStore.loadConversations(),
+    filesStore.loadFiles()
+  ])
 })
 
 function switchPage(page: string) {
@@ -77,6 +82,37 @@ function formatTime(ts: string | number) {
           </svg>
           新建对话
         </button>
+
+        <!-- File Selector -->
+        <div class="section-label">检索范围</div>
+        <div class="file-select-list">
+          <div
+            :class="['file-select-item', { active: chatStore.selectedFile === null }]"
+            @click="chatStore.selectFile(null)"
+          >
+            <div class="file-select-icon">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="5.5" cy="5.5" r="4.5"/>
+                <line x1="9" y1="9" x2="13" y2="13"/>
+              </svg>
+            </div>
+            <span class="file-select-name">全部文件</span>
+          </div>
+          <div
+            v-for="file in filesStore.files"
+            :key="file.name"
+            :class="['file-select-item', { active: chatStore.selectedFile === file.name }]"
+            @click="chatStore.selectFile(file.name)"
+          >
+            <div class="file-select-icon file-icon">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M3 1h5l3 3v8a1 1 0 01-1 1H3a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+                <path d="M8 1v3h3"/>
+              </svg>
+            </div>
+            <span class="file-select-name" :title="file.name">{{ file.name }}</span>
+          </div>
+        </div>
 
         <div class="section-label">对话历史</div>
 
@@ -368,6 +404,55 @@ function formatTime(ts: string | number) {
   padding: var(--space-8) var(--space-4);
   color: var(--color-secondary);
   font-size: var(--text-sm);
+}
+
+/* ── File Selector ───────────────────────────────────── */
+.file-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: var(--space-4);
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.file-select-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
+}
+
+.file-select-item:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+.file-select-item.active {
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  font-weight: var(--font-medium);
+}
+
+.file-select-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.file-select-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ── Sidebar Footer ───────────────────────────────────── */

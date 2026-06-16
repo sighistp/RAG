@@ -126,6 +126,11 @@ function formatContent(text: string): string {
 
     <!-- Input -->
     <div class="input-area">
+      <div v-if="chatStore.selectedFile" class="scope-indicator">
+        <span class="scope-icon">🔍</span>
+        <span class="scope-name">{{ chatStore.selectedFile }}</span>
+        <button class="scope-clear" @click="chatStore.selectFile(null)" title="清除筛选">✕</button>
+      </div>
       <div class="input-box">
         <el-input
           v-model="inputText"
@@ -394,6 +399,53 @@ function formatContent(text: string): string {
 .input-area {
   padding: var(--space-4) var(--space-6) var(--space-6);
   background: linear-gradient(to top, var(--color-background) 60%, transparent);
+}
+
+/* ── Scope Indicator ─────────────────────────────────── */
+.scope-indicator {
+  max-width: var(--content-max-width);
+  margin: 0 auto var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+}
+
+.scope-icon {
+  font-size: 12px;
+}
+
+.scope-name {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scope-clear {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  transition: all var(--duration-fast);
+}
+
+.scope-clear:hover {
+  background: var(--color-accent);
+  color: white;
 }
 
 .input-box {
