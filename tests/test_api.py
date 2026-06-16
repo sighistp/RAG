@@ -205,3 +205,15 @@ def test_stream_query_request_accepts_tags():
     from rag.api import StreamQueryRequest
     req = StreamQueryRequest(question="test", tags=["finance"])
     assert req.tags == ["finance"]
+
+
+def test_files_endpoint_returns_in_kb_field():
+    """/files 返回的每个文件应该有 in_kb 字段。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app
+    client = TestClient(app)
+    response = client.get("/files")
+    assert response.status_code == 200
+    data = response.json()
+    if data["files"]:
+        assert "in_kb" in data["files"][0], "文件应该有 in_kb 字段"

@@ -301,9 +301,27 @@ async def list_files():
                         "size": size,
                         "size_human": _human_size(size),
                         "ext": fpath.suffix.lower(),
+                        "in_kb": _check_file_in_kb(fpath.name),
                     }
                 )
     return {"files": files, "count": len(files)}
+
+
+def _check_file_in_kb(filename: str) -> bool:
+    """检查文件是否已编入任何知识库。"""
+    import sqlite3
+    db_path = str(Path(__file__).resolve().parent.parent / "data" / "users.db")
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM kb_documents WHERE filename = ? AND status = 'indexed'",
+            (filename,)
+        ).fetchone()
+        return row[0] > 0
+    except:
+        return False
+    finally:
+        conn.close()
 
 
 def _human_size(size: int) -> str:
