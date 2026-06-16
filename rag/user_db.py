@@ -83,6 +83,16 @@ class UserDB:
                     added_at TEXT DEFAULT (datetime('now')),
                     UNIQUE(kb_id, filename)
                 );
+
+                CREATE TABLE IF NOT EXISTS data_sources (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name            TEXT    NOT NULL,
+                    type            TEXT    NOT NULL,
+                    config          TEXT    NOT NULL DEFAULT '{}',
+                    status          TEXT    NOT NULL DEFAULT 'inactive',
+                    last_synced_at  REAL,
+                    created_at      REAL    NOT NULL DEFAULT (strftime('%s','now'))
+                );
                 """
             )
 
@@ -240,6 +250,69 @@ class UserDB:
                 (message_id, user_id),
             ).fetchone()
         return row is not None
+
+    # ------------------------------------------------------------------
+    # Data Sources
+    # ------------------------------------------------------------------
+
+    def create_data_source(self, name: str, source_type: str, config: str) -> int:
+        """Create a data source and return its id."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO data_sources (name, type, config) VALUES (?, ?, ?)",
+                (name, source_type, config),
+            )
+            self._conn.commit()
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def list_data_sources(self) -> list[dict[str, Any]]:
+        """Return all data sources, newest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, name, type, config, status, last_synced_at, created_at "
+                "FROM data_sources ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_data_source(self, source_id: int) -> dict[str, Any] | None:
+        """Return a single data source by id, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, name, type, config, status, last_synced_at, created_at "
+                "FROM data_sources WHERE id = ?",
+                (source_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def delete_data_source(self, source_id: int) -> bool:
+        """Delete a data source.  Returns True if deleted."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM data_sources WHERE id = ?",
+                (source_id,),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def update_data_source_synced(self, source_id: int) -> None:
+        """Update the last_synced_at timestamp to now."""
+        import time
+
+        with self._lock:
+            self._conn.execute(
+                "UPDATE data_sources SET last_synced_at = ? WHERE id = ?",
+                (time.time(), source_id),
+            )
+            self._conn.commit()
+
+    def update_data_source_status(self, source_id: int, status: str) -> None:
+        """Update the status of a data source."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE data_sources SET status = ? WHERE id = ?",
+                (status, source_id),
+            )
+            self._conn.commit()
 
     # ------------------------------------------------------------------
     # Cleanup

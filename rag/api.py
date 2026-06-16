@@ -1046,6 +1046,128 @@ async def get_gaps(limit: int = 50):
     return await asyncio.to_thread(_get)
 
 
+# ── 数据源管理 ────────────────────────────────────────────────────────
+
+import json as _json
+
+
+class CreateSourceRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200, description="数据源名称")
+    type: str = Field(..., pattern="^(rss|database|api)$", description="数据源类型")
+    config: dict = Field(default_factory=dict, description="数据源配置")
+
+
+class SourceResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    config: dict
+    status: str
+    last_synced_at: float | None
+    created_at: float
+
+
+@app.post("/sources", summary="创建数据源", description="创建新的数据源（RSS / 数据库 / API）")
+async def create_source(req: CreateSourceRequest, user_id: str = Security(verify_api_key)):
+    source_id = await asyncio.to_thread(
+        user_db.create_data_source,
+        req.name,
+        req.type,
+        _json.dumps(req.config, ensure_ascii=False),
+    )
+    return {
+        "id": source_id,
+        "name": req.name,
+        "type": req.type,
+        "config": req.config,
+        "status": "inactive",
+        "last_synced_at": None,
+    }
+
+
+@app.get("/sources", summary="列出数据源", description="获取所有数据源列表")
+async def list_sources(user_id: str = Security(verify_api_key)):
+    sources = await asyncio.to_thread(user_db.list_data_sources)
+    result = []
+    for s in sources:
+        result.append({
+            "id": s["id"],
+            "name": s["name"],
+            "type": s["type"],
+            "config": _json.loads(s["config"]) if s["config"] else {},
+            "status": s["status"],
+            "last_synced_at": s["last_synced_at"],
+            "created_at": s["created_at"],
+        })
+    return {"sources": result, "count": len(result)}
+
+
+@app.delete("/sources/{source_id}", summary="删除数据源", description="删除指定数据源")
+async def delete_source(source_id: int, user_id: str = Security(verify_api_key)):
+    deleted = await asyncio.to_thread(user_db.delete_data_source, source_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="数据源不存在")
+    return {"status": "deleted"}
+
+
+def _sync_source(source_id: int) -> dict:
+    """同步数据源：根据类型创建对应的 DataSource 实例并 fetch()。
+
+    此函数在 asyncio.to_thread 中调用，不能直接使用 await。
+    """
+    source = user_db.get_data_source(source_id)
+    if source is None:
+        raise ValueError("数据源不存在")
+
+    source_type = source["type"]
+    config = _json.loads(source["config"]) if source["config"] else {}
+
+    if source_type == "rss":
+        from rag.data_sources.rss_source import RSSSource
+        ds = RSSSource(url=config.get("url", ""))
+    elif source_type == "database":
+        from rag.data_sources.db_source import DBSource
+        ds = DBSource(
+            connection_string=config.get("connection_string", ""),
+            query=config.get("query", ""),
+        )
+    elif source_type == "api":
+        from rag.data_sources.api_source import APISource
+        ds = APISource(
+            url=config.get("url", ""),
+            headers=config.get("headers", {}),
+            items_path=config.get("items_path"),
+            title_field=config.get("title_field", "title"),
+            content_field=config.get("content_field", "content"),
+            url_field=config.get("url_field", "url"),
+            published_at_field=config.get("published_at_field", "published_at"),
+        )
+    else:
+        raise ValueError(f"不支持的数据源类型: {source_type}")
+
+    loop = asyncio.new_event_loop()
+    try:
+        items = loop.run_until_complete(ds.fetch())
+    finally:
+        loop.close()
+
+    # Persist synced status
+    user_db.update_data_source_synced(source_id)
+    user_db.update_data_source_status(source_id, "active")
+
+    return {"synced": len(items), "errors": []}
+
+
+@app.post("/sources/{source_id}/sync", summary="同步数据源", description="手动触发数据源同步")
+async def sync_source(source_id: int, user_id: str = Security(verify_api_key)):
+    # Check existence first
+    source = await asyncio.to_thread(user_db.get_data_source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="数据源不存在")
+    result = await asyncio.to_thread(_sync_source, source_id)
+    return result
+
+
 # ── 静态文件 & 前端 ────────────────────────────────────────────────
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 DATA_DIR_PATH = Path(__file__).resolve().parent.parent / "data"
