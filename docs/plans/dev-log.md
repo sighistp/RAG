@@ -2484,8 +2484,32 @@ frontend/
 
 ---
 
+---
+
+## Phase 2：流式+反馈+追问前端对接（2026-06-16）✅
+
+**改动文件：** `frontend/src/stores/chat.ts`
+
+**流式聊天完善：**
+- sendMessage 已有 SSE 流式接收（response.ok 检查、行缓冲、token 追加、sources 显示）
+- 移除死代码 `event.type === 'suggested'` 处理（后端不通过 SSE 推送追问建议）
+
+**追问建议：**
+- 流式完成后调用 `POST /suggest` 获取追问建议
+- 显示在消息下方，点击自动填入输入框
+
+**反馈按钮：**
+- sendFeedback 支持 toggle（再次点击取消反馈）
+- 调用 `POST /feedback` API
+
+**重新生成：**
+- 验证正确：`POST /regenerate` 返回完整答案，前端直接更新消息内容
+
+**测试：** 318 个全过
+
+---
+
 ## 下一步计划
 
-- Phase 2：流式+反馈+追问前端对接（后端已就绪，前端需要对接）
 - Phase 5：细节打磨 + Docker + CI/CD
 - Phase 6：批量导入 + 数据源（可选）
