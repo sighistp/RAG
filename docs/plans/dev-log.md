@@ -2651,9 +2651,99 @@ frontend/
 
 ---
 
+---
+
+## 后端全异步化 + 代码审查遗留修复（2026-06-16）✅
+
+**修复 6 项问题：**
+
+| 问题 | 修复 |
+|------|------|
+| _get_current_user 在 to_thread 中抛 HTTPException 变 500 | 改为返回 None，调用方检查后抛异常 |
+| /me 端点无 verify_api_key | 改用 Security(verify_api_key) |
+| /feedback 不验证消息所有权 | 新增 message_belongs_to_user() 检查 |
+| FeedbackProcessor 每次查询新建实例 | 改为模块级单例 |
+| DB 路径重复计算 4 处 | 统一用 _DB_PATH |
+
+**测试：** 329 个全过（原 318 + 新 11）
+
+---
+
+## 前端组件拆分（2026-06-16）✅
+
+**从 MainLayout.vue 提取：**
+
+| 组件 | 行数 | 职责 |
+|------|------|------|
+| Sidebar.vue | ~200 行 | 品牌、导航、文件选择器、对话列表 |
+| Topbar.vue | ~80 行 | 页面标题、导航 Tab |
+
+**从 ChatView.vue 提取：**
+
+| 组件 | 行数 | 职责 |
+|------|------|------|
+| MessageBubble.vue | ~150 行 | 消息气泡、来源、反馈、重新生成 |
+| ChatInput.vue | ~100 行 | 输入框、发送按钮、检索范围状态 |
+
+**效果：**
+- MainLayout.vue: 587 行 → 43 行
+- ChatView.vue: 513 行 → 133 行
+
+**测试：** 329 后端 + 18 前端 = 347 全过
+
+---
+
+## 数据源集成（2026-06-16）✅
+
+**新增模块：**
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 数据源基类 | rag/data_sources/base.py | 抽象基类（fetch、test_connection） |
+| RSS 数据源 | rag/data_sources/rss_source.py | RSS/Atom 订阅，feedparser 解析 |
+| 数据库数据源 | rag/data_sources/db_source.py | SQLite/MySQL/PostgreSQL，连接字符串 + SQL |
+| API 数据源 | rag/data_sources/api_source.py | REST API，JSON 字段映射 |
+
+**新增 API 端点：**
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| /sources | POST | 创建数据源 |
+| /sources | GET | 列出数据源 |
+| /sources/{id} | DELETE | 删除数据源 |
+| /sources/{id}/sync | POST | 手动触发同步 |
+
+**新增依赖：** feedparser（RSS 解析）
+
+**测试：** 381 个全过（原 329 + 新 52）
+
+---
+
+## 当前项目状态（2026-06-16）
+
+**测试：** 381 后端 + 18 前端 = 399 全过
+
+**核心模块：** 24+ 个 Python 模块 + 8 个 Vue 组件
+
+**功能完整度：**
+
+| 类别 | 功能 | 状态 |
+|------|------|------|
+| RAG | 混合检索 + 重排序 + 查询改写 | ✅ |
+| Agent | ReAct + 4 工具 + 反思机制 | ✅ |
+| 用户 | JWT 认证 + 对话管理 + 反馈 | ✅ |
+| 知识库 | CRUD + 目录/概述生成 + 文件管理 | ✅ |
+| 流式 | SSE 流式输出 + 追问建议 + 重新生成 | ✅ |
+| 安全 | 注入检测 + XSS 防护 + SQL 注入防护 | ✅ |
+| 容错 | 重试 + 熔断 + 缓存 + 降级 | ✅ |
+| 数据源 | RSS + 数据库 + API 集成 | ✅ |
+| 前端 | Vue 3 + 组件化 + 错误处理 | ✅ |
+| 测试 | 399 个（后端 + 前端） | ✅ |
+
+---
+
 ## 下一步计划
 
+- 手动测试全流程
 - Docker 容器化
 - CI/CD（GitHub Actions）
-- 前端测试（当前 0 个前端测试）
-- 数据源集成（RSS/数据库/API，可选）
