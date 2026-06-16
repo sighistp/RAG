@@ -2491,6 +2491,25 @@ frontend/
 | FileInfo 缺 in_kb 字段 | Minor | TypeScript 类型补全 |
 | LoginView 测试数过时（304→336） | Minor | 前端显示更新 |
 
+### 前后端对齐审查
+
+**审查结果：** 24 个 API 调用全部对齐 ✅
+
+| 检查项 | 结果 |
+|--------|------|
+| HTTP 方法匹配 | ✅ 24/24 |
+| URL 路径匹配 | ✅ 24/24 |
+| 请求体格式匹配 | ✅ 24/24 |
+| 认证头匹配 | ✅ 24/24 |
+| 响应格式匹配 | ✅ 24/24 |
+
+**修复的问题：**
+- Content-Type: multipart/form-data 显式设置（改为让 axios 自动处理）
+- AnalyticsView 用原生 axios（改为 api 实例）
+- files.test.ts 断言更新
+
+**最终测试数：** 318 后端 + 18 前端 = 336
+
 ---
 
 ## 下一步计划
