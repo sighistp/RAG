@@ -36,6 +36,11 @@ const router = createRouter({
           component: () => import('../views/KnowledgeView.vue')
         },
         {
+          path: 'knowledge/:id',
+          name: 'knowledge-detail',
+          component: () => import('../views/KnowledgeDetailView.vue')
+        },
+        {
           path: 'analytics',
           name: 'analytics',
           component: () => import('../views/AnalyticsView.vue')
