@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, nextTick, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
-import DOMPurify from 'dompurify'
+import MessageBubble from '../components/MessageBubble.vue'
+import ChatInput from '../components/ChatInput.vue'
 
 const chatStore = useChatStore()
-const inputText = ref('')
 const messagesContainer = ref<HTMLElement>()
 
 watch(() => chatStore.messages.length, () => {
@@ -15,27 +15,8 @@ watch(() => chatStore.messages[chatStore.messages.length - 1]?.content, () => {
   nextTick(() => { messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior: 'smooth' }) })
 })
 
-async function handleSend() {
-  const q = inputText.value.trim()
-  if (!q || chatStore.isStreaming) return
-  inputText.value = ''
-  await chatStore.sendMessage(q)
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
-}
-
-function askSuggested(q: string) { inputText.value = q; handleSend() }
-
-function formatContent(text: string): string {
-  if (!text) return ''
-  const escaped = text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#x27;')
-    .replace(/\n/g, '<br>')
-    .replace(/\[([^\]]+)\]/g, '<span class="ref">$1</span>')
-  return DOMPurify.sanitize(escaped, { ALLOWED_TAGS: ['br', 'span'], ALLOWED_ATTR: ['class'] })
+function askSuggested(q: string) {
+  chatStore.sendMessage(q)
 }
 </script>
 
@@ -54,57 +35,12 @@ function formatContent(text: string): string {
       </div>
 
       <!-- Messages -->
-      <div
+      <MessageBubble
         v-for="(msg, i) in chatStore.messages"
         :key="i"
-        :class="['msg', msg.role]"
-      >
-        <div v-if="msg.role === 'user'" class="msg-avatar user-avatar">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 8a3 3 0 100-6 3 3 0 000 6zm5 6a5 5 0 00-10 0h10z"/>
-          </svg>
-        </div>
-        <div v-else class="msg-avatar ai-avatar">R</div>
-
-        <div class="msg-body">
-          <div class="bubble" v-html="formatContent(msg.content)" />
-
-          <!-- Sources -->
-          <div v-if="msg.sources?.length" class="sources">
-            <span v-for="(src, j) in msg.sources" :key="j" class="source-chip">
-              {{ j + 1 }}. {{ src.doc_name }}
-            </span>
-          </div>
-
-          <!-- Actions -->
-          <div v-if="msg.role === 'assistant' && msg.content" class="actions">
-            <button
-              :class="['action-btn', { active: msg.feedback === 'positive' }]"
-              @click="chatStore.sendFeedback(i, 'positive')"
-              title="有用"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M4 13V6L7 2l4 4v7H4z"/>
-              </svg>
-            </button>
-            <button
-              :class="['action-btn', { active: msg.feedback === 'negative' }]"
-              @click="chatStore.sendFeedback(i, 'negative')"
-              title="没用"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M10 1V8L7 12l-4-4V1h7z" transform="rotate(180 7 7)"/>
-              </svg>
-            </button>
-            <button class="action-btn" @click="chatStore.regenerate(i)" :disabled="chatStore.isStreaming" title="重新生成">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M1 7a6 6 0 0111.5-2.3M13 7a6 6 0 01-11.5 2.3"/>
-                <path d="M13 1v4h-4M1 13v-4h4"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
+        :message="msg"
+        :index="i"
+      />
 
       <!-- Typing -->
       <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="msg assistant">
@@ -124,31 +60,7 @@ function formatContent(text: string): string {
       </button>
     </div>
 
-    <!-- Input -->
-    <div class="input-area">
-      <div v-if="chatStore.selectedFile" class="scope-indicator">
-        <span class="scope-icon">🔍</span>
-        <span class="scope-name">{{ chatStore.selectedFile }}</span>
-        <button class="scope-clear" @click="chatStore.selectFile(null)" title="清除筛选">✕</button>
-      </div>
-      <div class="input-box">
-        <el-input
-          v-model="inputText"
-          type="textarea"
-          :rows="1"
-          :autosize="{ minRows: 1, maxRows: 5 }"
-          placeholder="输入你的问题..."
-          @keydown="handleKeydown"
-          :disabled="chatStore.isStreaming"
-        />
-        <button class="send-btn" :disabled="!inputText.trim() || chatStore.isStreaming" @click="handleSend">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M16 2L8 10M16 2l-5 14-3-7-7-3 14-4z"/>
-          </svg>
-        </button>
-      </div>
-      <div class="input-hint">Enter 发送 · Shift + Enter 换行</div>
-    </div>
+    <ChatInput />
   </div>
 </template>
 
@@ -194,7 +106,7 @@ function formatContent(text: string): string {
   font-size: var(--text-base);
 }
 
-/* ── Message ──────────────────────────────────────────── */
+/* ── Typing ───────────────────────────────────────────── */
 .msg {
   display: flex;
   gap: var(--space-4);
@@ -202,10 +114,6 @@ function formatContent(text: string): string {
   margin: 0 auto;
   padding: var(--space-3) var(--space-6);
   animation: slideUp 0.3s var(--ease-out);
-}
-
-.msg.user {
-  flex-direction: row-reverse;
 }
 
 .msg-avatar {
@@ -218,11 +126,6 @@ function formatContent(text: string): string {
   flex-shrink: 0;
   font-size: 14px;
   font-weight: var(--font-bold);
-}
-
-.user-avatar {
-  background: var(--color-accent-light);
-  color: var(--color-accent);
 }
 
 .ai-avatar {
@@ -238,111 +141,6 @@ function formatContent(text: string): string {
   max-width: 85%;
 }
 
-.msg.user .msg-body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-/* ── Bubble ───────────────────────────────────────────── */
-.bubble {
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-base);
-  line-height: var(--leading-relaxed);
-  word-break: break-word;
-}
-
-.msg.user .bubble {
-  background: var(--color-foreground);
-  color: white;
-  border-bottom-right-radius: var(--radius-sm);
-}
-
-.msg.assistant .bubble {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-bottom-left-radius: var(--radius-sm);
-}
-
-:deep(.ref) {
-  display: inline;
-  padding: 1px 6px;
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-  border-radius: 4px;
-  font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-}
-
-/* ── Sources ──────────────────────────────────────────── */
-.sources {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.source-chip {
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-muted);
-  color: var(--color-secondary);
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-}
-
-.source-chip:hover {
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-}
-
-/* ── Actions ──────────────────────────────────────────── */
-.actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  opacity: 0;
-  transition: opacity var(--duration-fast);
-}
-
-.msg:hover .actions {
-  opacity: 1;
-}
-
-.action-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  border-radius: var(--radius-sm);
-  color: var(--color-secondary);
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-}
-
-.action-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.action-btn.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
-}
-
-.action-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* ── Typing ───────────────────────────────────────────── */
 .typing {
   display: flex;
   gap: 6px;
@@ -393,121 +191,5 @@ function formatContent(text: string): string {
   color: var(--color-accent);
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
-}
-
-/* ── Input ────────────────────────────────────────────── */
-.input-area {
-  padding: var(--space-4) var(--space-6) var(--space-6);
-  background: linear-gradient(to top, var(--color-background) 60%, transparent);
-}
-
-/* ── Scope Indicator ─────────────────────────────────── */
-.scope-indicator {
-  max-width: var(--content-max-width);
-  margin: 0 auto var(--space-2);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  font-weight: var(--font-medium);
-}
-
-.scope-icon {
-  font-size: 12px;
-}
-
-.scope-name {
-  max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.scope-clear {
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  color: var(--color-accent);
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 11px;
-  padding: 0;
-  transition: all var(--duration-fast);
-}
-
-.scope-clear:hover {
-  background: var(--color-accent);
-  color: white;
-}
-
-.input-box {
-  max-width: var(--content-max-width);
-  margin: 0 auto;
-  display: flex;
-  gap: var(--space-3);
-  align-items: flex-end;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
-  box-shadow: var(--shadow);
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.input-box:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow), 0 0 0 3px var(--color-accent-light);
-}
-
-:deep(.el-textarea__inner) {
-  border: none !important;
-  box-shadow: none !important;
-  padding: var(--space-2) 0 !important;
-  font-family: var(--font-body) !important;
-  font-size: var(--text-base) !important;
-  resize: none !important;
-  background: transparent !important;
-}
-
-.send-btn {
-  width: 40px;
-  height: 40px;
-  background: var(--color-accent);
-  border: none;
-  border-radius: var(--radius);
-  color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.send-btn:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-accent);
-}
-
-.send-btn:disabled {
-  background: var(--color-border);
-  cursor: not-allowed;
-}
-
-.input-hint {
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--color-secondary);
-  margin-top: var(--space-2);
-  opacity: 0.7;
 }
 </style>
