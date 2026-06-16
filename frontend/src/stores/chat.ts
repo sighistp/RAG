@@ -37,7 +37,7 @@ export const useChatStore = defineStore('chat', () => {
   )
 
   function conversationsByMode(mode: ChatMode) {
-    return computed(() => conversations.value.filter(c => (c.mode || 'file') === mode))
+    return computed(() => conversations.value.filter(c => c.mode === mode))
   }
 
   async function loadConversations(mode?: ChatMode, _force = false) {

@@ -1,5 +1,7 @@
 """Tests for analysis cards (DB + API) and conversation mode."""
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -448,3 +450,34 @@ class TestConversationModeAPI:
         )
         assert resp.status_code == 200
         assert len(resp.json()) == 1
+
+
+# ── Migration Tests ──────────────────────────────────────────────────────────
+
+
+def test_migration_backfills_null_mode(tmp_path):
+    """旧对话的 NULL mode 应该被迁移为 'file'。"""
+    import sqlite3
+    path = str(tmp_path / "migration_test.db")
+    conn = sqlite3.connect(path)
+    # Create conversations table WITHOUT mode column (simulate old schema)
+    conn.execute("""CREATE TABLE conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        title TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+    conn.execute("INSERT INTO conversations (user_id, title) VALUES (1, 'old conv')")
+    conn.commit()
+
+    # Now create UserDB which triggers the migration
+    udb = UserDB(path)
+
+    # Verify mode was backfilled
+    row = conn.execute("SELECT mode FROM conversations WHERE id = 1").fetchone()
+    assert row is not None
+    assert row[0] == "file"
+
+    udb.close()
+    conn.close()
+    os.unlink(path)

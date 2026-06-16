@@ -121,6 +121,11 @@ class UserDB:
                     "ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'file'"
                 )
                 self._conn.commit()
+            # Backfill NULL mode values to 'file' (for conversations created before mode column existed)
+            self._conn.execute(
+                "UPDATE conversations SET mode = 'file' WHERE mode IS NULL"
+            )
+            self._conn.commit()
 
     # ------------------------------------------------------------------
     # Users
