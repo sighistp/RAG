@@ -2742,6 +2742,58 @@ frontend/
 
 ---
 
+---
+
+## 前端 UI 全面重设计（2026-06-16）✅
+
+**设计文档：** `docs/specs/2026-06-16-ui-redesign.md`
+
+### 核心变化
+
+| 旧设计 | 新设计 |
+|--------|--------|
+| 顶部 Tab 导航 | 侧边栏三模式入口（文件/知识库/分析） |
+| 对话历史跨模式共享 | 每个模式独立对话历史 |
+| 没有分析模式 | 分析模式：问题卡片组 |
+| 对话不能转移 | 文件 ↔ 知识库可互转 |
+| 用户在侧边栏底部 | 用户在右上角下拉菜单 |
+
+### 设计系统
+
+- 原则：目的明确、不眼花缭乱、严谨 AI、运行思路明确
+- 配色：#1E293B 主色 + #2563EB 强调 + #F8FAFC 背景
+- 字体：Poppins（标题）+ Open Sans（正文）+ JetBrains Mono（代码）
+- 组件：一个组件一件事、状态可感知、交互可预期
+
+### 后端变更
+
+| 变更 | 文件 | 说明 |
+|------|------|------|
+| analysis_cards 表 | user_db.py | 卡片组管理 |
+| analysis_questions 表 | user_db.py | 问题管理 |
+| conversations.mode 字段 | user_db.py | 对话模式（file/kb/analysis） |
+| 6 个分析 API 端点 | api.py | 卡片组 CRUD |
+| 对话 mode 参数 | api.py | 创建/查询支持 mode |
+
+**新增测试：** 31 个（分析卡片 + mode 过滤）
+
+### 前端变更
+
+| 组件 | 说明 |
+|------|------|
+| Sidebar.vue | 模式入口（文件/知识库/分析）+ 对话列表（按 mode 过滤） |
+| ModeRouter.vue | 根据路由渲染对应模式页面 |
+| FileModeView.vue | 文件管理 + 文件聊天（固定分栏） |
+| KBModeView.vue | 知识库列表/详情 + 聊天（左右分栏） |
+| AnalysisModeView.vue | 问题卡片组网格 |
+| AnalysisCard.vue | 可折叠卡片（标题 + 问题列表） |
+
+**路由：** `/mode/file`、`/mode/kb`、`/mode/analysis`、`/knowledge/:id`
+
+**测试：** 412 后端 + 18 前端 = 430 全过
+
+---
+
 ## 下一步计划
 
 - 手动测试全流程
