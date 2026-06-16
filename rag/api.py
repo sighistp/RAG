@@ -301,16 +301,32 @@ async def list_files():
                         "size": size,
                         "size_human": _human_size(size),
                         "ext": fpath.suffix.lower(),
-                        "in_kb": _check_file_in_kb(fpath.name),
                     }
                 )
+    # Batch check which files are in KBs
+    if files:
+        filenames = [f["name"] for f in files]
+        in_kb_set = await asyncio.to_thread(_check_files_in_kb, filenames)
+        for f in files:
+            f["in_kb"] = f["name"] in in_kb_set
     return {"files": files, "count": len(files)}
 
 
-def _check_file_in_kb(filename: str) -> bool:
-    """检查文件是否已编入任何知识库。"""
+def _check_files_in_kb(filenames: list[str]) -> set[str]:
+    """批量检查哪些文件已编入知识库，返回已编入的文件名集合。"""
     import sqlite3
-    db_path = str(Path(__file__).resolve().parent.parent / "data" / "users.db")
+    db_path = str(_DB_PATH)
+    try:
+        conn = sqlite3.connect(db_path)
+        placeholders = ",".join("?" * len(filenames))
+        rows = conn.execute(
+            f"SELECT DISTINCT filename FROM kb_documents WHERE filename IN ({placeholders}) AND status = 'indexed'",
+            filenames
+        ).fetchall()
+        conn.close()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
     conn = sqlite3.connect(db_path)
     try:
         row = conn.execute(
@@ -745,6 +761,17 @@ async def delete_knowledge_base(kb_id: str, user_id: str = Security(verify_api_k
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         raise HTTPException(status_code=404, detail=f"知识库 {kb_id} 不存在")
+    # Clean up SQLite metadata
+    def _cleanup():
+        import sqlite3
+        conn = sqlite3.connect(str(_DB_PATH))
+        try:
+            conn.execute("DELETE FROM kb_documents WHERE kb_id = ?", (kb_id,))
+            conn.execute("DELETE FROM kb_metadata WHERE kb_id = ?", (kb_id,))
+            conn.commit()
+        finally:
+            conn.close()
+    await asyncio.to_thread(_cleanup)
     return {"status": "deleted", "kb_id": kb_id}
 
 
@@ -753,6 +780,7 @@ async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: 
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail=f"文件大小超过 {MAX_FILE_SIZE // 1024 // 1024} MB 限制")
+    filename = Path(file.filename).name if file.filename else "unnamed.txt"
     suffix = Path(file.filename).suffix if file.filename else ".txt"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     try:
@@ -767,6 +795,24 @@ async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: 
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         os.unlink(tmp_path)
+    # Insert into kb_documents
+    def _insert_doc():
+        import sqlite3
+        db_path = str(_DB_PATH)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO kb_documents (kb_id, filename, file_path, chunk_count, status) VALUES (?, ?, ?, ?, 'indexed')",
+                (kb_id, filename, tmp_path, count)
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO kb_metadata (kb_id, name) VALUES (?, ?)",
+                (kb_id, kb_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    await asyncio.to_thread(_insert_doc)
     return {"status": "added", "kb_id": kb_id, "chunks": count}
 
 
