@@ -452,7 +452,112 @@ def _check_file_in_kb(filename: str) -> bool:
 
 ---
 
-## Phase 4：知识库前端（第 5-6 天）
+### Task 3.6: 多级分块
+
+**Files:**
+- Modify: `rag/chunker.py`
+- Modify: `rag/vector_store.py`
+- Modify: `rag/retriever.py`
+- Create: `tests/test_hierarchical_chunk.py`
+
+**改动：**
+- chunker.py 新增 `hierarchical_chunk()` 函数：大 chunk（1500 字）+ 小 chunk（300 字）
+- 小 chunk 的 payload 包含 `parent_id` 指向大 chunk
+- retriever.py 检索后回溯 parent chunk，用大 chunk 作为上下文
+
+- [ ] **Step 1: 写失败测试**
+
+```python
+def test_hierarchical_chunk_returns_parent_and_child():
+    """应该返回大 chunk 和小 chunk，小 chunk 有 parent_id。"""
+    ...
+
+def test_retriever_returns_parent_context():
+    """检索命中子 chunk 时，应该返回父 chunk 的完整上下文。"""
+    ...
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+- [ ] **Step 3: 实现 hierarchical_chunk()**
+
+```python
+def hierarchical_chunk(text: str, doc_name: str, parent_size=1500, child_size=300) -> tuple[list[Chunk], list[Chunk]]:
+    """返回 (parent_chunks, child_chunks)。"""
+    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=parent_size, chunk_overlap=200)
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=child_size, chunk_overlap=50)
+
+    parent_chunks = parent_splitter.split_text(text)
+    all_children = []
+    for i, parent_text in enumerate(parent_chunks):
+        parent_id = str(uuid.uuid4())
+        children = child_splitter.split_text(parent_text)
+        for j, child_text in enumerate(children):
+            all_children.append(Chunk(
+                text=child_text,
+                doc_name=doc_name,
+                chunk_index=i * 100 + j,  # 编码 parent 关系
+            ))
+    # ... 返回结构化的 parent/child chunks
+```
+
+- [ ] **Step 4: 改 retriever 支持 parent 回溯**
+
+- [ ] **Step 5: 跑全量测试 + Commit**
+
+---
+
+### Task 3.7: 摘要索引
+
+**Files:**
+- Modify: `rag/chunker.py`
+- Modify: `rag/retriever.py`
+- Modify: `rag/pipeline.py`
+- Create: `tests/test_summary_index.py`
+
+**改动：**
+- chunker.py 新增 `generate_chunk_summaries()` 函数
+- 每个 chunk 生成一句话摘要（50-100 字）
+- 摘要向量存入 Qdrant payload 的 `summary_embedding` 字段
+- retriever.py 双路检索（原文向量 + 摘要向量）+ RRF 融合
+
+- [ ] **Step 1: 写失败测试**
+
+```python
+def test_generate_chunk_summaries():
+    """应该为每个 chunk 生成一句话摘要。"""
+    ...
+
+def test_retriever_searches_both_text_and_summary():
+    """检索应该同时查原文向量和摘要向量。"""
+    ...
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+- [ ] **Step 3: 实现 generate_chunk_summaries()**
+
+```python
+def generate_chunk_summaries(chunks: list[Chunk]) -> list[str]:
+    """为每个 chunk 生成一句话摘要。"""
+    summaries = []
+    for c in chunks:
+        prompt = f"用一句话概括以下内容的核心要点（50字以内）：\n{c.text[:500]}"
+        try:
+            summary = generate([{"role": "user", "content": prompt}])
+            summaries.append(summary)
+        except:
+            summaries.append(c.text[:100])  # fallback
+    return summaries
+```
+
+- [ ] **Step 4: 改 retriever 支持双路检索**
+
+- [ ] **Step 5: 跑全量测试 + Commit**
+
+---
+
+## Phase 4：知识库前端（第 6-7 天）
 
 ### Task 4.1: 知识库列表页
 
@@ -596,12 +701,12 @@ def _check_file_in_kb(filename: str) -> bool:
 |------|---------|------|------|
 | Phase 1 | +8 | 312 | 文件选择器 + 检索范围逻辑测试 |
 | Phase 2 | +8 | 320 | 流式 + 反馈 + 追问 |
-| Phase 3 | +15 | 335 | 知识库后端（metadata、目录、概述、in_kb） |
-| Phase 4 | +10 | 345 | 知识库前端 |
-| Phase 5 | +5 | 350 | 打磨 |
-| Phase 6 | +5 | 355 | 可选 |
+| Phase 3 | +25 | 345 | 知识库后端（metadata、目录、概述、in_kb、多级分块、摘要索引） |
+| Phase 4 | +10 | 355 | 知识库前端 |
+| Phase 5 | +5 | 360 | 打磨 |
+| Phase 6 | +5 | 365 | 可选 |
 
-**目标：350+ 测试全过**
+**目标：360+ 测试全过**
 
 ## 时间表
 
@@ -609,9 +714,9 @@ def _check_file_in_kb(filename: str) -> bool:
 |------|------|------|
 | Phase 1 | 前端布局重构 | 第 1 天 |
 | Phase 2 | 流式 + 反馈 + 追问对接 | 第 2 天 |
-| Phase 3 | 知识库后端扩展 | 第 3-5 天 |
-| Phase 4 | 知识库前端 | 第 6-7 天 |
-| Phase 5 | 细节打磨 | 第 8 天 |
+| Phase 3 | 知识库后端扩展（含多级分块 + 摘要索引） | 第 3-6 天 |
+| Phase 4 | 知识库前端 | 第 7-8 天 |
+| Phase 5 | 细节打磨 | 第 9 天 |
 | Phase 6 | 批量导入 + 数据源（可选） | 第 9+ 天 |
 
 **总计：约 8-9 天**

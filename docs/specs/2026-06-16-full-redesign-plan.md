@@ -395,6 +395,92 @@ conn.execute(
 - `rag/knowledge_base.py` — `add_document()` 中调用生成 + 填充 chunk_count
 - `rag/api.py` — 新增端点
 
+### 3.5 多级分块
+
+**现状：** 只有单一 `RecursiveCharacterTextSplitter(chunk_size=500, overlap=80)`，没有父子 chunk 层级。
+
+**问题：**
+- 小 chunk（500 字）检索精度高，但上下文不足
+- 大 chunk 上下文充足，但检索精度低
+- 无法同时兼顾精度和上下文
+
+**方案：** 双层分块
+
+```
+原文档
+  → 大 chunk（parent, 1500 字, overlap 200）→ 存入 Qdrant，payload 中 parent=True
+  → 小 chunk（child, 300 字, overlap 50）  → 存入 Qdrant，payload 中 parent=False, parent_id=大chunk的ID
+```
+
+**检索流程：**
+```
+用户查询
+  → 向量检索小 chunk（精度高）
+  → 命中小 chunk → 通过 parent_id 找到对应的大 chunk
+  → 用大 chunk 作为上下文传给 LLM（上下文充足）
+```
+
+**Qdrant payload 扩展：**
+```python
+{
+    "text": "...",
+    "doc_name": "...",
+    "chunk_index": 0,
+    "is_parent": False,       # True=大 chunk, False=小 chunk
+    "parent_id": "uuid-xxx",  # 小 chunk 指向大 chunk 的 ID
+    "tags": [...]
+}
+```
+
+**改动文件：**
+- `rag/chunker.py` — 新增 `hierarchical_chunk()` 函数
+- `rag/vector_store.py` — payload 支持 is_parent、parent_id
+- `rag/retriever.py` — 检索后回溯 parent chunk
+- `rag/pipeline.py` — 使用新的分块策略
+
+### 3.6 摘要索引
+
+**现状：** 文档/ chunk 没有摘要向量，只检索原文向量。
+
+**问题：**
+- 用户问"这个文档讲了什么"时，原文向量可能匹配不到
+- 摘要向量可以补充语义覆盖
+
+**方案：** 每个 chunk 生成摘要向量，同时存储
+
+```
+原文 chunk → embedding_1（原文向量）
+摘要 chunk → embedding_2（摘要向量）
+
+Qdrant payload:
+{
+    "text": "原文内容...",
+    "summary": "这段内容主要讲述了...",
+    "embedding_summary": [0.1, 0.2, ...],  # 摘要向量
+    ...
+}
+```
+
+**检索流程：**
+```
+用户查询
+  → 原文向量检索 top_k
+  → 摘要向量检索 top_k
+  → RRF 融合两路结果
+  → 返回最终 top_k
+```
+
+**摘要生成策略：**
+- 每个 chunk（300-500 字）生成一句话摘要（50-100 字）
+- 用 LLM 生成，prompt："用一句话概括以下内容的核心要点"
+- 生成时机：chunk 后、embed 前
+
+**改动文件：**
+- `rag/chunker.py` — 新增 `generate_chunk_summaries()` 函数
+- `rag/vector_store.py` — payload 支持 summary 字段
+- `rag/retriever.py` — 双路检索（原文 + 摘要）+ RRF 融合
+- `rag/pipeline.py` — 集成摘要生成流程
+
 ---
 
 ## 4. 已知 Bug 修复
