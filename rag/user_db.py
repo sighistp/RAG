@@ -61,6 +61,28 @@ class UserDB:
                     created_at  REAL    NOT NULL DEFAULT (strftime('%s','now')),
                     UNIQUE(message_id, user_id)
                 );
+
+                CREATE TABLE IF NOT EXISTS kb_metadata (
+                    kb_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    overview TEXT DEFAULT '',
+                    user_id INTEGER,
+                    created_at TEXT DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS kb_documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kb_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    file_path TEXT,
+                    toc TEXT DEFAULT '',
+                    summary TEXT DEFAULT '',
+                    chunk_count INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'pending',
+                    added_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(kb_id, filename)
+                );
                 """
             )
 
