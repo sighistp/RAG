@@ -93,8 +93,34 @@ class UserDB:
                     last_synced_at  REAL,
                     created_at      REAL    NOT NULL DEFAULT (strftime('%s','now'))
                 );
+
+                CREATE TABLE IF NOT EXISTS analysis_cards (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name        TEXT    NOT NULL,
+                    user_id     INTEGER,
+                    created_at  TEXT    DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS analysis_questions (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    card_id             INTEGER NOT NULL,
+                    question            TEXT    NOT NULL,
+                    answer              TEXT    DEFAULT '',
+                    source_mode         TEXT    DEFAULT '',
+                    source_message_id   INTEGER,
+                    created_at          TEXT    DEFAULT (datetime('now')),
+                    FOREIGN KEY (card_id) REFERENCES analysis_cards(id)
+                );
                 """
             )
+            # Add mode column to conversations if it doesn't exist (idempotent)
+            try:
+                self._conn.execute("SELECT mode FROM conversations LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute(
+                    "ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'file'"
+                )
+                self._conn.commit()
 
     # ------------------------------------------------------------------
     # Users
@@ -143,23 +169,35 @@ class UserDB:
     # Conversations
     # ------------------------------------------------------------------
 
-    def create_conversation(self, user_id: int, title: str = "") -> int:
+    def create_conversation(self, user_id: int, title: str = "", mode: str = "file") -> int:
         """Create a conversation and return its id."""
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO conversations (user_id, title) VALUES (?, ?)",
-                (user_id, title),
+                "INSERT INTO conversations (user_id, title, mode) VALUES (?, ?, ?)",
+                (user_id, title, mode),
             )
             self._conn.commit()
             return cur.lastrowid  # type: ignore[return-value]
 
-    def list_conversations(self, user_id: int) -> list[dict[str, Any]]:
-        """Return all conversations for *user_id*, newest first."""
+    def list_conversations(self, user_id: int, mode: str | None = None) -> list[dict[str, Any]]:
+        """Return all conversations for *user_id*, newest first.
+
+        If *mode* is given, filter by that mode.
+        """
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT id, user_id, title, created_at FROM conversations WHERE user_id = ? ORDER BY created_at DESC",
-                (user_id,),
-            ).fetchall()
+            if mode is not None:
+                rows = self._conn.execute(
+                    "SELECT id, user_id, title, mode, created_at "
+                    "FROM conversations WHERE user_id = ? AND mode = ? "
+                    "ORDER BY created_at DESC",
+                    (user_id, mode),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT id, user_id, title, mode, created_at "
+                    "FROM conversations WHERE user_id = ? ORDER BY created_at DESC",
+                    (user_id,),
+                ).fetchall()
         return [dict(r) for r in rows]
 
     def delete_conversation(self, conversation_id: int, user_id: int) -> bool:
@@ -313,6 +351,95 @@ class UserDB:
                 (status, source_id),
             )
             self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Analysis Cards
+    # ------------------------------------------------------------------
+
+    def create_card(self, user_id: int, name: str) -> int:
+        """Create an analysis card and return its id."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO analysis_cards (name, user_id) VALUES (?, ?)",
+                (name, user_id),
+            )
+            self._conn.commit()
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def list_cards(self, user_id: int) -> list[dict[str, Any]]:
+        """Return all analysis cards for *user_id*, newest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, name, user_id, created_at FROM analysis_cards "
+                "WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_card(self, card_id: int) -> bool:
+        """Delete an analysis card and its questions. Returns True if deleted."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM analysis_questions WHERE card_id = ?", (card_id,)
+            )
+            cur = self._conn.execute(
+                "DELETE FROM analysis_cards WHERE id = ?", (card_id,)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def rename_card(self, card_id: int, name: str) -> bool:
+        """Rename an analysis card. Returns True if updated."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE analysis_cards SET name = ? WHERE id = ?",
+                (name, card_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # Analysis Questions
+    # ------------------------------------------------------------------
+
+    def add_question(
+        self,
+        card_id: int,
+        question: str,
+        answer: str = "",
+        source_mode: str = "",
+        source_message_id: int | None = None,
+    ) -> int:
+        """Add a question to a card and return its id."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO analysis_questions "
+                "(card_id, question, answer, source_mode, source_message_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (card_id, question, answer, source_mode, source_message_id),
+            )
+            self._conn.commit()
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def get_questions(self, card_id: int) -> list[dict[str, Any]]:
+        """Return all questions for a card, ordered by created_at."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, card_id, question, answer, source_mode, "
+                "source_message_id, created_at "
+                "FROM analysis_questions WHERE card_id = ? ORDER BY created_at",
+                (card_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_question(self, question_id: int) -> bool:
+        """Delete a question. Returns True if deleted."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM analysis_questions WHERE id = ?", (question_id,)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
 
     # ------------------------------------------------------------------
     # Cleanup

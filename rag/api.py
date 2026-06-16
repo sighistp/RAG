@@ -138,6 +138,25 @@ class TokenResponse(BaseModel):
     username: str
 
 
+class CreateConversationRequest(BaseModel):
+    mode: str = Field(default="file", description="对话模式")
+
+
+class CreateCardRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200, description="卡片名称")
+
+
+class RenameCardRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200, description="新名称")
+
+
+class AddQuestionRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=5000, description="问题内容")
+    answer: str = Field(default="", description="回答内容")
+    source_mode: str = Field(default="", description="来源模式")
+    source_message_id: int | None = Field(default=None, description="来源消息 ID")
+
+
 # Module-level UserDB instance
 _DB_PATH = Path(__file__).resolve().parent.parent / "data" / "users.db"
 user_db = UserDB(str(_DB_PATH))
@@ -234,26 +253,26 @@ def _get_current_user(token: str) -> dict | None:
 
 
 @app.post("/conversations", summary="新建对话")
-async def create_conversation(authorization: str = Header(default="")):
+async def create_conversation(req: CreateConversationRequest = CreateConversationRequest(), authorization: str = Header(default="")):
     if not authorization:
         raise HTTPException(status_code=401, detail="未提供认证信息")
     token = authorization.replace("Bearer ", "")
     user = await asyncio.to_thread(_get_current_user, token)
     if not user:
         raise HTTPException(status_code=401, detail="token 无效或已过期")
-    cid = await asyncio.to_thread(user_db.create_conversation, user["id"])
-    return {"id": cid, "title": "新对话"}
+    cid = await asyncio.to_thread(user_db.create_conversation, user["id"], "", req.mode)
+    return {"id": cid, "title": "新对话", "mode": req.mode}
 
 
 @app.get("/conversations", summary="列出对话")
-async def list_conversations(authorization: str = Header(default="")):
+async def list_conversations(authorization: str = Header(default=""), mode: str | None = None):
     if not authorization:
         raise HTTPException(status_code=401, detail="未提供认证信息")
     token = authorization.replace("Bearer ", "")
     user = await asyncio.to_thread(_get_current_user, token)
     if not user:
         raise HTTPException(status_code=401, detail="token 无效或已过期")
-    return await asyncio.to_thread(user_db.list_conversations, user["id"])
+    return await asyncio.to_thread(user_db.list_conversations, user["id"], mode)
 
 
 @app.delete("/conversations/{cid}", summary="删除对话")
@@ -1044,6 +1063,93 @@ async def get_gaps(limit: int = 50):
         finally:
             ga.close()
     return await asyncio.to_thread(_get)
+
+
+# ── 分析卡片 ────────────────────────────────────────────────────────
+
+
+@app.get("/analysis/cards", summary="获取分析卡片列表")
+async def list_analysis_cards(authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    return await asyncio.to_thread(user_db.list_cards, user["id"])
+
+
+@app.post("/analysis/cards", summary="创建分析卡片")
+async def create_analysis_card(req: CreateCardRequest, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    card_id = await asyncio.to_thread(user_db.create_card, user["id"], req.name)
+    return {"id": card_id, "name": req.name}
+
+
+@app.delete("/analysis/cards/{card_id}", summary="删除分析卡片")
+async def delete_analysis_card(card_id: int, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    deleted = await asyncio.to_thread(user_db.delete_card, card_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    return {"status": "deleted"}
+
+
+@app.put("/analysis/cards/{card_id}/name", summary="重命名分析卡片")
+async def rename_analysis_card(card_id: int, req: RenameCardRequest, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    updated = await asyncio.to_thread(user_db.rename_card, card_id, req.name)
+    if not updated:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    return {"id": card_id, "name": req.name}
+
+
+@app.post("/analysis/cards/{card_id}/questions", summary="添加分析问题")
+async def add_analysis_question(card_id: int, req: AddQuestionRequest, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    qid = await asyncio.to_thread(
+        user_db.add_question,
+        card_id,
+        req.question,
+        req.answer,
+        req.source_mode,
+        req.source_message_id,
+    )
+    return {"id": qid, "question": req.question, "answer": req.answer}
+
+
+@app.delete("/analysis/cards/{card_id}/questions/{qid}", summary="删除分析问题")
+async def delete_analysis_question(card_id: int, qid: int, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    deleted = await asyncio.to_thread(user_db.delete_question, qid)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="问题不存在")
+    return {"status": "deleted"}
 
 
 # ── 数据源管理 ────────────────────────────────────────────────────────
