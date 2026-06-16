@@ -87,49 +87,41 @@ const pageTitle = computed(() => {
 - Modify: `frontend/src/stores/files.ts`
 
 **改动：**
-- 侧边栏底部显示暂存文件列表
-- 每个文件有勾选框
-- 选中状态存入 chatStore.selectedFiles
+- 侧边栏底部显示暂存文件列表（第一版显示所有文件，Task 3.4 完成后过滤 in_kb=false）
+- 单选模式（后端 doc_name 只支持单文件过滤）
+- 选中状态存入 chatStore.selectedFile
 - 切换对话时恢复选中状态
 
-- [ ] **Step 1: chat store 新增 selectedFiles**
+- [ ] **Step 1: chat store 新增 selectedFile**
 
 ```typescript
-const selectedFiles = ref<string[]>([])
+const selectedFile = ref<string | null>(null)
 
-function setSelectedFiles(files: string[]) {
-  selectedFiles.value = files
-}
-
-function clearSelectedFiles() {
-  selectedFiles.value = []
+function selectFile(name: string | null) {
+  selectedFile.value = name
 }
 ```
 
-- [ ] **Step 2: files store 返回 in_kb 字段**
-
-后端 `/files` 需要返回 `in_kb` 字段，前端过滤只显示暂存文件。
-
-- [ ] **Step 3: 侧边栏模板添加文件列表**
+- [ ] **Step 2: 侧边栏模板添加文件列表（单选）**
 
 ```vue
 <div class="sidebar-files">
-  <div class="section-label">暂存文件</div>
-  <div v-for="file in stagingFiles" :key="file.name" class="file-item">
-    <el-checkbox
-      :model-value="chatStore.selectedFiles.includes(file.name)"
-      @change="toggleFile(file.name)"
-    />
+  <div class="section-label">文件过滤</div>
+  <div class="file-item" @click="chatStore.selectFile(null)"
+       :class="{ active: !chatStore.selectedFile }">
+    <span>全部文件</span>
+  </div>
+  <div v-for="file in filesStore.files" :key="file.name"
+       class="file-item" @click="chatStore.selectFile(file.name)"
+       :class="{ active: chatStore.selectedFile === file.name }">
     <span class="file-name">{{ file.name }}</span>
   </div>
 </div>
 ```
 
-- [ ] **Step 4: 路由 query 传递 selectedFiles**
+- [ ] **Step 3: 切换对话时恢复选中文件**
 
-切换对话时，从 URL query 恢复选中文件。
-
-- [ ] **Step 5: 跑测试 + 构建 + Commit**
+- [ ] **Step 4: 跑测试 + 构建 + Commit**
 
 ---
 
@@ -139,37 +131,29 @@ function clearSelectedFiles() {
 - Modify: `frontend/src/views/ChatView.vue`
 
 **改动：**
-- 输入框上方显示当前检索范围
+- 输入框上方显示当前检索范围（单文件模式）
 - 未选择 → "搜索全部文件"
-- 已选择 → "搜索：文件A、文件B [× 清除]"
-- 已选知识库 → "在「XX知识库」中搜索 [× 清除]"
+- 已选择 → "搜索：文件A [× 清除]"
 
 - [ ] **Step 1: 添加检索范围显示组件**
 
 ```vue
-<div v-if="searchScope" class="search-scope">
-  <span v-if="searchScope.type === 'files'">
-    🔍 搜索：{{ searchScope.files.join('、') }}
-  </span>
-  <span v-else-if="searchScope.type === 'kb'">
-    🔍 在「{{ searchScope.kbName }}」中搜索
-  </span>
-  <span v-else>🔍 搜索全部文件</span>
-  <button v-if="searchScope.type !== 'all'" @click="clearScope">×</button>
+<div v-if="chatStore.selectedFile" class="search-scope">
+  🔍 搜索：{{ chatStore.selectedFile }}
+  <button @click="chatStore.selectFile(null)">×</button>
+</div>
+<div v-else class="search-scope">
+  🔍 搜索全部文件
 </div>
 ```
 
 - [ ] **Step 2: sendMessage 传递 doc_name**
 
 ```typescript
-const docName = chatStore.selectedFiles.length === 1
-  ? chatStore.selectedFiles[0]
-  : undefined
-
 body: JSON.stringify({
   question,
   conversation_id: currentConvId.value,
-  doc_name: docName
+  doc_name: chatStore.selectedFile || undefined
 })
 ```
 
@@ -608,13 +592,26 @@ def _check_file_in_kb(filename: str) -> bool:
 
 ## 测试目标
 
-| 阶段 | 新增测试 | 累计 |
-|------|---------|------|
-| Phase 1 | +5 | 309 |
-| Phase 2 | +8 | 317 |
-| Phase 3 | +15 | 332 |
-| Phase 4 | +10 | 342 |
-| Phase 5 | +5 | 347 |
-| Phase 6 | +5 | 352 |
+| 阶段 | 新增测试 | 累计 | 说明 |
+|------|---------|------|------|
+| Phase 1 | +8 | 312 | 文件选择器 + 检索范围逻辑测试 |
+| Phase 2 | +8 | 320 | 流式 + 反馈 + 追问 |
+| Phase 3 | +15 | 335 | 知识库后端（metadata、目录、概述、in_kb） |
+| Phase 4 | +10 | 345 | 知识库前端 |
+| Phase 5 | +5 | 350 | 打磨 |
+| Phase 6 | +5 | 355 | 可选 |
 
 **目标：350+ 测试全过**
+
+## 时间表
+
+| 阶段 | 内容 | 时间 |
+|------|------|------|
+| Phase 1 | 前端布局重构 | 第 1 天 |
+| Phase 2 | 流式 + 反馈 + 追问对接 | 第 2 天 |
+| Phase 3 | 知识库后端扩展 | 第 3-5 天 |
+| Phase 4 | 知识库前端 | 第 6-7 天 |
+| Phase 5 | 细节打磨 | 第 8 天 |
+| Phase 6 | 批量导入 + 数据源（可选） | 第 9+ 天 |
+
+**总计：约 8-9 天**
