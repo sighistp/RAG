@@ -190,10 +190,7 @@ async function addFileToKB() {
     formData.append('file', blob, selectedFile.value.name)
 
     await api.post(`/knowledge-bases/${kbId}/documents`, formData, {
-      headers: {
-        ...authStore.getAuthHeaders(),
-        'Content-Type': 'multipart/form-data'
-      }
+      headers: authStore.getAuthHeaders()
     })
     ElMessage.success('文件已添加到知识库')
     showAddDialog.value = false

@@ -49,11 +49,7 @@ describe('files store', () => {
     expect(api.post).toHaveBeenCalledWith(
       '/upload',
       expect.any(FormData),
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          'Content-Type': 'multipart/form-data'
-        })
-      })
+      expect.anything()
     )
   })
 

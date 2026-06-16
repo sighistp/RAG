@@ -37,10 +37,7 @@ export const useFilesStore = defineStore('files', () => {
     formData.append('file', file)
 
     const res = await api.post(`${API}/upload`, formData, {
-      headers: {
-        ...auth.getAuthHeaders(),
-        'Content-Type': 'multipart/form-data'
-      }
+      headers: auth.getAuthHeaders()
     })
 
     await loadFiles(true)

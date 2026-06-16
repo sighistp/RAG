@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import api from '../utils/api'
 
 interface GapSummary {
   total: number
@@ -17,7 +17,7 @@ onMounted(async () => {
 async function loadAnalytics() {
   loading.value = true
   try {
-    const res = await axios.get('/analytics/gaps/summary')
+    const res = await api.get('/analytics/gaps/summary')
     summary.value = res.data
   } catch {
     // Ignore
