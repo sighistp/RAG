@@ -8,7 +8,7 @@ import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import HTTPException, Security
+from fastapi import HTTPException, Header, Security
 from fastapi.security import APIKeyHeader
 from jose import JWTError, jwt
 
@@ -83,17 +83,23 @@ def decode_token(token: str) -> dict | None:
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def verify_api_key(api_key: str = Security(api_key_header)) -> str:
-    """校验 API Key，返回 user_id。auth_enabled=False 时跳过校验。"""
+def verify_api_key(api_key: str = Security(api_key_header), authorization: str = Header(default="")) -> str:
+    """校验 API Key 或 JWT Token，返回 user_id。auth_enabled=False 时跳过校验。"""
     if not settings.auth_enabled:
         return "anonymous"
-    if api_key is None:
-        raise HTTPException(status_code=401, detail="缺少 API Key，请在请求头中添加 X-API-Key")
-    try:
-        keys = json.loads(settings.auth_keys)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="鉴权配置格式错误")
-    for user_id, key in keys.items():
-        if hmac.compare_digest(api_key, key):
-            return user_id
-    raise HTTPException(status_code=403, detail="API Key 无效")
+    # Try X-API-Key first
+    if api_key:
+        try:
+            keys = json.loads(settings.auth_keys)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=500, detail="鉴权配置格式错误")
+        for user_id, key in keys.items():
+            if hmac.compare_digest(api_key, key):
+                return user_id
+    # Fallback: try JWT Bearer token
+    if authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        payload = decode_token(token)
+        if payload and "user_id" in payload:
+            return str(payload["user_id"])
+    raise HTTPException(status_code=403, detail="认证失败，请提供有效的 API Key 或 JWT Token")

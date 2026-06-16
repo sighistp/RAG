@@ -671,7 +671,11 @@ async def query_stream(
             user_db.add_message(req.conversation_id, "user", req.question)
             user_db.add_message(req.conversation_id, "assistant", answer_buffer)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/suggest", summary="生成追问建议", description="基于问答生成 3 个推荐追问")

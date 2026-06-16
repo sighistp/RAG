@@ -34,11 +34,15 @@ export const useChatStore = defineStore('chat', () => {
   async function loadConversations(force = false) {
     if (_loaded && !force) return
     const auth = useAuthStore()
-    const res = await axios.get(`${API}/conversations`, {
-      headers: auth.getAuthHeaders()
-    })
-    conversations.value = res.data
-    _loaded = true
+    try {
+      const res = await axios.get(`${API}/conversations`, {
+        headers: auth.getAuthHeaders()
+      })
+      conversations.value = res.data
+      _loaded = true
+    } catch {
+      // Silently fail — user sees empty conversation list
+    }
   }
 
   async function createConversation() {
@@ -103,17 +107,27 @@ export const useChatStore = defineStore('chat', () => {
         })
       })
 
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: '请求失败' }))
+        assistantMsg.content = err.detail || '请求失败'
+        return
+      }
+
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
       let answer = ''
       let sources: any[] = []
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const text = decoder.decode(value)
-        for (const line of text.split('\n')) {
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''  // Keep incomplete line in buffer
+
+        for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           try {
             const event = JSON.parse(line.slice(6))

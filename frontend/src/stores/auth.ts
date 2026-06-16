@@ -33,8 +33,11 @@ export const useAuthStore = defineStore('auth', () => {
         headers: { Authorization: `Bearer ${token.value}` }
       })
       user.value = res.data
-    } catch {
-      logout()
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        logout()
+      }
+      // Other errors (network, 500) — keep token, user can retry
     }
   }
 

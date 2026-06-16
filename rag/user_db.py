@@ -202,7 +202,7 @@ class UserDB:
         """Record user feedback on a message and return feedback id."""
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO feedback (message_id, user_id, value, comment) VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO feedback (message_id, user_id, value, comment) VALUES (?, ?, ?, ?)",
                 (message_id, user_id, value, comment),
             )
             self._conn.commit()
