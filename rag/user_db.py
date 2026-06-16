@@ -230,6 +230,17 @@ class UserDB:
             self._conn.commit()
             return cur.lastrowid  # type: ignore[return-value]
 
+    def message_belongs_to_user(self, message_id: int, user_id: int) -> bool:
+        """Check if a message belongs to a conversation owned by user_id."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM chat_messages m "
+                "JOIN conversations c ON m.conversation_id = c.id "
+                "WHERE m.id = ? AND c.user_id = ?",
+                (message_id, user_id),
+            ).fetchone()
+        return row is not None
+
     # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
