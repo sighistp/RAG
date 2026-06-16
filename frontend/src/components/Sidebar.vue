@@ -14,9 +14,13 @@ const currentMode = computed<ChatMode>(() => {
   return (m?.[1] as ChatMode) || 'file'
 })
 
-// Sync route-derived mode to store so sendMessage reloads the right conversations
-watch(currentMode, (mode) => {
-  chatStore.currentMode = mode
+// Sync route-derived mode to store, reload conversations, clear file selection
+watch(currentMode, (newMode, oldMode) => {
+  chatStore.currentMode = newMode
+  if (newMode !== oldMode) {
+    chatStore.selectFile(null)
+    chatStore.loadConversations(newMode, true)
+  }
 }, { immediate: true })
 
 const modes: Array<{ key: ChatMode; icon: string; label: string }> = [

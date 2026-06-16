@@ -31,7 +31,6 @@ export const useChatStore = defineStore('chat', () => {
   const suggestedQuestions = ref<string[]>([])
   const selectedFile = ref<string | null>(null)
   const _selectedFilesByConv = new Map<number, string | null>()
-  let _loaded = false
 
   const currentConversation = computed(() =>
     conversations.value.find(c => c.id === currentConvId.value)
@@ -41,8 +40,7 @@ export const useChatStore = defineStore('chat', () => {
     return computed(() => conversations.value.filter(c => c.mode === mode))
   }
 
-  async function loadConversations(mode?: ChatMode, force = false) {
-    if (_loaded && !force && !mode) return
+  async function loadConversations(mode?: ChatMode, _force = false) {
     const auth = useAuthStore()
     try {
       const params: Record<string, string> = {}
@@ -52,7 +50,6 @@ export const useChatStore = defineStore('chat', () => {
         params
       })
       conversations.value = res.data
-      _loaded = true
     } catch {
       // Silently fail — user sees empty conversation list
     }
