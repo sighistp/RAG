@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useFilesStore } from '../stores/files'
+import { useAuthStore } from '../stores/auth'
+import api from '../utils/api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 
@@ -46,6 +48,91 @@ async function handleDrop(e: DragEvent) {
     }
   }
 }
+
+// --- Batch Import ---
+const showBatchImportDialog = ref(false)
+const batchImportMode = ref<'qa_pair' | 'document' | 'table'>('qa_pair')
+const batchImportFile = ref<File | null>(null)
+const batchImportFileRaw = ref<UploadFile | null>(null)
+const batchImportLoading = ref(false)
+const batchImportResult = ref<{ chunks?: number; detail?: string } | null>(null)
+const batchQuestionCol = ref('question')
+const batchAnswerCol = ref('answer')
+const batchContentCol = ref('content')
+
+const batchImportModeOptions = [
+  { value: 'qa_pair', label: '问答对模式', desc: '每行一个问题 + 答案' },
+  { value: 'document', label: '文档模式', desc: '每行一个文档片段' },
+  { value: 'table', label: '表格模式', desc: '整张表转为结构化文本' },
+]
+
+const batchConfigFields = computed(() => {
+  if (batchImportMode.value === 'qa_pair') {
+    return [
+      { key: 'question_col', label: '问题列名', model: batchQuestionCol },
+      { key: 'answer_col', label: '答案列名', model: batchAnswerCol },
+    ]
+  }
+  if (batchImportMode.value === 'document') {
+    return [
+      { key: 'content_col', label: '内容列名', model: batchContentCol },
+    ]
+  }
+  return []
+})
+
+function openBatchImportDialog() {
+  batchImportMode.value = 'qa_pair'
+  batchImportFile.value = null
+  batchImportFileRaw.value = null
+  batchImportResult.value = null
+  batchQuestionCol.value = 'question'
+  batchAnswerCol.value = 'answer'
+  batchContentCol.value = 'content'
+  showBatchImportDialog.value = true
+}
+
+function handleBatchImportFileChange(file: UploadFile) {
+  batchImportFileRaw.value = file
+  batchImportFile.value = file.raw ?? null
+}
+
+async function submitBatchImport() {
+  if (!batchImportFile.value) {
+    ElMessage.warning('请选择要导入的文件')
+    return
+  }
+
+  batchImportLoading.value = true
+  batchImportResult.value = null
+
+  const config: Record<string, string> = {}
+  for (const field of batchConfigFields.value) {
+    config[field.key] = field.model.value
+  }
+
+  const formData = new FormData()
+  formData.append('file', batchImportFile.value)
+  formData.append('mode', batchImportMode.value)
+  formData.append('config', JSON.stringify(config))
+
+  try {
+    const auth = useAuthStore()
+    const res = await api.post('/batch-import', formData, {
+      headers: {
+        ...auth.getAuthHeaders(),
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    batchImportResult.value = { chunks: res.data.chunks, detail: res.data.detail || '导入完成' }
+    ElMessage.success(`导入成功，共生成 ${res.data.chunks} 个 chunk`)
+    await filesStore.loadFiles(true)
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.detail || '批量导入失败')
+  } finally {
+    batchImportLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -58,10 +145,81 @@ async function handleDrop(e: DragEvent) {
       </div>
       <h3>拖拽文件到此处上传</h3>
       <p>支持 txt、md、pdf、docx、xlsx、csv</p>
-      <el-upload :show-file-list="false" :before-upload="() => false" :on-change="handleUpload" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
-        <el-button type="primary">选择文件</el-button>
-      </el-upload>
+      <div class="upload-actions">
+        <el-upload :show-file-list="false" :before-upload="() => false" :on-change="handleUpload" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+          <el-button type="primary">选择文件</el-button>
+        </el-upload>
+        <el-button @click="openBatchImportDialog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px; vertical-align: -2px;">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+          </svg>
+          批量导入
+        </el-button>
+      </div>
     </div>
+
+    <!-- Batch Import Dialog -->
+    <el-dialog v-model="showBatchImportDialog" title="批量导入" width="520px" :close-on-click-modal="false" @closed="batchImportResult = null">
+      <div class="batch-import-dialog">
+        <label class="field-label">导入文件</label>
+        <el-upload
+          drag
+          :auto-upload="false"
+          :show-file-list="false"
+          :on-change="handleBatchImportFileChange"
+          accept=".csv,.xlsx"
+        >
+          <template v-if="batchImportFile">
+            <div class="uploaded-file">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span>{{ batchImportFile.name }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--color-secondary); margin-bottom: 8px;">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+            <div class="el-upload__text">拖拽文件或 <em>点击选择</em></div>
+            <div class="el-upload__tip">支持 .csv / .xlsx 格式</div>
+          </template>
+        </el-upload>
+
+        <label class="field-label">导入模式</label>
+        <div class="mode-options">
+          <label v-for="opt in batchImportModeOptions" :key="opt.value" :class="['mode-option', { active: batchImportMode === opt.value }]">
+            <input type="radio" :value="opt.value" v-model="batchImportMode" />
+            <div>
+              <div class="mode-option-title">{{ opt.label }}</div>
+              <div class="mode-option-desc">{{ opt.desc }}</div>
+            </div>
+          </label>
+        </div>
+
+        <template v-if="batchConfigFields.length">
+          <label class="field-label">列名配置</label>
+          <div class="config-fields">
+            <div v-for="field in batchConfigFields" :key="field.key" class="config-field">
+              <span class="config-field-label">{{ field.label }}</span>
+              <el-input v-model="field.model.value" :placeholder="field.key" size="default" />
+            </div>
+          </div>
+        </template>
+
+        <div v-if="batchImportResult" class="import-result">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--color-success); flex-shrink: 0;">
+            <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <span>导入完成，共生成 <strong>{{ batchImportResult.chunks }}</strong> 个 chunk</span>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="showBatchImportDialog = false">取消</el-button>
+        <el-button type="primary" :loading="batchImportLoading" :disabled="!batchImportFile" @click="submitBatchImport">
+          {{ batchImportLoading ? '导入中...' : '开始导入' }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <div class="grid">
       <div v-for="file in filesStore.files" :key="file.name" class="file-card">
@@ -120,6 +278,109 @@ async function handleDrop(e: DragEvent) {
   font-size: var(--text-sm);
   color: var(--color-secondary);
   margin-bottom: var(--space-4);
+}
+
+.upload-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+/* Batch Import Dialog */
+.batch-import-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.field-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-foreground);
+  margin-bottom: var(--space-1);
+}
+
+.uploaded-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-foreground);
+  font-size: var(--text-sm);
+  padding: var(--space-2) 0;
+}
+
+.mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.mode-option:hover {
+  border-color: var(--color-border-hover);
+}
+
+.mode-option.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+
+.mode-option input[type="radio"] {
+  accent-color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.mode-option-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-foreground);
+}
+
+.mode-option-desc {
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
+  margin-top: 2px;
+}
+
+.config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.config-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.config-field-label {
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.import-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-success-light, #f0f9eb);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--color-foreground);
 }
 
 .grid {
