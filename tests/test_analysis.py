@@ -481,3 +481,141 @@ def test_migration_backfills_null_mode(tmp_path):
     udb.close()
     conn.close()
     os.unlink(path)
+
+
+# ── Phase 0: analysis_cards.summary column migration ────────────────────────
+
+
+class TestAnalysisCardsSummaryMigration:
+    """Test that analysis_cards table has a summary column after migration."""
+
+    def test_analysis_cards_has_summary_column(self, db):
+        """analysis_cards table should have a summary column."""
+        import sqlite3
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.execute("PRAGMA table_info(analysis_cards)")
+        columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+        assert "summary" in columns
+
+    def test_analysis_cards_summary_default_empty(self, db):
+        """New analysis_cards should have summary='' by default."""
+        uid = db.create_user("alice", "s3cret")
+        card_id = db.create_card(uid, "Test Card")
+        import sqlite3
+        conn = sqlite3.connect(db.db_path)
+        row = conn.execute("SELECT summary FROM analysis_cards WHERE id = ?", (card_id,)).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == ""
+
+    def test_analysis_cards_summary_idempotent_migration(self, tmp_path):
+        """Creating a new UserDB with existing analysis_cards (no summary) should add the column."""
+        import sqlite3
+        path = str(tmp_path / "migration_test2.db")
+        conn = sqlite3.connect(path)
+        # Create analysis_cards WITHOUT summary column (simulate old schema)
+        conn.execute("""CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            salt TEXT NOT NULL,
+            password TEXT NOT NULL,
+            created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
+        )""")
+        conn.execute("""CREATE TABLE conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            title TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
+        )""")
+        conn.execute("""CREATE TABLE chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
+        )""")
+        conn.execute("""CREATE TABLE feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL REFERENCES chat_messages(id),
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            value INTEGER NOT NULL,
+            comment TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL DEFAULT (strftime('%s','now')),
+            UNIQUE(message_id, user_id)
+        )""")
+        conn.execute("""CREATE TABLE analysis_cards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            user_id INTEGER,
+            created_at TEXT DEFAULT (datetime('now'))
+        )""")
+        conn.execute("""CREATE TABLE analysis_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            answer TEXT DEFAULT '',
+            source_mode TEXT DEFAULT '',
+            source_message_id INTEGER,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (card_id) REFERENCES analysis_cards(id)
+        )""")
+        conn.execute("""CREATE TABLE data_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,
+            config TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'inactive',
+            last_synced_at REAL,
+            created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
+        )""")
+        conn.execute("INSERT INTO analysis_cards (name) VALUES ('Old Card')")
+        conn.commit()
+
+        # Now create UserDB which triggers the migration
+        udb = UserDB(path)
+
+        # Verify summary column was added
+        cursor = conn.execute("PRAGMA table_info(analysis_cards)")
+        columns = {row[1] for row in cursor.fetchall()}
+        assert "summary" in columns
+
+        # Verify old row got default value
+        row = conn.execute("SELECT summary FROM analysis_cards WHERE id = 1").fetchone()
+        assert row is not None
+        assert row[0] == ""
+
+        udb.close()
+        conn.close()
+        os.unlink(path)
+
+
+# ── Phase 0: conversation mode in create response ────────────────────────────
+
+
+class TestCreateConversationModeAPI:
+    """Phase 0: POST /conversations should accept and return mode."""
+
+    def test_create_conversation_returns_mode_field(self, client):
+        """POST /conversations with mode should return mode in response."""
+        token = _register_and_login(client, "mode_resp_user", "pass123456")
+        resp = client.post(
+            "/conversations",
+            json={"mode": "kb"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "mode" in data
+        assert data["mode"] == "kb"
+
+    def test_create_conversation_default_mode_is_file(self, client):
+        """POST /conversations without mode should default to 'file'."""
+        token = _register_and_login(client, "mode_default_user", "pass123456")
+        resp = client.post(
+            "/conversations",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["mode"] == "file"

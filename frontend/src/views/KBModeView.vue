@@ -51,6 +51,10 @@ const selectedKB = computed(() => knowledgeBases.value.find(kb => kb.kb_id === s
 
 onMounted(async () => {
   await chatStore.loadConversations('kb')
+  // Auto-create a conversation if none exists
+  if (!chatStore.currentConversation) {
+    await chatStore.createConversation('kb')
+  }
   await loadKBs()
 })
 

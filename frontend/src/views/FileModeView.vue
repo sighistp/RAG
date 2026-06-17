@@ -13,6 +13,10 @@ const messagesContainer = ref<HTMLElement>()
 
 onMounted(async () => {
   await chatStore.loadConversations('file')
+  // Auto-create a conversation if none exists
+  if (!chatStore.currentConversation) {
+    await chatStore.createConversation('file')
+  }
   filesStore.loadFiles()
 })
 

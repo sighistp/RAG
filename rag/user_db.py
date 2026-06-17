@@ -125,6 +125,13 @@ class UserDB:
             self._conn.execute(
                 "UPDATE conversations SET mode = 'file' WHERE mode IS NULL"
             )
+            # Add summary column to analysis_cards if it doesn't exist (idempotent)
+            try:
+                self._conn.execute("SELECT summary FROM analysis_cards LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute(
+                    "ALTER TABLE analysis_cards ADD COLUMN summary TEXT NOT NULL DEFAULT ''"
+                )
             self._conn.commit()
 
     # ------------------------------------------------------------------
