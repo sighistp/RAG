@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Delete, Plus, ArrowDown, ArrowRight } from '@element-plus/icons-vue'
+import SettingsMenu from './SettingsMenu.vue'
 
 interface Question {
   id: number
@@ -11,12 +12,18 @@ const props = defineProps<{
   cardId: number
   title: string
   questions: Question[]
+  summary?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:title', value: string): void
   (e: 'add-question', value: string): void
   (e: 'remove-question', questionId: number): void
+  (e: 'generate-summary'): void
+  (e: 'update-summary', value: string): void
+  (e: 'delete-summary'): void
+  (e: 'delete-card'): void
+  (e: 'add-content'): void
 }>()
 
 const editing = ref(false)
@@ -24,6 +31,8 @@ const titleDraft = ref('')
 const newQuestion = ref('')
 const collapsed = ref(false)
 const showInput = ref(false)
+const editingSummary = ref(false)
+const summaryDraft = ref('')
 
 function startEditTitle() {
   titleDraft.value = props.title
@@ -52,6 +61,40 @@ function handleAddQuestion() {
 function handleRemoveQuestion(questionId: number) {
   emit('remove-question', questionId)
 }
+
+function startEditSummary() {
+  summaryDraft.value = props.summary || ''
+  editingSummary.value = true
+}
+
+function saveSummary() {
+  emit('update-summary', summaryDraft.value)
+  editingSummary.value = false
+}
+
+function cancelEditSummary() {
+  editingSummary.value = false
+}
+
+function handleSettingsCommand(command: string) {
+  switch (command) {
+    case 'edit-name':
+      startEditTitle()
+      break
+    case 'generate-summary':
+      emit('generate-summary')
+      break
+    case 'add-content':
+      emit('add-content')
+      break
+    case 'delete-summary':
+      emit('delete-summary')
+      break
+    case 'delete-card':
+      emit('delete-card')
+      break
+  }
+}
 </script>
 
 <template>
@@ -76,10 +119,41 @@ function handleRemoveQuestion(questionId: number) {
       </div>
       <div class="card-header-right">
         <span class="card-count">{{ questions.length }} 个问题</span>
+        <SettingsMenu
+          :summary="summary || ''"
+          @command="handleSettingsCommand"
+          @edit-name="startEditTitle"
+          @generate-summary="$emit('generate-summary')"
+          @add-content="$emit('add-content')"
+          @delete-summary="$emit('delete-summary')"
+          @delete-card="$emit('delete-card')"
+          @click.stop
+        />
       </div>
     </div>
 
     <div v-if="!collapsed" class="card-body">
+      <!-- Summary area -->
+      <div v-if="summary || editingSummary" class="card-summary">
+        <div v-if="editingSummary" class="summary-edit">
+          <el-input
+            v-model="summaryDraft"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 6 }"
+            placeholder="输入摘要..."
+            @keyup.escape="cancelEditSummary"
+          />
+          <div class="summary-edit-actions">
+            <el-button size="small" @click="cancelEditSummary">取消</el-button>
+            <el-button size="small" type="primary" @click="saveSummary">保存</el-button>
+          </div>
+        </div>
+        <div v-else class="summary-display" @click.stop="startEditSummary">
+          <span class="summary-label">摘要</span>
+          <p class="summary-text">{{ summary }}</p>
+        </div>
+      </div>
+
       <div v-if="!questions.length" class="card-empty">暂无问题</div>
       <div v-for="q in questions" :key="q.id" class="card-question">
         <span class="question-text">{{ q.question }}</span>
@@ -102,7 +176,6 @@ function handleRemoveQuestion(questionId: number) {
         <button class="card-add-btn" @click="showInput = true">
           <el-icon><Plus /></el-icon> 添加问题
         </button>
-        <button class="card-edit-btn" @click.stop="startEditTitle">编辑标题</button>
       </div>
     </div>
   </div>
@@ -260,5 +333,43 @@ function handleRemoveQuestion(questionId: number) {
 
 .card-edit-btn:hover {
   color: var(--color-foreground);
+}
+
+/* ── Summary ──────────────────────────────────────────── */
+.card-summary {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-muted);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--color-accent);
+}
+
+.summary-label {
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-accent);
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.summary-text {
+  font-size: var(--text-sm);
+  color: var(--color-foreground);
+  line-height: var(--leading-relaxed);
+  margin: 0;
+  cursor: pointer;
+}
+
+.summary-display:hover .summary-text {
+  color: var(--color-accent);
+}
+
+.summary-edit-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  justify-content: flex-end;
 }
 </style>

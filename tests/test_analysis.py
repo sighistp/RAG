@@ -619,3 +619,232 @@ class TestCreateConversationModeAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert data["mode"] == "file"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 4: Analysis Card Summary (DB + API)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestAnalysisCardSummaryDB:
+    """Test card summary DB methods."""
+
+    def test_get_summary_default_empty(self, db):
+        uid = db.create_user("alice", "s3cret")
+        card_id = db.create_card(uid, "Card")
+        summary = db.get_card_summary(card_id)
+        assert summary == ""
+
+    def test_update_summary(self, db):
+        uid = db.create_user("alice", "s3cret")
+        card_id = db.create_card(uid, "Card")
+        assert db.update_card_summary(card_id, "This is a summary", uid) is True
+        assert db.get_card_summary(card_id) == "This is a summary"
+
+    def test_update_summary_wrong_user(self, db):
+        uid1 = db.create_user("alice", "s3cret")
+        uid2 = db.create_user("bob", "s3cret")
+        card_id = db.create_card(uid1, "Alice Card")
+        assert db.update_card_summary(card_id, "Hacked", uid2) is False
+        assert db.get_card_summary(card_id) == ""
+
+    def test_update_summary_nonexistent(self, db):
+        uid = db.create_user("alice", "s3cret")
+        assert db.update_card_summary(9999, "x", uid) is False
+
+    def test_update_summary_overwrite(self, db):
+        uid = db.create_user("alice", "s3cret")
+        card_id = db.create_card(uid, "Card")
+        db.update_card_summary(card_id, "First", uid)
+        db.update_card_summary(card_id, "Second", uid)
+        assert db.get_card_summary(card_id) == "Second"
+
+
+class TestAnalysisCardSummaryAPI:
+    """Test summary API endpoints."""
+
+    def test_get_summary(self, client):
+        token = _register_and_login(client, "sum_get", "pass123456")
+        create_resp = client.post(
+            "/analysis/cards",
+            json={"name": "Card"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        card_id = create_resp.json()["id"]
+        resp = client.get(
+            f"/analysis/cards/{card_id}/summary",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["summary"] == ""
+
+    def test_get_summary_not_found(self, client):
+        token = _register_and_login(client, "sum_404", "pass123456")
+        resp = client.get(
+            "/analysis/cards/9999/summary",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_update_summary(self, client):
+        token = _register_and_login(client, "sum_put", "pass123456")
+        create_resp = client.post(
+            "/analysis/cards",
+            json={"name": "Card"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        card_id = create_resp.json()["id"]
+        resp = client.put(
+            f"/analysis/cards/{card_id}/summary",
+            json={"summary": "Updated summary text"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["summary"] == "Updated summary text"
+        # Verify it persisted
+        get_resp = client.get(
+            f"/analysis/cards/{card_id}/summary",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert get_resp.json()["summary"] == "Updated summary text"
+
+    def test_update_summary_not_found(self, client):
+        token = _register_and_login(client, "sum_put_404", "pass123456")
+        resp = client.put(
+            "/analysis/cards/9999/summary",
+            json={"summary": "x"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_generate_summary(self, client):
+        """POST /analysis/cards/{id}/summary/generate should call LLM and return summary."""
+        token = _register_and_login(client, "sum_gen", "pass123456")
+        create_resp = client.post(
+            "/analysis/cards",
+            json={"name": "Card"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        card_id = create_resp.json()["id"]
+        # Add a question so there's content to summarize
+        client.post(
+            f"/analysis/cards/{card_id}/questions",
+            json={"question": "What is RAG?", "answer": "Retrieval-Augmented Generation"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # Mock the LLM generator
+        import rag.api as api_mod
+        original_gen = getattr(api_mod, '_generate_summary_llm', None)
+        api_mod._generate_summary_llm = lambda card_id_val, questions: "Mocked summary of RAG"
+        try:
+            resp = client.post(
+                f"/analysis/cards/{card_id}/summary/generate",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "summary" in data
+            assert data["summary"] == "Mocked summary of RAG"
+        finally:
+            if original_gen is not None:
+                api_mod._generate_summary_llm = original_gen
+            else:
+                if hasattr(api_mod, '_generate_summary_llm'):
+                    del api_mod._generate_summary_llm
+
+    def test_generate_summary_not_found(self, client):
+        token = _register_and_login(client, "sum_gen_404", "pass123456")
+        resp = client.post(
+            "/analysis/cards/9999/summary/generate",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_unauthorized_summary_endpoints(self, client):
+        resp = client.get("/analysis/cards/1/summary")
+        assert resp.status_code in (401, 403, 422)
+        resp = client.put("/analysis/cards/1/summary", json={"summary": "x"})
+        assert resp.status_code in (401, 403, 422)
+        resp = client.post("/analysis/cards/1/summary/generate")
+        assert resp.status_code in (401, 403, 422)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 5: Suggest Card (API)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestSuggestCardAPI:
+    """Test POST /analysis/suggest-card endpoint."""
+
+    def test_suggest_card_returns_cards(self, client):
+        """suggest-card should return all_cards list and suggested match."""
+        token = _register_and_login(client, "suggest1", "pass123456")
+        # Create cards
+        c1 = client.post(
+            "/analysis/cards",
+            json={"name": "故障排查"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["id"]
+        c2 = client.post(
+            "/analysis/cards",
+            json={"name": "性能优化"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["id"]
+        # Add questions with keywords
+        client.post(
+            f"/analysis/cards/{c1}/questions",
+            json={"question": "服务挂了怎么恢复？", "answer": "首先检查日志"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        client.post(
+            f"/analysis/cards/{c2}/questions",
+            json={"question": "如何提升查询速度？", "answer": "增加索引"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # Mock LLM to return a suggestion
+        import rag.api as api_mod
+        original_fn = getattr(api_mod, '_suggest_card_llm', None)
+        api_mod._suggest_card_llm = lambda q, a, cards: {
+            "suggested_card_id": c1,
+            "confidence": 0.85,
+        }
+        try:
+            resp = client.post(
+                "/analysis/suggest-card",
+                json={"question": "服务挂了怎么恢复？", "answer": "检查日志"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "all_cards" in data
+            assert len(data["all_cards"]) == 2
+            assert data["suggested_card_id"] == c1
+            assert data["confidence"] == 0.85
+        finally:
+            if original_fn is not None:
+                api_mod._suggest_card_llm = original_fn
+            else:
+                if hasattr(api_mod, '_suggest_card_llm'):
+                    del api_mod._suggest_card_llm
+
+    def test_suggest_card_no_cards(self, client):
+        """suggest-card with no cards should return empty all_cards."""
+        token = _register_and_login(client, "suggest2", "pass123456")
+        resp = client.post(
+            "/analysis/suggest-card",
+            json={"question": "test", "answer": "test"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["all_cards"] == []
+        assert data["suggested_card_id"] is None
+        assert data["confidence"] == 0
+
+    def test_suggest_card_unauthorized(self, client):
+        resp = client.post(
+            "/analysis/suggest-card",
+            json={"question": "test", "answer": "test"},
+        )
+        assert resp.status_code in (401, 403, 422)

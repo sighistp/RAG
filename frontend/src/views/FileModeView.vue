@@ -5,10 +5,11 @@ import { useFilesStore } from '../stores/files'
 import { useAnalysis } from '../composables/useAnalysis'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
+import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
 
 const chatStore = useChatStore()
 const filesStore = useFilesStore()
-const { addToAnalysis } = useAnalysis()
+const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer, handleConfirm } = useAnalysis()
 const messagesContainer = ref<HTMLElement>()
 
 onMounted(async () => {
@@ -177,6 +178,13 @@ function askSuggested(q: string) {
         <ChatInput />
       </div>
     </div>
+
+    <AddToAnalysisDialog
+      v-model:visible="dialogVisible"
+      :question="dialogQuestion"
+      :answer="dialogAnswer"
+      @confirm="handleConfirm"
+    />
   </div>
 </template>
 

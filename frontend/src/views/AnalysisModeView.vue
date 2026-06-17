@@ -17,6 +17,7 @@ interface CardGroup {
   id: number
   name: string
   questions: Question[]
+  summary?: string
 }
 
 const cards = ref<CardGroup[]>([])
@@ -30,11 +31,12 @@ async function loadCards() {
   loading.value = true
   try {
     const res = await api.get('/analysis/cards', { headers: authStore.getAuthHeaders() })
-    // Backend returns cards without questions; fetch questions for each card
     const cardList: CardGroup[] = res.data || []
     for (const card of cardList) {
       const qRes = await api.get(`/analysis/cards/${card.id}/questions`, { headers: authStore.getAuthHeaders() }).catch(() => ({ data: [] }))
       card.questions = qRes.data || []
+      const sRes = await api.get(`/analysis/cards/${card.id}/summary`, { headers: authStore.getAuthHeaders() }).catch(() => ({ data: { summary: '' } }))
+      card.summary = sRes.data?.summary || ''
     }
     cards.value = cardList
   } catch {
@@ -47,7 +49,7 @@ async function loadCards() {
 async function createCard() {
   try {
     const res = await api.post('/analysis/cards', { name: '新建卡片组' }, { headers: authStore.getAuthHeaders() })
-    cards.value.push({ ...res.data, questions: [] })
+    cards.value.push({ ...res.data, questions: [], summary: '' })
     ElMessage.success('卡片组已创建')
   } catch {
     ElMessage.error('创建失败')
@@ -89,6 +91,35 @@ async function deleteCard(card: CardGroup) {
     ElMessage.success('已删除')
   } catch {}
 }
+
+async function generateSummary(card: CardGroup) {
+  try {
+    const res = await api.post(`/analysis/cards/${card.id}/summary/generate`, {}, { headers: authStore.getAuthHeaders() })
+    card.summary = res.data.summary
+    ElMessage.success('摘要已生成')
+  } catch {
+    ElMessage.error('生成摘要失败')
+  }
+}
+
+async function updateSummary(card: CardGroup, summary: string) {
+  try {
+    await api.put(`/analysis/cards/${card.id}/summary`, { summary }, { headers: authStore.getAuthHeaders() })
+    card.summary = summary
+  } catch {
+    ElMessage.error('保存摘要失败')
+  }
+}
+
+async function deleteSummary(card: CardGroup) {
+  try {
+    await api.put(`/analysis/cards/${card.id}/summary`, { summary: '' }, { headers: authStore.getAuthHeaders() })
+    card.summary = ''
+    ElMessage.success('摘要已删除')
+  } catch {
+    ElMessage.error('删除摘要失败')
+  }
+}
 </script>
 
 <template>
@@ -112,13 +143,15 @@ async function deleteCard(card: CardGroup) {
           :card-id="card.id"
           :title="card.name"
           :questions="card.questions"
+          :summary="card.summary"
           @update:title="(v: string) => updateCardTitle(card, v)"
           @add-question="(q: string) => addQuestion(card, q)"
           @remove-question="(qid: number) => removeQuestion(card, qid)"
+          @generate-summary="generateSummary(card)"
+          @update-summary="(v: string) => updateSummary(card, v)"
+          @delete-summary="deleteSummary(card)"
+          @delete-card="deleteCard(card)"
         />
-        <button class="card-delete-btn" @click="deleteCard(card)" title="删除卡片组">
-          <el-icon><Delete /></el-icon>
-        </button>
       </div>
     </div>
 
@@ -178,33 +211,6 @@ async function deleteCard(card: CardGroup) {
 
 .card-wrapper {
   position: relative;
-}
-
-.card-delete-btn {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  color: var(--color-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  opacity: 0;
-  transition: all var(--duration-fast);
-}
-
-.card-wrapper:hover .card-delete-btn {
-  opacity: 1;
-}
-
-.card-delete-btn:hover {
-  background: var(--color-destructive-light);
-  color: var(--color-destructive);
 }
 
 /* ── Empty state ── */

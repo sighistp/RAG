@@ -7,6 +7,7 @@ import { useChatStore } from '../stores/chat'
 import { useAnalysis } from '../composables/useAnalysis'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
+import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
@@ -26,7 +27,7 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
-const { addToAnalysis } = useAnalysis()
+const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer, handleConfirm } = useAnalysis()
 
 const kbId = route.params.id as string
 const loading = ref(true)
@@ -668,6 +669,13 @@ function getStatusLabel(status: string) {
         </el-button>
       </template>
     </el-dialog>
+
+    <AddToAnalysisDialog
+      v-model:visible="dialogVisible"
+      :question="dialogQuestion"
+      :answer="dialogAnswer"
+      @confirm="handleConfirm"
+    />
   </div>
 </template>
 

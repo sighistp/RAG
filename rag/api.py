@@ -158,6 +158,15 @@ class AddQuestionRequest(BaseModel):
     source_message_id: int | None = Field(default=None, description="来源消息 ID")
 
 
+class UpdateSummaryRequest(BaseModel):
+    summary: str = Field(..., description="摘要内容")
+
+
+class SuggestCardRequest(BaseModel):
+    question: str = Field(..., max_length=5000, description="问题内容")
+    answer: str = Field(..., max_length=10000, description="回答内容")
+
+
 # Module-level UserDB instance
 _DB_PATH = Path(__file__).resolve().parent.parent / "data" / "users.db"
 user_db = UserDB(str(_DB_PATH))
@@ -1317,6 +1326,149 @@ async def delete_analysis_question(card_id: int, qid: int, authorization: str = 
     if not deleted:
         raise HTTPException(status_code=404, detail="问题不存在")
     return {"status": "deleted"}
+
+
+# ── 分析卡片摘要 ────────────────────────────────────────────────────────
+
+
+def _generate_summary_llm(card_id: int, questions: list[dict]) -> str:
+    """Generate a summary for an analysis card using the LLM.
+
+    This is a module-level function so tests can monkeypatch it.
+    """
+    from rag.generator import generate
+
+    q_text = "\n".join(
+        f"- {q['question']}" + (f"\n  回答: {q['answer']}" if q.get("answer") else "")
+        for q in questions
+    )
+    prompt = (
+        "请根据以下问题和回答，为这组分析卡片生成一段简洁的中文摘要（100-200字），"
+        "概括这组问题的主题和核心内容。\n\n"
+        f"问题列表：\n{q_text}"
+    )
+    return generate([{"role": "user", "content": prompt}])
+
+
+@app.get("/analysis/cards/{card_id}/summary", summary="获取卡片摘要")
+async def get_card_summary(card_id: int, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    cards = await asyncio.to_thread(user_db.list_cards, user["id"])
+    if not any(c["id"] == card_id for c in cards):
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    summary = await asyncio.to_thread(user_db.get_card_summary, card_id)
+    return {"summary": summary}
+
+
+@app.put("/analysis/cards/{card_id}/summary", summary="更新卡片摘要")
+async def update_card_summary(card_id: int, req: UpdateSummaryRequest, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    updated = await asyncio.to_thread(user_db.update_card_summary, card_id, req.summary, user["id"])
+    if not updated:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    return {"summary": req.summary}
+
+
+@app.post("/analysis/cards/{card_id}/summary/generate", summary="LLM 生成卡片摘要")
+async def generate_card_summary(card_id: int, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    cards = await asyncio.to_thread(user_db.list_cards, user["id"])
+    if not any(c["id"] == card_id for c in cards):
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    questions = await asyncio.to_thread(user_db.get_questions, card_id)
+    if not questions:
+        raise HTTPException(status_code=400, detail="卡片中没有问题，无法生成摘要")
+    summary = await asyncio.to_thread(_generate_summary_llm, card_id, questions)
+    await asyncio.to_thread(user_db.update_card_summary, card_id, summary, user["id"])
+    return {"summary": summary}
+
+
+# ── 问题归入卡片建议 ────────────────────────────────────────────────────
+
+
+def _suggest_card_llm(question: str, answer: str, cards: list[dict]) -> dict:
+    """Use LLM to suggest which card a question belongs to.
+
+    Returns {"suggested_card_id": int|None, "confidence": float}.
+    This is a module-level function so tests can monkeypatch it.
+    """
+    from rag.generator import generate
+
+    card_names = "\n".join(f"- id={c['id']}: {c['name']}" for c in cards)
+    prompt = (
+        "你是一个分析助手。根据以下问题和回答，判断它最应该归入哪个已有的分析卡片。\n\n"
+        f"已有卡片：\n{card_names}\n\n"
+        f"问题：{question}\n回答：{answer}\n\n"
+        "请返回 JSON 格式：{\"card_id\": <id 或 null>, \"confidence\": <0-1 之间的浮点数>}\n"
+        "如果没有合适的卡片，card_id 返回 null，confidence 返回 0。"
+    )
+    result = generate([{"role": "user", "content": prompt}])
+    import json as _json
+    import re
+
+    match = re.search(r'\{.*\}', result, re.DOTALL)
+    if match:
+        try:
+            parsed = _json.loads(match.group())
+            return {
+                "suggested_card_id": parsed.get("card_id"),
+                "confidence": float(parsed.get("confidence", 0)),
+            }
+        except (ValueError, KeyError):
+            pass
+    return {"suggested_card_id": None, "confidence": 0}
+
+
+@app.post("/analysis/suggest-card", summary="建议问题归入哪个卡片")
+async def suggest_card(req: SuggestCardRequest, authorization: str = Header(default="")):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    cards = await asyncio.to_thread(user_db.list_cards, user["id"])
+    if not cards:
+        return {
+            "suggested_card_id": None,
+            "suggested_card_name": None,
+            "confidence": 0,
+            "all_cards": [],
+        }
+    # Fetch questions for each card for LLM context
+    cards_with_questions = []
+    for c in cards:
+        qs = await asyncio.to_thread(user_db.get_questions, c["id"])
+        cards_with_questions.append({**c, "questions": qs})
+    suggestion = await asyncio.to_thread(_suggest_card_llm, req.question, req.answer, cards_with_questions)
+    suggested_id = suggestion["suggested_card_id"]
+    suggested_name = None
+    if suggested_id is not None:
+        for c in cards:
+            if c["id"] == suggested_id:
+                suggested_name = c["name"]
+                break
+    return {
+        "suggested_card_id": suggested_id,
+        "suggested_card_name": suggested_name,
+        "confidence": suggestion["confidence"],
+        "all_cards": [{"id": c["id"], "name": c["name"]} for c in cards],
+    }
 
 
 # ── 数据源管理 ────────────────────────────────────────────────────────

@@ -419,6 +419,28 @@ class UserDB:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def get_card_summary(self, card_id: int) -> str:
+        """Return the summary text for a card, empty string if none."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT summary FROM analysis_cards WHERE id = ?",
+                (card_id,),
+            ).fetchone()
+        return row["summary"] if row else ""
+
+    def update_card_summary(self, card_id: int, summary: str, user_id: int) -> bool:
+        """Update the summary for a card. Returns True if updated.
+
+        Only updates if the card belongs to *user_id*.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE analysis_cards SET summary = ? WHERE id = ? AND user_id = ?",
+                (summary, card_id, user_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
     # ------------------------------------------------------------------
     # Analysis Questions
     # ------------------------------------------------------------------
