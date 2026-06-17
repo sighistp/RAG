@@ -17,14 +17,7 @@ export function useAnalysis() {
   const dialogQuestion = ref('')
   const dialogAnswer = ref('')
 
-  function addToAnalysis(answerContent: string) {
-    // Extract question from the last user message if available
-    dialogQuestion.value = ''
-    dialogAnswer.value = answerContent
-    dialogVisible.value = true
-  }
-
-  function addToAnalysisFull(question: string, answer: string) {
+  function addToAnalysis(question: string, answer: string) {
     dialogQuestion.value = question
     dialogAnswer.value = answer
     dialogVisible.value = true
@@ -47,9 +40,10 @@ export function useAnalysis() {
 
       if (targetCardId === null) return
 
-      // Add the question to the card
+      // Add the question and answer to the card
       await api.post(`/analysis/cards/${targetCardId}/questions`, {
-        question: dialogAnswer.value,
+        question: dialogQuestion.value,
+        answer: dialogAnswer.value,
       }, { headers: auth.getAuthHeaders() })
 
       ElMessage.success('已添加到分析卡片')
@@ -67,7 +61,6 @@ export function useAnalysis() {
     dialogQuestion,
     dialogAnswer,
     addToAnalysis,
-    addToAnalysisFull,
     handleConfirm,
   }
 }

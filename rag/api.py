@@ -140,7 +140,7 @@ class TokenResponse(BaseModel):
 
 
 class CreateConversationRequest(BaseModel):
-    mode: str = Field(default="file", description="对话模式")
+    mode: str = Field(default="file", pattern="^(file|kb|analysis)$", description="对话模式")
 
 
 class CreateCardRequest(BaseModel):

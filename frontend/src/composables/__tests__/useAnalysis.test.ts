@@ -24,19 +24,10 @@ beforeEach(() => {
 })
 
 describe('useAnalysis composable', () => {
-  it('addToAnalysis opens dialog with answer content', () => {
-    const { addToAnalysis, dialogVisible, dialogAnswer } = useAnalysis()
+  it('addToAnalysis opens dialog with question and answer', () => {
+    const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer } = useAnalysis()
 
-    addToAnalysis('This is the answer')
-
-    expect(dialogVisible.value).toBe(true)
-    expect(dialogAnswer.value).toBe('This is the answer')
-  })
-
-  it('addToAnalysisFull opens dialog with question and answer', () => {
-    const { addToAnalysisFull, dialogVisible, dialogQuestion, dialogAnswer } = useAnalysis()
-
-    addToAnalysisFull('What is RAG?', 'Retrieval-Augmented Generation')
+    addToAnalysis('What is RAG?', 'Retrieval-Augmented Generation')
 
     expect(dialogVisible.value).toBe(true)
     expect(dialogQuestion.value).toBe('What is RAG?')
@@ -49,14 +40,15 @@ describe('useAnalysis composable', () => {
     const auth = useAuthStore()
     auth.token = 'test-token'
 
-    const { handleConfirm, dialogVisible, dialogAnswer } = useAnalysis()
-    dialogAnswer.value = 'test answer'
+    const { handleConfirm, dialogVisible, dialogQuestion, dialogAnswer } = useAnalysis()
+    dialogQuestion.value = 'What is RAG?'
+    dialogAnswer.value = 'Retrieval-Augmented Generation'
 
     await handleConfirm(42)
 
     expect(api.post).toHaveBeenCalledWith(
       '/analysis/cards/42/questions',
-      { question: 'test answer' },
+      { question: 'What is RAG?', answer: 'Retrieval-Augmented Generation' },
       expect.objectContaining({ headers: expect.any(Object) })
     )
     expect(dialogVisible.value).toBe(false)
@@ -70,8 +62,9 @@ describe('useAnalysis composable', () => {
     const auth = useAuthStore()
     auth.token = 'test-token'
 
-    const { handleConfirm, dialogVisible, dialogAnswer } = useAnalysis()
-    dialogAnswer.value = 'new question'
+    const { handleConfirm, dialogVisible, dialogQuestion, dialogAnswer } = useAnalysis()
+    dialogQuestion.value = 'How does it work?'
+    dialogAnswer.value = 'It works by retrieving relevant documents.'
 
     await handleConfirm(null, 'New Card Group')
 
@@ -82,7 +75,7 @@ describe('useAnalysis composable', () => {
     )
     expect(api.post).toHaveBeenCalledWith(
       '/analysis/cards/99/questions',
-      { question: 'new question' },
+      { question: 'How does it work?', answer: 'It works by retrieving relevant documents.' },
       expect.objectContaining({ headers: expect.any(Object) })
     )
     expect(dialogVisible.value).toBe(false)

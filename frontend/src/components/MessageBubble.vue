@@ -12,10 +12,11 @@ interface Message {
 const props = defineProps<{
   message: Message
   index: number
+  question?: string
 }>()
 
 const emit = defineEmits<{
-  (e: 'add-to-analysis', content: string): void
+  (e: 'add-to-analysis', question: string, answer: string): void
 }>()
 
 const chatStore = useChatStore()
@@ -31,7 +32,7 @@ function formatContent(text: string): string {
 }
 
 function handleAddToAnalysis() {
-  emit('add-to-analysis', props.message.content)
+  emit('add-to-analysis', props.question || '', props.message.content)
 }
 </script>
 

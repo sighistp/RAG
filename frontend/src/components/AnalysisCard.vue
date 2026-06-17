@@ -126,11 +126,6 @@ function handleSettingsCommand(command: string) {
         <SettingsMenu
           :summary="summary || ''"
           @command="handleSettingsCommand"
-          @edit-name="startEditTitle"
-          @generate-summary="$emit('generate-summary')"
-          @add-content="$emit('add-content')"
-          @delete-summary="$emit('delete-summary')"
-          @delete-card="$emit('delete-card')"
           @click.stop
         />
       </div>

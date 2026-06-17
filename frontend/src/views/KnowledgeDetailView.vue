@@ -593,6 +593,7 @@ function getStatusLabel(status: string) {
             :key="i"
             :message="msg"
             :index="i"
+            :question="i > 0 && chatStore.messages[i - 1]?.role === 'user' ? chatStore.messages[i - 1].content : ''"
             @add-to-analysis="addToAnalysis"
           />
 
