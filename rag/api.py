@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from rag.auth import create_token, decode_token, verify_api_key
+from rag.kb_metadata import generate_summary, generate_toc
 from rag.knowledge_base import KnowledgeBaseManager
 from rag.logging_config import set_request_id, setup_logging
 from rag.user_db import UserDB
@@ -60,8 +61,8 @@ async def request_id_middleware(request, call_next):
 
 
 # Vue Router SPA fallback: browser requests to known frontend paths → serve index.html
-_VUE_ROUTES = {"/files", "/knowledge", "/analytics", "/mode/file", "/mode/kb", "/mode/analysis"}
-_VUE_ROUTE_PREFIXES = {"/knowledge/"}
+_VUE_ROUTES = {"/files", "/knowledge", "/kb", "/analytics", "/mode/file", "/mode/kb", "/mode/analysis"}
+_VUE_ROUTE_PREFIXES = {"/knowledge/", "/kb/"}
 
 
 @app.middleware("http")
@@ -904,6 +905,10 @@ class KBOverviewRequest(BaseModel):
     overview: str
 
 
+class KBRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+
+
 class KBTocRequest(BaseModel):
     toc: dict
 
@@ -987,6 +992,27 @@ async def update_kb_overview(kb_id: str, req: KBOverviewRequest, user_id: str = 
     return {"status": "updated"}
 
 
+@app.put("/knowledge-bases/{kb_id}/name", summary="重命名知识库")
+async def rename_knowledge_base(kb_id: str, req: KBRenameRequest, user_id: str = Security(verify_api_key)):
+    def _update():
+        import sqlite3
+
+        db_path = str(_DB_PATH)
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "INSERT INTO kb_metadata (kb_id, name) VALUES (?, ?) "
+                "ON CONFLICT(kb_id) DO UPDATE SET name = ?",
+                (kb_id, req.name, req.name),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    await asyncio.to_thread(_update)
+    return {"status": "updated", "name": req.name}
+
+
 @app.put("/knowledge-bases/{kb_id}/documents/{doc_name}/toc", summary="更新文档目录")
 async def update_doc_toc(kb_id: str, doc_name: str, req: KBTocRequest, user_id: str = Security(verify_api_key)):
     import json
@@ -1037,6 +1063,127 @@ async def update_doc_summary(kb_id: str, doc_name: str, req: KBSummaryRequest, u
     if not result:
         raise HTTPException(status_code=404, detail="文档不存在")
     return {"status": "updated"}
+
+
+@app.post("/knowledge-bases/{kb_id}/toc/generate", summary="LLM 生成知识库目录")
+async def generate_kb_toc(kb_id: str, user_id: str = Security(verify_api_key)):
+    """对知识库中所有文档调用 LLM 生成目录结构，并保存到 kb_documents.toc。"""
+    def _generate():
+        import sqlite3
+        import json as _json
+
+        db_path = str(_DB_PATH)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            # 验证 KB 存在
+            meta = conn.execute("SELECT 1 FROM kb_metadata WHERE kb_id = ?", (kb_id,)).fetchone()
+            if not meta:
+                # 也检查 Qdrant 中是否有此 KB
+                manager = KnowledgeBaseManager()
+                kbs = manager.list_kbs()
+                if not any(k.kb_id == kb_id for k in kbs):
+                    return None, "not_found"
+
+            docs = conn.execute(
+                "SELECT filename FROM kb_documents WHERE kb_id = ? AND status = 'indexed'",
+                (kb_id,),
+            ).fetchall()
+            if not docs:
+                return None, "no_documents"
+
+            toc_results = {}
+            for doc in docs:
+                filename = doc["filename"]
+                # 从 data/upload 读取文件内容
+                file_path = DATA_DIR / filename
+                if file_path.is_file():
+                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                else:
+                    content = ""
+                toc = generate_toc(content)
+                toc_results[filename] = toc
+                # 保存到数据库
+                toc_str = _json.dumps(toc, ensure_ascii=False)
+                conn.execute(
+                    "UPDATE kb_documents SET toc = ? WHERE kb_id = ? AND filename = ?",
+                    (toc_str, kb_id, filename),
+                )
+            conn.commit()
+            return toc_results, None
+        except Exception as e:
+            return None, str(e)
+        finally:
+            conn.close()
+
+    result, error = await asyncio.to_thread(_generate)
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if error == "no_documents":
+        raise HTTPException(status_code=400, detail="知识库中无文档，请先添加文档")
+    if error:
+        raise HTTPException(status_code=500, detail=f"目录生成失败: {error}")
+    return {"kb_id": kb_id, "toc": result}
+
+
+@app.post("/knowledge-bases/{kb_id}/overview/generate", summary="LLM 生成知识库概述")
+async def generate_kb_overview(kb_id: str, user_id: str = Security(verify_api_key)):
+    """对知识库中所有文档内容调用 LLM 生成概述，并保存到 kb_metadata.overview。"""
+    def _generate():
+        import sqlite3
+
+        db_path = str(_DB_PATH)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            # 验证 KB 存在
+            meta = conn.execute("SELECT 1 FROM kb_metadata WHERE kb_id = ?", (kb_id,)).fetchone()
+            if not meta:
+                manager = KnowledgeBaseManager()
+                kbs = manager.list_kbs()
+                if not any(k.kb_id == kb_id for k in kbs):
+                    return None, "not_found"
+
+            docs = conn.execute(
+                "SELECT filename FROM kb_documents WHERE kb_id = ? AND status = 'indexed'",
+                (kb_id,),
+            ).fetchall()
+            if not docs:
+                return None, "no_documents"
+
+            # 合并所有文档内容
+            all_content = []
+            for doc in docs:
+                filename = doc["filename"]
+                file_path = DATA_DIR / filename
+                if file_path.is_file():
+                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                    all_content.append(content)
+
+            combined = "\n\n".join(all_content)
+            overview = generate_summary(combined)
+
+            # 保存到 kb_metadata
+            conn.execute(
+                "INSERT INTO kb_metadata (kb_id, name, overview) VALUES (?, '', ?) "
+                "ON CONFLICT(kb_id) DO UPDATE SET overview = ?",
+                (kb_id, overview, overview),
+            )
+            conn.commit()
+            return overview, None
+        except Exception as e:
+            return None, str(e)
+        finally:
+            conn.close()
+
+    result, error = await asyncio.to_thread(_generate)
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if error == "no_documents":
+        raise HTTPException(status_code=400, detail="知识库中无文档，请先添加文档")
+    if error:
+        raise HTTPException(status_code=500, detail=f"概述生成失败: {error}")
+    return {"kb_id": kb_id, "overview": result}
 
 
 # ── 分析端点 ──────────────────────────────────────────────────────
