@@ -848,3 +848,136 @@ class TestSuggestCardAPI:
             json={"question": "test", "answer": "test"},
         )
         assert resp.status_code in (401, 403, 422)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 6: Export Card as Markdown (API)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestExportCardAPI:
+    """Test GET /analysis/cards/{card_id}/export endpoint."""
+
+    def test_export_markdown_basic(self, client):
+        """Export card with questions and summary should return proper markdown."""
+        token = _register_and_login(client, "export1", "pass123456")
+        card_id = client.post(
+            "/analysis/cards",
+            json={"name": "测试卡片组"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["id"]
+        # Add questions
+        client.post(
+            f"/analysis/cards/{card_id}/questions",
+            json={"question": "什么是RAG？", "answer": "检索增强生成", "source_mode": "file"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        client.post(
+            f"/analysis/cards/{card_id}/questions",
+            json={"question": "什么是向量数据库？", "answer": "用于存储向量的数据库", "source_mode": "kb"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # Set summary
+        client.put(
+            f"/analysis/cards/{card_id}/summary",
+            json={"summary": "这是一个测试摘要"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp = client.get(
+            f"/analysis/cards/{card_id}/export?format=markdown",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        text = resp.text
+        assert "# 测试卡片组" in text
+        assert "> 这是一个测试摘要" in text
+        assert "什么是RAG？" in text
+        assert "什么是向量数据库？" in text
+        assert "检索增强生成" in text
+        assert "来源：file" in text
+
+    def test_export_markdown_no_summary(self, client):
+        """Export card without summary should omit the summary block."""
+        token = _register_and_login(client, "export_nosum", "pass123456")
+        card_id = client.post(
+            "/analysis/cards",
+            json={"name": "No Summary"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["id"]
+        client.post(
+            f"/analysis/cards/{card_id}/questions",
+            json={"question": "Q1"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp = client.get(
+            f"/analysis/cards/{card_id}/export?format=markdown",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        text = resp.text
+        assert "# No Summary" in text
+        assert "Q1" in text
+        assert ">" not in text  # No summary block
+
+    def test_export_markdown_no_questions(self, client):
+        """Export card with no questions should still produce valid markdown."""
+        token = _register_and_login(client, "export_noq", "pass123456")
+        card_id = client.post(
+            "/analysis/cards",
+            json={"name": "Empty Card"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["id"]
+        resp = client.get(
+            f"/analysis/cards/{card_id}/export?format=markdown",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        text = resp.text
+        assert "# Empty Card" in text
+        assert "## 问题列表" in text
+
+    def test_export_not_found(self, client):
+        token = _register_and_login(client, "export_404", "pass123456")
+        resp = client.get(
+            "/analysis/cards/9999/export?format=markdown",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_export_unauthorized(self, client):
+        resp = client.get("/analysis/cards/1/export?format=markdown")
+        assert resp.status_code in (401, 403, 422)
+
+    def test_export_invalid_format(self, client):
+        token = _register_and_login(client, "export_bad", "pass123456")
+        card_id = client.post(
+            "/analysis/cards",
+            json={"name": "Card"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["id"]
+        resp = client.get(
+            f"/analysis/cards/{card_id}/export?format=pdf",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400
+
+    def test_export_markdown_source_with_answer(self, client):
+        """Export should include source_mode for each question."""
+        token = _register_and_login(client, "export_src", "pass123456")
+        card_id = client.post(
+            "/analysis/cards",
+            json={"name": "Sources Card"},
+            headers={"Authorization": f"Bearer {token}"},
+        ).json()["id"]
+        client.post(
+            f"/analysis/cards/{card_id}/questions",
+            json={"question": "Q1", "answer": "A1", "source_mode": "analysis"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp = client.get(
+            f"/analysis/cards/{card_id}/export?format=markdown",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        text = resp.text
+        assert "来源：analysis" in text

@@ -2830,6 +2830,78 @@ frontend/
 
 ---
 
+## Phase 9（2026-06-17）：分析模块增强 + 细节打磨
+
+### 分析模块增强
+
+#### 1. 卡片导出
+
+**后端：**
+- 新增 `GET /analysis/cards/{card_id}/export?format=markdown` 端点
+- 新增 `_build_card_markdown()` 模块级函数，将卡片名称、摘要、问题列表渲染为 Markdown
+- 返回 `PlainTextResponse`（`text/markdown; charset=utf-8`）
+- 支持格式校验，仅支持 `markdown`，其他格式返回 400
+
+**前端：**
+- SettingsMenu 新增「导出为 Markdown」菜单项
+- AnalysisCard 新增 `export` 事件
+- AnalysisModeView 新增 `exportCard()` 函数：调用 API → Blob → 创建下载链接 → 自动触发下载
+- 文件名格式：`{卡片名称}.md`
+
+**Markdown 格式：**
+```markdown
+# 卡片名称
+
+> 摘要内容
+
+## 问题列表
+
+1. 问题一
+   - 回答：答案内容
+   - 来源：file
+   - 添加时间：2026-06-17
+```
+
+#### 2. 卡片组侧边栏
+
+- AnalysisModeView 左侧新增 220px 宽的侧边栏
+- 显示所有卡片组名称和问题数量
+- 点击卡片组名称 → 右侧内容区平滑滚动到对应卡片（`scrollIntoView`）
+- 高亮当前选中的卡片组
+
+### 细节打磨
+
+#### 1. 错误处理优化
+
+- API 拦截器：5xx 错误优先显示服务端返回的 `detail` 消息
+- 新增 `withRetry()` 工具函数：支持指数退避重试（仅网络/超时错误）
+- 请求超时（ECONNABORTED）独立提示
+- LLM 生成失败时显示服务端具体错误信息
+
+#### 2. 全量回归测试
+
+- 后端：451 测试全过
+- 前端：35 测试全过
+- 前端构建：成功
+
+### 文件变更
+
+| 操作 | 文件 | 说明 |
+|------|------|------|
+| 修改 | rag/api.py | 新增 export 端点、PlainTextResponse import、`_build_card_markdown()` |
+| 修改 | tests/test_analysis.py | 新增 TestExportCardAPI（7 个测试） |
+| 修改 | frontend/src/utils/api.ts | 新增 `withRetry()`、优化错误消息 |
+| 修改 | frontend/src/utils/\_\_tests\_\_/api.test.ts | 新增 withRetry 测试（4 个） |
+| 修改 | frontend/src/views/AnalysisModeView.vue | 新增侧边栏、导出功能、ID 属性 |
+| 修改 | frontend/src/components/AnalysisCard.vue | 新增 export 事件 |
+| 修改 | frontend/src/components/SettingsMenu.vue | 新增 export 菜单项 |
+| 新增 | frontend/src/views/\_\_tests\_\_/AnalysisModeView.test.ts | 导出功能测试（2 个） |
+| 修改 | docs/plans/dev-log.md | 本条目 |
+
+**测试：** 451 后端 + 35 前端 = 486 全过
+
+---
+
 ## 下一步计划
 
 - 手动测试全流程

@@ -63,11 +63,53 @@ describe('api interceptor', () => {
     expect(ElMessage.error).toHaveBeenCalledWith('权限不足，无法执行此操作')
   })
 
-  it('500 response shows server error', async () => {
+  it('500 response shows server error with detail when available', async () => {
+    const error = { response: { status: 500, data: { detail: 'LLM 生成失败' } } }
+
+    await expect(responseErrorInterceptor(error)).rejects.toBeDefined()
+
+    expect(ElMessage.error).toHaveBeenCalledWith('LLM 生成失败')
+  })
+
+  it('500 response shows default error when no detail', async () => {
     const error = { response: { status: 500 } }
 
     await expect(responseErrorInterceptor(error)).rejects.toBeDefined()
 
     expect(ElMessage.error).toHaveBeenCalledWith('服务器错误，请稍后重试')
+  })
+})
+
+describe('withRetry', () => {
+  it('returns result on first success', async () => {
+    const { withRetry } = await import('../api')
+    const fn = vi.fn().mockResolvedValue('ok')
+    const result = await withRetry(fn, 2, 10)
+    expect(result).toBe('ok')
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries on network error then succeeds', async () => {
+    const { withRetry } = await import('../api')
+    const fn = vi.fn()
+      .mockRejectedValueOnce({ message: 'Network Error' })
+      .mockResolvedValue('recovered')
+    const result = await withRetry(fn, 2, 10)
+    expect(result).toBe('recovered')
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+
+  it('throws after exhausting retries', async () => {
+    const { withRetry } = await import('../api')
+    const fn = vi.fn().mockRejectedValue({ message: 'Network Error' })
+    await expect(withRetry(fn, 2, 10)).rejects.toThrow()
+    expect(fn).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not retry non-network errors', async () => {
+    const { withRetry } = await import('../api')
+    const fn = vi.fn().mockRejectedValue({ response: { status: 500 } })
+    await expect(withRetry(fn, 2, 10)).rejects.toThrow()
+    expect(fn).toHaveBeenCalledTimes(1)
   })
 })

@@ -24,6 +24,7 @@ const emit = defineEmits<{
   (e: 'delete-summary'): void
   (e: 'delete-card'): void
   (e: 'add-content'): void
+  (e: 'export'): void
 }>()
 
 const editing = ref(false)
@@ -86,6 +87,9 @@ function handleSettingsCommand(command: string) {
       break
     case 'add-content':
       emit('add-content')
+      break
+    case 'export':
+      emit('export')
       break
     case 'delete-summary':
       emit('delete-summary')

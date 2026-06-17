@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Header, HTTPException, Security, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -1396,6 +1396,56 @@ async def generate_card_summary(card_id: int, authorization: str = Header(defaul
     summary = await asyncio.to_thread(_generate_summary_llm, card_id, questions)
     await asyncio.to_thread(user_db.update_card_summary, card_id, summary, user["id"])
     return {"summary": summary}
+
+
+# ── 分析卡片导出 ────────────────────────────────────────────────────────
+
+
+def _build_card_markdown(card_name: str, summary: str, questions: list[dict]) -> str:
+    """Build a Markdown representation of an analysis card.
+
+    This is a module-level function so tests can call it directly.
+    """
+    lines = [f"# {card_name}"]
+    if summary:
+        lines.append("")
+        lines.append(f"> {summary}")
+    lines.append("")
+    lines.append("## 问题列表")
+    lines.append("")
+    for i, q in enumerate(questions, 1):
+        lines.append(f"{i}. {q['question']}")
+        if q.get("answer"):
+            lines.append(f"   - 回答：{q['answer']}")
+        if q.get("source_mode"):
+            lines.append(f"   - 来源：{q['source_mode']}")
+        if q.get("created_at"):
+            lines.append(f"   - 添加时间：{q['created_at']}")
+    return "\n".join(lines) + "\n"
+
+
+@app.get("/analysis/cards/{card_id}/export", summary="导出分析卡片")
+async def export_analysis_card(
+    card_id: int,
+    format: str = "markdown",
+    authorization: str = Header(default=""),
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user = await asyncio.to_thread(_get_current_user, token)
+    if not user:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    cards = await asyncio.to_thread(user_db.list_cards, user["id"])
+    card = next((c for c in cards if c["id"] == card_id), None)
+    if not card:
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    if format != "markdown":
+        raise HTTPException(status_code=400, detail=f"不支持的导出格式：{format}")
+    questions = await asyncio.to_thread(user_db.get_questions, card_id)
+    summary = await asyncio.to_thread(user_db.get_card_summary, card_id)
+    md = _build_card_markdown(card["name"], summary, questions)
+    return PlainTextResponse(content=md, media_type="text/markdown; charset=utf-8")
 
 
 # ── 问题归入卡片建议 ────────────────────────────────────────────────────

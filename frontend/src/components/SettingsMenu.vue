@@ -9,6 +9,7 @@ const emit = defineEmits<{
   (e: 'edit-name'): void
   (e: 'generate-summary'): void
   (e: 'add-content'): void
+  (e: 'export'): void
   (e: 'delete-summary'): void
   (e: 'delete-card'): void
 }>()
@@ -27,6 +28,7 @@ const emit = defineEmits<{
         <el-dropdown-item command="edit-name">编辑名称</el-dropdown-item>
         <el-dropdown-item command="generate-summary">生成摘要</el-dropdown-item>
         <el-dropdown-item command="add-content">添加内容</el-dropdown-item>
+        <el-dropdown-item command="export">导出为 Markdown</el-dropdown-item>
         <el-dropdown-item v-if="summary" command="delete-summary" divided>删除摘要</el-dropdown-item>
         <el-dropdown-item command="delete-card" divided>删除卡片</el-dropdown-item>
       </el-dropdown-menu>
