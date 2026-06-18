@@ -2958,7 +2958,7 @@ frontend/
 | 容错 | 重试 + 熔断 + 缓存 + 降级 | ✅ |
 | 数据源 | RSS + 数据库 + API 集成 | ✅ |
 | 前端 | Vue 3 + 独立页面 + 组件化 | ✅ |
-| 测试 | 553 个（451 后端 + 102 前端） | ✅ |
+| 测试 | 562 个（451 后端 + 111 前端） | ✅ |
 
 ---
 
@@ -2970,9 +2970,9 @@ frontend/
 
 | 模块 | 原测试数 | 新测试数 | 覆盖内容 |
 |------|---------|---------|---------|
-| stores/chat.ts | 9 | 25 | 流式接收、mode 过滤、feedback、regenerate、selectFile |
+| stores/chat.ts | 9 | 27 | 流式接收、mode 过滤、feedback、regenerate、selectFile、suggest |
 | stores/files.ts | 3 | 12 | in_kb、上传、删除、缓存、错误处理 |
-| components/MessageBubble | 0 | 14 | 用户/AI 消息渲染、来源、反馈、添加到分析 |
+| components/MessageBubble | 0 | 19 | 用户/AI 消息渲染、来源、反馈、添加到分析、formatContent、streaming disabled |
 | components/AnalysisCard | 0 | 12 | 标题、问题列表、设置菜单、折叠/展开、删除 |
 
 **测试总数：** 451 后端 + 102 前端 = 553
