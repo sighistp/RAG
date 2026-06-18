@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from rag.auth import create_token, decode_token, verify_api_key
 from rag.kb_metadata import generate_summary, generate_toc
+from rag.loader import load as load_document
 from rag.knowledge_base import KnowledgeBaseManager
 from rag.logging_config import set_request_id, setup_logging
 from rag.user_db import UserDB
@@ -1104,10 +1105,13 @@ async def generate_kb_toc(kb_id: str, user_id: str = Security(verify_api_key)):
             toc_results = {}
             for doc in docs:
                 filename = doc["filename"]
-                # 从 data/upload 读取文件内容
+                # 使用 loader 解析文档内容（支持 docx/xlsx/pdf 等二进制格式）
                 file_path = DATA_DIR / filename
                 if file_path.is_file():
-                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                    try:
+                        content = load_document(str(file_path))
+                    except Exception:
+                        content = ""
                 else:
                     content = ""
                 toc = generate_toc(content)
@@ -1160,13 +1164,16 @@ async def generate_kb_overview(kb_id: str, user_id: str = Security(verify_api_ke
             if not docs:
                 return None, "no_documents"
 
-            # 合并所有文档内容
+            # 合并所有文档内容（使用 loader 解析，支持二进制格式）
             all_content = []
             for doc in docs:
                 filename = doc["filename"]
                 file_path = DATA_DIR / filename
                 if file_path.is_file():
-                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                    try:
+                        content = load_document(str(file_path))
+                    except Exception:
+                        content = ""
                     all_content.append(content)
 
             combined = "\n\n".join(all_content)

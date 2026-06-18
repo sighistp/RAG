@@ -3,13 +3,11 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
-import { useChatStore } from '../stores/chat'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Collection, Delete } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-const chatStore = useChatStore()
 
 interface KnowledgeBase {
   kb_id: string
@@ -80,8 +78,6 @@ async function deleteKB(kb: KnowledgeBase) {
 }
 
 async function selectKB(kb: KnowledgeBase) {
-  // Auto-create a KB conversation before navigating
-  await chatStore.createConversation('kb')
   router.push(`/kb/${kb.kb_id}`)
 }
 </script>

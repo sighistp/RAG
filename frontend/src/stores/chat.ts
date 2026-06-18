@@ -51,6 +51,9 @@ export const useChatStore = defineStore('chat', () => {
   async function loadConversations(mode?: ChatMode) {
     const auth = useAuthStore()
     try {
+      // Remember current selection before clearing
+      const prevConvId = currentConvId.value
+
       // Clear conversations immediately to prevent stale data from other modes
       conversations.value = []
       currentConvId.value = null
@@ -65,6 +68,14 @@ export const useChatStore = defineStore('chat', () => {
         params
       })
       conversations.value = res.data
+
+      // Restore previous conversation if it still exists in the new list
+      if (prevConvId !== null) {
+        const found = res.data.find((c: Conversation) => c.id === prevConvId)
+        if (found) {
+          currentConvId.value = prevConvId
+        }
+      }
     } catch {
       // Silently fail — user sees empty conversation list
     }
@@ -190,23 +201,14 @@ export const useChatStore = defineStore('chat', () => {
 
       assistantMsg.sources = sources
 
-      // Reload conversations to update title
-      // Re-fetch with mode param (inferred from current conversation or default)
+      // Update conversation title locally (first user message becomes the title)
+      // Avoids full conversation reload which causes UI delay
       const currentConv = conversations.value.find(c => c.id === currentConvId.value)
-      if (currentConv) {
-        await loadConversations(currentConv.mode)
-        // Restore current conv selection after reload
-        currentConvId.value = currentConv.id
-        // Re-select the conversation to restore messages
-        const auth2 = useAuthStore()
-        const res = await api.get(`${API}/conversations/${currentConv.id}/messages`, {
-          headers: auth2.getAuthHeaders()
-        })
-        messages.value = res.data.map((m: any) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content
-        }))
+      if (currentConv && !currentConv.title) {
+        const firstUserMsg = messages.value.find(m => m.role === 'user')
+        if (firstUserMsg) {
+          currentConv.title = firstUserMsg.content.slice(0, 50)
+        }
       }
 
       // Fetch suggested follow-up questions after streaming completes

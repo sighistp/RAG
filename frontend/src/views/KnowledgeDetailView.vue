@@ -11,6 +11,8 @@ import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
   Edit,
   Check,
   Close,
@@ -65,6 +67,9 @@ const removingDoc = ref('')
 // TOC / Overview generation
 const generatingToc = ref(false)
 const generatingOverview = ref(false)
+
+// Collapsible top section
+const showTopSection = ref(true)
 
 // ── Scroll handling ──
 watch(() => chatStore.messages.length, () => {
@@ -421,6 +426,10 @@ function getStatusLabel(status: string) {
             <el-icon style="margin-right: 4px;"><ArrowLeft /></el-icon>
             返回列表
           </el-button>
+          <el-button text size="small" @click="showTopSection = !showTopSection" :title="showTopSection ? '收起信息区' : '展开信息区'">
+            <el-icon style="margin-right: 4px;"><ArrowUp v-if="showTopSection" /><ArrowDown v-else /></el-icon>
+            {{ showTopSection ? '收起' : '展开' }}
+          </el-button>
         </div>
         <div class="kb-detail-header-row">
           <div v-if="!loading" class="kb-detail-title-area">
@@ -465,8 +474,8 @@ function getStatusLabel(status: string) {
         </div>
       </div>
 
-      <!-- Scrollable content -->
-      <div class="kb-detail-scroll">
+      <!-- Scrollable content (collapsible) -->
+      <div v-if="showTopSection" class="kb-detail-scroll">
         <!-- Overview section -->
         <div class="kb-section">
           <div class="kb-section-header">
@@ -859,6 +868,9 @@ function getStatusLabel(status: string) {
 
 .kb-detail-header-top {
   margin-bottom: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .kb-detail-header-row {
@@ -1045,8 +1057,9 @@ function getStatusLabel(status: string) {
   background: var(--color-surface);
   display: flex;
   flex-direction: column;
-  max-height: 320px;
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 200px;
+  overflow: hidden;
 }
 
 .messages {

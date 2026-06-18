@@ -385,7 +385,7 @@ describe('chat store', () => {
     expect(store.suggestedQuestions).toEqual(['Follow-up 1', 'Follow-up 2'])
   })
 
-  it('sendMessage calls loadConversations after streaming to update titles', async () => {
+  it('sendMessage updates conversation title locally after streaming', async () => {
     const encoder = new TextEncoder()
     const mockStreamResponse = {
       ok: true,
@@ -409,29 +409,16 @@ describe('chat store', () => {
       .mockResolvedValueOnce(mockSuggestResponse as any)
 
     const store = useChatStore()
-    // Set up a current conversation so the loadConversations path is triggered
+    // Set up a current conversation with empty title
     store.conversations = [
-      { id: 1, title: 'Old Title', mode: 'file', created_at: '2026-01-01' }
+      { id: 1, title: '', mode: 'file', created_at: '2026-01-01' }
     ]
     store.currentConvId = 1
 
-    vi.mocked(api.get).mockResolvedValue({
-      data: [
-        { id: 1, title: 'Updated Title', mode: 'file', created_at: '2026-01-01' },
-        { id: 2, role: 'user', content: 'Question' },
-        { id: 3, role: 'assistant', content: 'Answer' }
-      ]
-    } as any)
-
     await store.sendMessage('Question')
 
-    // loadConversations is called internally, so api.get should have been called
-    // at least once for /conversations (loadConversations) and once for messages
-    const getCalls = vi.mocked(api.get).mock.calls
-    const convCalls = getCalls.filter(
-      (call) => typeof call[0] === 'string' && call[0].includes('/conversations')
-    )
-    expect(convCalls.length).toBeGreaterThanOrEqual(1)
+    // Title should be updated locally from the first user message
+    expect(store.conversations[0].title).toBe('Question')
   })
 
   // ── sendFeedback ────────────────────────────────────────
