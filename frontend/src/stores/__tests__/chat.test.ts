@@ -39,18 +39,6 @@ describe('chat store', () => {
     expect(store.conversations).toEqual(convos)
   })
 
-  it('loadConversations passes mode parameter when provided', async () => {
-    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
-
-    const store = useChatStore()
-    await store.loadConversations('kb')
-
-    expect(api.get).toHaveBeenCalledWith(
-      '/conversations',
-      expect.objectContaining({ params: { mode: 'kb' } })
-    )
-  })
-
   it('loadConversations filters by mode on server side', async () => {
     const kbConvos = [
       { id: 10, title: 'KB Chat', mode: 'kb', created_at: '2026-03-01' }
@@ -65,6 +53,20 @@ describe('chat store', () => {
       expect.objectContaining({ params: { mode: 'kb' } })
     )
     expect(store.conversations).toEqual(kbConvos)
+    expect(store.conversations).toHaveLength(1)
+    expect(store.conversations[0].mode).toBe('kb')
+  })
+
+  it('loadConversations does not pass mode param when not provided', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    await store.loadConversations()
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/conversations',
+      expect.objectContaining({ params: {} })
+    )
   })
 
   it('loadConversations clears previous state before fetching', async () => {
@@ -151,6 +153,23 @@ describe('chat store', () => {
 
     expect(store.conversations.find(c => c.id === 1)).toBeUndefined()
     expect(store.currentConvId).toBeNull()
+  })
+
+  it('deleteConversation does not change currentConvId when deleting non-current conversation', async () => {
+    const store = useChatStore()
+    store.conversations = [
+      { id: 1, title: 'A', mode: 'file', created_at: '2026-01-01' },
+      { id: 2, title: 'B', mode: 'file', created_at: '2026-01-02' }
+    ]
+    store.currentConvId = 1
+
+    vi.mocked(api.delete).mockResolvedValue({} as any)
+
+    await store.deleteConversation(2)
+
+    expect(store.conversations.find(c => c.id === 2)).toBeUndefined()
+    expect(store.currentConvId).toBe(1)
+    expect(store.conversations).toHaveLength(1)
   })
 
   // ── selectConversation ─────────────────────────────────
@@ -334,6 +353,85 @@ describe('chat store', () => {
     await store.sendMessage('Hello')
 
     expect(store.isStreaming).toBe(false)
+  })
+
+  it('sendMessage updates suggestedQuestions after streaming completes', async () => {
+    const encoder = new TextEncoder()
+    const mockStreamResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi.fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: encoder.encode('data: {"type":"token","content":"Answer"}\n')
+            })
+            .mockResolvedValueOnce({ done: true, value: undefined })
+        })
+      }
+    }
+    const mockSuggestResponse = {
+      ok: true,
+      json: vi.fn().mockResolvedValue({ questions: ['Follow-up 1', 'Follow-up 2'] })
+    }
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockStreamResponse as any)
+      .mockResolvedValueOnce(mockSuggestResponse as any)
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    await store.sendMessage('Question')
+
+    expect(store.suggestedQuestions).toEqual(['Follow-up 1', 'Follow-up 2'])
+  })
+
+  it('sendMessage calls loadConversations after streaming to update titles', async () => {
+    const encoder = new TextEncoder()
+    const mockStreamResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi.fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: encoder.encode('data: {"type":"token","content":"Answer"}\n')
+            })
+            .mockResolvedValueOnce({ done: true, value: undefined })
+        })
+      }
+    }
+    const mockSuggestResponse = {
+      ok: true,
+      json: vi.fn().mockResolvedValue({ questions: [] })
+    }
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(mockStreamResponse as any)
+      .mockResolvedValueOnce(mockSuggestResponse as any)
+
+    const store = useChatStore()
+    // Set up a current conversation so the loadConversations path is triggered
+    store.conversations = [
+      { id: 1, title: 'Old Title', mode: 'file', created_at: '2026-01-01' }
+    ]
+    store.currentConvId = 1
+
+    vi.mocked(api.get).mockResolvedValue({
+      data: [
+        { id: 1, title: 'Updated Title', mode: 'file', created_at: '2026-01-01' },
+        { id: 2, role: 'user', content: 'Question' },
+        { id: 3, role: 'assistant', content: 'Answer' }
+      ]
+    } as any)
+
+    await store.sendMessage('Question')
+
+    // loadConversations is called internally, so api.get should have been called
+    // at least once for /conversations (loadConversations) and once for messages
+    const getCalls = vi.mocked(api.get).mock.calls
+    const convCalls = getCalls.filter(
+      (call) => typeof call[0] === 'string' && call[0].includes('/conversations')
+    )
+    expect(convCalls.length).toBeGreaterThanOrEqual(1)
   })
 
   // ── sendFeedback ────────────────────────────────────────
