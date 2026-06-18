@@ -191,8 +191,9 @@ def _is_empty_or_error(result: str) -> bool:
     """判断工具结果是否为空或错误。"""
     if not result or not result.strip():
         return True
-    error_indicators = ["error", "错误", "失败", "exception", "traceback"]
-    return any(ind in result.lower() for ind in error_indicators)
+    # Only check Chinese error keywords to avoid false triggers on normal English text
+    error_indicators = ["错误", "失败", "异常", "出错"]
+    return any(ind in result for ind in error_indicators)
 
 
 def _wrap_tool_with_reflection(tool) -> "Tool":

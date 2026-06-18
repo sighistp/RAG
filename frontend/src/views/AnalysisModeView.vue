@@ -33,12 +33,17 @@ async function loadCards() {
   try {
     const res = await api.get('/analysis/cards', { headers: authStore.getAuthHeaders() })
     const cardList: CardGroup[] = res.data || []
-    for (const card of cardList) {
-      const qRes = await api.get(`/analysis/cards/${card.id}/questions`, { headers: authStore.getAuthHeaders() }).catch(() => ({ data: [] }))
-      card.questions = qRes.data || []
-      const sRes = await api.get(`/analysis/cards/${card.id}/summary`, { headers: authStore.getAuthHeaders() }).catch(() => ({ data: { summary: '' } }))
-      card.summary = sRes.data?.summary || ''
-    }
+    // Fetch all questions and summaries in parallel to avoid N+1
+    await Promise.all(
+      cardList.map(async (card) => {
+        const [qRes, sRes] = await Promise.all([
+          api.get(`/analysis/cards/${card.id}/questions`, { headers: authStore.getAuthHeaders() }).catch(() => ({ data: [] })),
+          api.get(`/analysis/cards/${card.id}/summary`, { headers: authStore.getAuthHeaders() }).catch(() => ({ data: { summary: '' } })),
+        ])
+        card.questions = qRes.data || []
+        card.summary = sRes.data?.summary || ''
+      })
+    )
     cards.value = cardList
   } catch {
     cards.value = []

@@ -33,12 +33,14 @@ class ReadWriteLock:
             while self._readers > 0 or self._writing:
                 self._read_ready.wait()
             self._writing = True
-            self._read_ready.release()
-            try:
-                yield
-            finally:
-                self._read_ready.acquire()
-                self._writing = False
-                self._read_ready.notify_all()
         finally:
             self._read_ready.release()
+        try:
+            yield
+        finally:
+            self._read_ready.acquire()
+            try:
+                self._writing = False
+                self._read_ready.notify_all()
+            finally:
+                self._read_ready.release()

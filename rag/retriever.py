@@ -1,4 +1,5 @@
 import re
+import threading
 
 from rank_bm25 import BM25Okapi
 
@@ -8,6 +9,10 @@ from rag.embedder import embed
 from rag.models import Chunk
 from rag.vector_store import search as dense_search
 from rag.vector_store import search_collection
+
+# Module-level BM25 cache to avoid rebuilding on every query
+_bm25_cache: dict[str, tuple[list[Chunk], BM25Okapi]] = {}
+_bm25_cache_lock = threading.Lock()
 
 
 def _tokenize(text: str) -> list[str]:
@@ -75,9 +80,26 @@ def _load_all_chunks(collection_name: str) -> list[Chunk]:
     return chunks
 
 
+def invalidate_bm25_cache(collection_name: str = None):
+    """Clear BM25 cache for a specific collection or all collections."""
+    with _bm25_cache_lock:
+        if collection_name:
+            _bm25_cache.pop(collection_name, None)
+        else:
+            _bm25_cache.clear()
+
+
 class Retriever:
     def __init__(self, chunks: list[Chunk], collection_name: str = None):
         if not chunks and collection_name:
+            # Check module-level cache first
+            with _bm25_cache_lock:
+                if collection_name in _bm25_cache:
+                    cached_chunks, cached_bm25 = _bm25_cache[collection_name]
+                    self.chunks = cached_chunks
+                    self.collection_name = collection_name
+                    self.bm25 = cached_bm25
+                    return
             store = BM25Store()
             if store.has_chunks(collection_name):
                 chunks = store.load_chunks(collection_name)
@@ -90,6 +112,10 @@ class Retriever:
         if chunks:
             tokenized = [_tokenize(c.text) for c in chunks]
             self.bm25 = BM25Okapi(tokenized)
+            # Cache the BM25 index
+            if collection_name:
+                with _bm25_cache_lock:
+                    _bm25_cache[collection_name] = (self.chunks, self.bm25)
         else:
             self.bm25 = None
 

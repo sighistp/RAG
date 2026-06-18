@@ -64,6 +64,7 @@ class RAGPipeline:
         self.tracker = ExecutionTracker(db_path=memory_db_path)
         self._cache = ResultCache()
         self._agent_lock = threading.Lock()
+        self._async_agent_lock = asyncio.Lock()
 
     def _prepare_context(self, question: str, session_id: str, doc_name: str, top_k: int = 8, tags: list[str] = None):
         """公共逻辑：guard -> cache -> route -> retrieve -> rerank -> build_messages。"""
@@ -183,7 +184,7 @@ class RAGPipeline:
 
         if prepared["route"] == "agent":
             captured_calls = []
-            with self._agent_lock:
+            async with self._async_agent_lock:
                 self._wrap_agent_tools(captured_calls)
                 try:
                     answer = await asyncio.to_thread(self.agent.run, prepared["question"])

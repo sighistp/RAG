@@ -19,7 +19,7 @@ beforeEach(() => {
 })
 
 describe('auth store', () => {
-  it('login success saves token and sets user', async () => {
+  it('login success saves token and sets user to null', async () => {
     vi.mocked(api.post).mockResolvedValue({
       data: { token: 'abc123', username: 'testuser' }
     } as any)
@@ -28,7 +28,8 @@ describe('auth store', () => {
     await store.login('testuser', 'password')
 
     expect(store.token).toBe('abc123')
-    expect(store.user).toEqual({ id: 0, username: 'testuser' })
+    // user is set to null to force fetchUser to get the real user id from /me
+    expect(store.user).toBeNull()
     expect(localStorage.getItem('rag_token')).toBe('abc123')
   })
 

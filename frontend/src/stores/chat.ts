@@ -51,15 +51,8 @@ export const useChatStore = defineStore('chat', () => {
   async function loadConversations(mode?: ChatMode) {
     const auth = useAuthStore()
     try {
-      // Remember current selection before clearing
+      // Remember current selection before loading
       const prevConvId = currentConvId.value
-
-      // Clear conversations immediately to prevent stale data from other modes
-      conversations.value = []
-      currentConvId.value = null
-      messages.value = []
-      selectedFile.value = null
-      _selectedFilesByConv.clear()
 
       const params: Record<string, string> = {}
       if (mode) params.mode = mode
@@ -67,6 +60,14 @@ export const useChatStore = defineStore('chat', () => {
         headers: auth.getAuthHeaders(),
         params
       })
+
+      // Only update state after successful fetch to avoid UI flicker
+      conversations.value = []
+      currentConvId.value = null
+      messages.value = []
+      selectedFile.value = null
+      _selectedFilesByConv.clear()
+
       conversations.value = res.data
 
       // Restore previous conversation if it still exists in the new list

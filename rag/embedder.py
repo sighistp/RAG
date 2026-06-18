@@ -36,3 +36,8 @@ def embed(texts: list[str]) -> list[list[float]]:
         cached = _embed_single(text)
         results.append(list(cached))
     return results
+
+
+def clear_cache():
+    """Clear the LRU embedding cache."""
+    _embed_single.cache_clear()

@@ -62,8 +62,8 @@ async def request_id_middleware(request, call_next):
 
 
 # Vue Router SPA fallback: browser requests to known frontend paths → serve index.html
-_VUE_ROUTES = {"/files", "/knowledge", "/kb", "/analytics", "/mode/file", "/mode/kb", "/mode/analysis"}
-_VUE_ROUTE_PREFIXES = {"/knowledge/", "/kb/"}
+_VUE_ROUTES = {"/files", "/kb", "/analytics", "/mode/file", "/mode/kb", "/mode/analysis"}
+_VUE_ROUTE_PREFIXES = {"/kb/"}
 
 
 @app.middleware("http")
@@ -373,7 +373,7 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(default
 
 
 @app.get("/files", summary="列出可索引文件", description="列出 data/upload/ 目录下的所有支持格式文件")
-async def list_files():
+async def list_files(user_id: str = Security(verify_api_key)):
     files = []
     if DATA_DIR.is_dir():
         for fpath in sorted(DATA_DIR.iterdir()):
@@ -400,6 +400,7 @@ def _check_files_in_kb(filenames: list[str]) -> set[str]:
     """批量检查哪些文件已编入知识库，返回已编入的文件名集合。"""
     import sqlite3
     db_path = str(_DB_PATH)
+    conn = None
     try:
         conn = sqlite3.connect(db_path)
         placeholders = ",".join("?" * len(filenames))
@@ -407,10 +408,12 @@ def _check_files_in_kb(filenames: list[str]) -> set[str]:
             f"SELECT DISTINCT filename FROM kb_documents WHERE filename IN ({placeholders}) AND status = 'indexed'",
             filenames
         ).fetchall()
-        conn.close()
         return {r[0] for r in rows}
     except Exception:
         return set()
+    finally:
+        if conn:
+            conn.close()
 
 
 def _human_size(size: int) -> str:
@@ -552,7 +555,7 @@ async def add_tags_to_file(filename: str, tags: list[str], authorization: str = 
 
 
 @app.get("/tags", summary="获取所有标签", description="获取当前知识库中所有已使用的标签")
-async def list_tags():
+async def list_tags(user_id: str = Security(verify_api_key)):
     from rag.vector_store import _get_client, COLLECTION_NAME
 
     client = _get_client()
@@ -874,9 +877,20 @@ async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: 
         db_path = str(_DB_PATH)
         conn = sqlite3.connect(db_path)
         try:
+            # Generate TOC and summary for the document
+            file_path = DATA_DIR / filename
+            toc_str = ""
+            summary_str = ""
+            if file_path.is_file():
+                try:
+                    content = load_document(str(file_path))
+                    toc_str = _json.dumps(generate_toc(content), ensure_ascii=False)
+                    summary_str = generate_summary(content)
+                except Exception:
+                    pass
             conn.execute(
-                "INSERT OR REPLACE INTO kb_documents (kb_id, filename, file_path, chunk_count, status) VALUES (?, ?, ?, ?, 'indexed')",
-                (kb_id, filename, None, count)
+                "INSERT OR REPLACE INTO kb_documents (kb_id, filename, file_path, toc, summary, chunk_count, status) VALUES (?, ?, ?, ?, ?, ?, 'indexed')",
+                (kb_id, filename, str(DATA_DIR / filename), toc_str, summary_str, count)
             )
             # Derive human-readable name from kb_id (format: kb_slug_hex)
             readable_name = kb_id.split("_")[1] if "_" in kb_id else kb_id
@@ -1205,7 +1219,7 @@ async def generate_kb_overview(kb_id: str, user_id: str = Security(verify_api_ke
 # ── 分析端点 ──────────────────────────────────────────────────────
 
 @app.get("/analytics/gaps/summary", summary="检索空白分析统计")
-async def get_gap_summary():
+async def get_gap_summary(user_id: str = Security(verify_api_key)):
     def _get():
         from rag.gap_analyzer import GapAnalyzer
         from config import settings as _settings
@@ -1218,7 +1232,7 @@ async def get_gap_summary():
 
 
 @app.get("/analytics/gaps", summary="未解答问题列表")
-async def get_gaps(limit: int = 50):
+async def get_gaps(limit: int = 50, user_id: str = Security(verify_api_key)):
     def _get():
         from rag.gap_analyzer import GapAnalyzer
         from config import settings as _settings
@@ -1627,17 +1641,37 @@ def _sync_source(source_id: int) -> dict:
     else:
         raise ValueError(f"不支持的数据源类型: {source_type}")
 
-    loop = asyncio.new_event_loop()
-    try:
-        items = loop.run_until_complete(ds.fetch())
-    finally:
-        loop.close()
+    items = asyncio.run(ds.fetch())
+
+    # Index fetched items into the vector store
+    from rag.chunker import chunk as chunk_text
+    from rag.embedder import embed as embed_texts
+    from rag.vector_store import add as vector_add
+
+    errors = []
+    all_chunks = []
+    for item in items:
+        title = item.get("title", "")
+        content = item.get("content", "")
+        text = f"{title}\n{content}" if title else content
+        if not text.strip():
+            continue
+        doc_name = title or f"source_{source_id}"
+        try:
+            chunks = chunk_text(text, doc_name=doc_name)
+            all_chunks.extend(chunks)
+        except Exception as e:
+            errors.append(str(e))
+
+    if all_chunks:
+        embeddings = embed_texts([c.text for c in all_chunks])
+        vector_add(all_chunks, embeddings)
 
     # Persist synced status
     user_db.update_data_source_synced(source_id)
     user_db.update_data_source_status(source_id, "active")
 
-    return {"synced": len(items), "errors": []}
+    return {"synced": len(items), "indexed": len(all_chunks), "errors": errors}
 
 
 @app.post("/sources/{source_id}/sync", summary="同步数据源", description="手动触发数据源同步")

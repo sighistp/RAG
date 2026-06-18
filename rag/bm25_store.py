@@ -34,6 +34,12 @@ class BM25Store:
 
     def save_chunks(self, collection: str, chunks: list):
         """保存 chunks 到 SQLite（先清空该 collection 的旧数据）。"""
+        # Invalidate module-level BM25 cache when underlying data changes
+        try:
+            from rag.retriever import invalidate_bm25_cache
+            invalidate_bm25_cache(collection)
+        except ImportError:
+            pass
         with self._lock:
             self._conn.execute(
                 "DELETE FROM bm25_chunks WHERE collection = ?", (collection,)

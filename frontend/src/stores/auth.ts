@@ -14,7 +14,8 @@ export const useAuthStore = defineStore('auth', () => {
     const res = await api.post(`${API}/login`, { username, password })
     token.value = res.data.token
     localStorage.setItem('rag_token', token.value)
-    user.value = { id: 0, username: res.data.username }
+    // Set user to null to force fetchUser to get the real user id from /me
+    user.value = null
     return res.data
   }
 
@@ -22,7 +23,8 @@ export const useAuthStore = defineStore('auth', () => {
     const res = await api.post(`${API}/register`, { username, password })
     token.value = res.data.token
     localStorage.setItem('rag_token', token.value)
-    user.value = { id: 0, username: res.data.username }
+    // Set user to null to force fetchUser to get the real user id from /me
+    user.value = null
     return res.data
   }
 

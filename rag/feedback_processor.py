@@ -1,6 +1,9 @@
 """反馈驱动检索优化 — chunk 级别权重管理。"""
+import re
 import sqlite3
 import threading
+
+_HEX_PATTERN = re.compile(r"^[0-9a-f]+$")
 
 
 class FeedbackProcessor:
@@ -60,6 +63,8 @@ class FeedbackProcessor:
             self._conn.commit()
 
     def get_weight(self, chunk_hash: str) -> float:
+        if not chunk_hash or not _HEX_PATTERN.match(chunk_hash):
+            return 1.0
         with self._lock:
             row = self._conn.execute(
                 "SELECT weight FROM chunk_feedback WHERE chunk_hash = ?", (chunk_hash,)
@@ -69,11 +74,15 @@ class FeedbackProcessor:
     def get_weights(self, chunk_hashes: list[str]) -> dict[str, float]:
         if not chunk_hashes:
             return {}
+        # Validate all hashes are hex strings to prevent SQL injection
+        valid_hashes = [h for h in chunk_hashes if h and _HEX_PATTERN.match(h)]
+        if not valid_hashes:
+            return {h: 1.0 for h in chunk_hashes}
         with self._lock:
-            placeholders = ",".join("?" * len(chunk_hashes))
+            placeholders = ",".join("?" * len(valid_hashes))
             rows = self._conn.execute(
                 f"SELECT chunk_hash, weight FROM chunk_feedback WHERE chunk_hash IN ({placeholders})",
-                chunk_hashes
+                valid_hashes
             ).fetchall()
         result = {h: 1.0 for h in chunk_hashes}
         for row in rows:

@@ -181,48 +181,50 @@ class UserDB:
     # Conversations
     # ------------------------------------------------------------------
 
-    def create_conversation(self, user_id: int, title: str = "", mode: str = "file") -> int:
+    def create_conversation(self, user_id: int | str, title: str = "", mode: str = "file") -> int:
         """Create a conversation and return its id."""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO conversations (user_id, title, mode) VALUES (?, ?, ?)",
-                (user_id, title, mode),
+                (int(user_id), title, mode),
             )
             self._conn.commit()
             return cur.lastrowid  # type: ignore[return-value]
 
-    def list_conversations(self, user_id: int, mode: str | None = None) -> list[dict[str, Any]]:
+    def list_conversations(self, user_id: int | str, mode: str | None = None) -> list[dict[str, Any]]:
         """Return all conversations for *user_id*, newest first.
 
         If *mode* is given, filter by that mode.
         """
+        uid = int(user_id)
         with self._lock:
             if mode is not None:
                 rows = self._conn.execute(
                     "SELECT id, user_id, title, mode, created_at "
                     "FROM conversations WHERE user_id = ? AND mode = ? "
                     "ORDER BY created_at DESC",
-                    (user_id, mode),
+                    (uid, mode),
                 ).fetchall()
             else:
                 rows = self._conn.execute(
                     "SELECT id, user_id, title, mode, created_at "
                     "FROM conversations WHERE user_id = ? ORDER BY created_at DESC",
-                    (user_id,),
+                    (uid,),
                 ).fetchall()
         return [dict(r) for r in rows]
 
-    def delete_conversation(self, conversation_id: int, user_id: int) -> bool:
+    def delete_conversation(self, conversation_id: int, user_id: int | str) -> bool:
         """Delete a conversation (only if owned by user_id). Returns True if deleted."""
+        uid = int(user_id)
         with self._lock:
             self._conn.execute(
                 "DELETE FROM chat_messages WHERE conversation_id = ? "
                 "AND conversation_id IN (SELECT id FROM conversations WHERE id = ? AND user_id = ?)",
-                (conversation_id, conversation_id, user_id),
+                (conversation_id, conversation_id, uid),
             )
             cur = self._conn.execute(
                 "DELETE FROM conversations WHERE id = ? AND user_id = ?",
-                (conversation_id, user_id),
+                (conversation_id, uid),
             )
             self._conn.commit()
             return cur.rowcount > 0
@@ -241,7 +243,7 @@ class UserDB:
             self._conn.commit()
             return cur.lastrowid  # type: ignore[return-value]
 
-    def get_messages(self, conversation_id: int, user_id: int) -> list[dict[str, Any]]:
+    def get_messages(self, conversation_id: int, user_id: int | str) -> list[dict[str, Any]]:
         """Return all messages in a conversation (only if owned by user_id)."""
         with self._lock:
             rows = self._conn.execute(
@@ -249,7 +251,7 @@ class UserDB:
                 "FROM chat_messages m "
                 "JOIN conversations c ON m.conversation_id = c.id "
                 "WHERE m.conversation_id = ? AND c.user_id = ? ORDER BY m.created_at",
-                (conversation_id, user_id),
+                (conversation_id, int(user_id)),
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -277,7 +279,7 @@ class UserDB:
     def add_feedback(
         self,
         message_id: int,
-        user_id: int,
+        user_id: int | str,
         value: int,
         comment: str = "",
     ) -> int:
@@ -285,19 +287,19 @@ class UserDB:
         with self._lock:
             cur = self._conn.execute(
                 "INSERT OR REPLACE INTO feedback (message_id, user_id, value, comment) VALUES (?, ?, ?, ?)",
-                (message_id, user_id, value, comment),
+                (message_id, int(user_id), value, comment),
             )
             self._conn.commit()
             return cur.lastrowid  # type: ignore[return-value]
 
-    def message_belongs_to_user(self, message_id: int, user_id: int) -> bool:
+    def message_belongs_to_user(self, message_id: int, user_id: int | str) -> bool:
         """Check if a message belongs to a conversation owned by user_id."""
         with self._lock:
             row = self._conn.execute(
                 "SELECT 1 FROM chat_messages m "
                 "JOIN conversations c ON m.conversation_id = c.id "
                 "WHERE m.id = ? AND c.user_id = ?",
-                (message_id, user_id),
+                (message_id, int(user_id)),
             ).fetchone()
         return row is not None
 
@@ -368,45 +370,46 @@ class UserDB:
     # Analysis Cards
     # ------------------------------------------------------------------
 
-    def create_card(self, user_id: int, name: str) -> int:
+    def create_card(self, user_id: int | str, name: str) -> int:
         """Create an analysis card and return its id."""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO analysis_cards (name, user_id) VALUES (?, ?)",
-                (name, user_id),
+                (name, int(user_id)),
             )
             self._conn.commit()
             return cur.lastrowid  # type: ignore[return-value]
 
-    def list_cards(self, user_id: int) -> list[dict[str, Any]]:
+    def list_cards(self, user_id: int | str) -> list[dict[str, Any]]:
         """Return all analysis cards for *user_id*, newest first."""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id, name, user_id, created_at FROM analysis_cards "
                 "WHERE user_id = ? ORDER BY created_at DESC",
-                (user_id,),
+                (int(user_id),),
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def delete_card(self, card_id: int, user_id: int) -> bool:
+    def delete_card(self, card_id: int, user_id: int | str) -> bool:
         """Delete an analysis card and its questions. Returns True if deleted.
 
         Only deletes if the card belongs to *user_id*.
         """
+        uid = int(user_id)
         with self._lock:
             self._conn.execute(
                 "DELETE FROM analysis_questions WHERE card_id = ? "
                 "AND card_id IN (SELECT id FROM analysis_cards WHERE id = ? AND user_id = ?)",
-                (card_id, card_id, user_id),
+                (card_id, card_id, uid),
             )
             cur = self._conn.execute(
                 "DELETE FROM analysis_cards WHERE id = ? AND user_id = ?",
-                (card_id, user_id),
+                (card_id, uid),
             )
             self._conn.commit()
             return cur.rowcount > 0
 
-    def rename_card(self, card_id: int, name: str, user_id: int) -> bool:
+    def rename_card(self, card_id: int, name: str, user_id: int | str) -> bool:
         """Rename an analysis card. Returns True if updated.
 
         Only renames if the card belongs to *user_id*.
@@ -414,7 +417,7 @@ class UserDB:
         with self._lock:
             cur = self._conn.execute(
                 "UPDATE analysis_cards SET name = ? WHERE id = ? AND user_id = ?",
-                (name, card_id, user_id),
+                (name, card_id, int(user_id)),
             )
             self._conn.commit()
             return cur.rowcount > 0
@@ -428,7 +431,7 @@ class UserDB:
             ).fetchone()
         return row["summary"] if row else ""
 
-    def update_card_summary(self, card_id: int, summary: str, user_id: int) -> bool:
+    def update_card_summary(self, card_id: int, summary: str, user_id: int | str) -> bool:
         """Update the summary for a card. Returns True if updated.
 
         Only updates if the card belongs to *user_id*.
@@ -436,7 +439,7 @@ class UserDB:
         with self._lock:
             cur = self._conn.execute(
                 "UPDATE analysis_cards SET summary = ? WHERE id = ? AND user_id = ?",
-                (summary, card_id, user_id),
+                (summary, card_id, int(user_id)),
             )
             self._conn.commit()
             return cur.rowcount > 0
@@ -452,7 +455,7 @@ class UserDB:
         answer: str = "",
         source_mode: str = "",
         source_message_id: int | None = None,
-        user_id: int | None = None,
+        user_id: int | str | None = None,
     ) -> int | None:
         """Add a question to a card and return its id.
 
@@ -464,7 +467,7 @@ class UserDB:
                 # Verify card ownership
                 row = self._conn.execute(
                     "SELECT 1 FROM analysis_cards WHERE id = ? AND user_id = ?",
-                    (card_id, user_id),
+                    (card_id, int(user_id)),
                 ).fetchone()
                 if row is None:
                     return None
@@ -488,7 +491,7 @@ class UserDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def delete_question(self, question_id: int, user_id: int) -> bool:
+    def delete_question(self, question_id: int, user_id: int | str) -> bool:
         """Delete a question. Returns True if deleted.
 
         Only deletes if the question's card belongs to *user_id*.
@@ -497,7 +500,7 @@ class UserDB:
             cur = self._conn.execute(
                 "DELETE FROM analysis_questions WHERE id = ? "
                 "AND card_id IN (SELECT id FROM analysis_cards WHERE user_id = ?)",
-                (question_id, user_id),
+                (question_id, int(user_id)),
             )
             self._conn.commit()
             return cur.rowcount > 0
