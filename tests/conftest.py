@@ -10,6 +10,13 @@ def reset_vector_store():
         except Exception:
             pass
     vs._client = None
+    # Clear BM25 module-level cache to prevent test pollution
+    try:
+        import sys
+        if "rag.retriever" in sys.modules:
+            sys.modules["rag.retriever"]._bm25_cache.clear()
+    except Exception:
+        pass
     yield
     if vs._client is not None:
         try:

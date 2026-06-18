@@ -16,7 +16,8 @@ def test_client(tmp_path: Path):
     patched_user_db = UserDB(str(db_path))
 
     with patch("rag.api.user_db", patched_user_db), \
-         patch("rag.api._DB_PATH", db_path):
+         patch("rag.api._DB_PATH", db_path), \
+         patch("rag.vector_store._get_client"):
         client = TestClient(app)
         yield client, db_path
 
@@ -80,10 +81,21 @@ def test_generate_toc_endpoint(test_client):
 
 def test_generate_toc_no_documents_returns_400(test_client):
     """POST /knowledge-bases/{id}/toc/generate 当 KB 无文档时应返回 400。"""
-    client, _db_path = test_client
+    client, db_path = test_client
 
     res = client.post("/knowledge-bases", json={"name": "test_toc_empty"})
     kb_id = res.json()["kb_id"]
+
+    # Insert kb_metadata so the endpoint recognizes the KB as existing
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT INTO kb_metadata (kb_id, name) VALUES (?, ?)",
+            (kb_id, "test_toc_empty"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
     response = client.post(f"/knowledge-bases/{kb_id}/toc/generate")
     assert response.status_code == 400
@@ -190,10 +202,21 @@ def test_generate_overview_endpoint(test_client):
 
 def test_generate_overview_no_documents_returns_400(test_client):
     """POST /knowledge-bases/{id}/overview/generate 当 KB 无文档时应返回 400。"""
-    client, _db_path = test_client
+    client, db_path = test_client
 
     res = client.post("/knowledge-bases", json={"name": "test_ov_empty"})
     kb_id = res.json()["kb_id"]
+
+    # Insert kb_metadata so the endpoint recognizes the KB as existing
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "INSERT INTO kb_metadata (kb_id, name) VALUES (?, ?)",
+            (kb_id, "test_ov_empty"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
     response = client.post(f"/knowledge-bases/{kb_id}/overview/generate")
     assert response.status_code == 400
