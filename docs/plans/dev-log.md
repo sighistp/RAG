@@ -2902,6 +2902,66 @@ frontend/
 
 ---
 
+---
+
+## Design v2 代码审查修复（2026-06-17）
+
+**审查范围：** Design v2 全部实现（Phase 0-7）
+
+**评分：** 7/10
+
+### Critical 修复（3 项）
+
+| 问题 | 修复 |
+|------|------|
+| useAnalysis 丢失原始问题 | addToAnalysis 同时传 question 和 answer，MessageBubble emit 包含两者 |
+| Conversation mode 无服务端验证 | CreateConversationRequest.mode 加 pattern 约束 |
+| test_kb_generate 使用生产数据库 | 改用 tmp_path fixture + patched user_db |
+
+### Important 修复（2 项）
+
+| 问题 | 修复 |
+|------|------|
+| SettingsMenu emit 双重触发 | 只保留 @command handler，删除直接事件绑定 |
+| addToAnalysisFull 死代码 | 删除 |
+
+### 遗留（未修复）
+
+| 问题 | 级别 | 说明 |
+|------|------|------|
+| AddToAnalysisDialog confirm 失败不关闭弹窗 | Important | 需要加错误处理 |
+| KB 概述截断 2000 字符 | Important | 大文档概述不完整 |
+| AnalysisModeView 2N API 调用 | Important | 需要批量接口或并行加载 |
+| suggest-card N+1 查询 | Important | 需要 batch 方法 |
+| AnalysisCard Question 接口不完整 | Minor | 缺少 answer/source_mode 字段 |
+| suggest-card 正则可能匹配错误 | Minor | 需要更健壮的 JSON 提取 |
+| KB 概述生成用空 name | Minor | 需要先查询 KB 名称 |
+
+**测试：** 451 后端 + 34 前端 = 485 全过
+
+---
+
+## 当前项目状态（2026-06-17）
+
+**测试：** 451 后端 + 34 前端 = 485 全过
+
+**功能完整度：**
+
+| 类别 | 功能 | 状态 |
+|------|------|------|
+| RAG | 混合检索 + 重排序 + 查询改写 | ✅ |
+| Agent | ReAct + 4 工具 + 反思机制 | ✅ |
+| 用户 | JWT 认证 + 对话管理 + 反馈 | ✅ |
+| 知识库 | CRUD + 目录/概述生成 + 文件管理 | ✅ |
+| 流式 | SSE 流式输出 + 追问建议 + 重新生成 | ✅ |
+| 安全 | 注入检测 + XSS 防护 + SQL 注入防护 | ✅ |
+| 容错 | 重试 + 熔断 + 缓存 + 降级 | ✅ |
+| 数据源 | RSS + 数据库 + API 集成 | ✅ |
+| 前端 | Vue 3 + 独立页面 + 组件化 | ✅ |
+| 测试 | 485 个（后端 + 前端） | ✅ |
+
+---
+
 ## 下一步计划
 
 - 手动测试全流程
