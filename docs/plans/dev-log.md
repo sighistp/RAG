@@ -2975,12 +2975,35 @@ frontend/
 | components/MessageBubble | 0 | 19 | 用户/AI 消息渲染、来源、反馈、添加到分析、formatContent、streaming disabled |
 | components/AnalysisCard | 0 | 12 | 标题、问题列表、设置菜单、折叠/展开、删除 |
 
-**测试总数：** 451 后端 + 102 前端 = 553
+**测试总数：** 451 后端 + 111 前端 = 562
+
+---
+
+## 代码审查修复（2026-06-17）✅
+
+**审查范围：** 前端测试补充后的完整项目
+
+**修复的问题：**
+
+| 问题 | 修复 |
+|------|------|
+| sendMessage 后续逻辑未测试 | 补充 suggestQuestions 更新和 loadConversations 调用测试 |
+| formatContent 安全相关未测试 | 补充 HTML 转义、换行转换、ref 标记、DOMPurify 测试 |
+| regenerate 按钮 streaming 状态未测试 | 补充 disabled 状态测试 |
+| deleteConversation 非当前对话未测试 | 补充 currentConvId 不变测试 |
+| 重复测试 | 删除重复的 loadConversations 测试 |
+
+**测试：** 451 后端 + 111 前端 = 562 全过
+
+---
+
+## 手动测试（2026-06-17）🔄
+
+**测试中：** 用户正在手动测试全流程，发现的问题将记录在此。
 
 ---
 
 ## 下一步计划
 
-- 手动测试全流程
 - Docker 容器化
 - CI/CD（GitHub Actions）
