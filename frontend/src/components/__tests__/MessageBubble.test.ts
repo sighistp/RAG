@@ -1,0 +1,277 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mount } from '@vue/test-utils'
+import MessageBubble from '../MessageBubble.vue'
+
+const mockSendFeedback = vi.fn()
+
+vi.mock('../../stores/chat', () => ({
+  useChatStore: () => ({
+    sendFeedback: mockSendFeedback,
+    isStreaming: false,
+    regenerate: vi.fn()
+  })
+}))
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+describe('MessageBubble', () => {
+  // ── User message rendering ──────────────────────────────
+  it('renders user message with user class for right alignment', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'user', content: 'Hello' },
+        index: 0
+      }
+    })
+
+    const msg = wrapper.find('.msg')
+    expect(msg.classes()).toContain('user')
+  })
+
+  it('renders user bubble with content', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'user', content: 'What is RAG?' },
+        index: 0
+      }
+    })
+
+    expect(wrapper.find('.bubble').exists()).toBe(true)
+    expect(wrapper.find('.bubble').text()).toContain('What is RAG?')
+  })
+
+  it('shows user avatar for user messages', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'user', content: 'Hello' },
+        index: 0
+      }
+    })
+
+    expect(wrapper.find('.user-avatar').exists()).toBe(true)
+  })
+
+  // ── AI message rendering ────────────────────────────────
+  it('renders AI message with assistant class for left alignment', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: 'I am an AI' },
+        index: 1
+      }
+    })
+
+    const msg = wrapper.find('.msg')
+    expect(msg.classes()).toContain('assistant')
+  })
+
+  it('renders AI bubble with content', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: 'The answer is 42' },
+        index: 1
+      }
+    })
+
+    expect(wrapper.find('.bubble').text()).toContain('The answer is 42')
+  })
+
+  it('shows AI avatar for assistant messages', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: 'Hello' },
+        index: 1
+      }
+    })
+
+    expect(wrapper.find('.ai-avatar').exists()).toBe(true)
+  })
+
+  // ── Sources ─────────────────────────────────────────────
+  it('shows source references when sources are present', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: {
+          role: 'assistant',
+          content: 'Answer',
+          sources: [
+            { doc_name: 'paper.pdf' },
+            { doc_name: 'notes.md' }
+          ]
+        },
+        index: 1
+      }
+    })
+
+    const chips = wrapper.findAll('.source-chip')
+    expect(chips).toHaveLength(2)
+    expect(chips[0].text()).toBe('1. paper.pdf')
+    expect(chips[1].text()).toBe('2. notes.md')
+  })
+
+  it('does not show sources when sources array is empty', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: {
+          role: 'assistant',
+          content: 'Answer',
+          sources: []
+        },
+        index: 1
+      }
+    })
+
+    expect(wrapper.find('.sources').exists()).toBe(false)
+  })
+
+  it('does not show sources when sources is undefined', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: {
+          role: 'assistant',
+          content: 'Answer'
+        },
+        index: 1
+      }
+    })
+
+    expect(wrapper.find('.sources').exists()).toBe(false)
+  })
+
+  // ── Action buttons ──────────────────────────────────────
+  it('shows action buttons for assistant messages with content', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: 'Answer' },
+        index: 1
+      }
+    })
+
+    expect(wrapper.find('.actions').exists()).toBe(true)
+    const buttons = wrapper.findAll('.action-btn')
+    expect(buttons.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('does not show action buttons for user messages', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'user', content: 'Question' },
+        index: 0
+      }
+    })
+
+    expect(wrapper.find('.actions').exists()).toBe(false)
+  })
+
+  it('does not show action buttons when assistant content is empty', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: '' },
+        index: 1
+      }
+    })
+
+    expect(wrapper.find('.actions').exists()).toBe(false)
+  })
+
+  it('shows add-to-analysis button with label', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: 'Answer' },
+        index: 1
+      }
+    })
+
+    const addBtn = wrapper.find('.action-btn--accent')
+    expect(addBtn.exists()).toBe(true)
+    expect(addBtn.text()).toContain('添加到分析')
+  })
+
+  // ── Feedback button interactions ────────────────────────
+  it('calls sendFeedback with positive when thumbs-up clicked', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { id: 5, role: 'assistant', content: 'Answer' },
+        index: 1
+      }
+    })
+
+    const buttons = wrapper.findAll('.action-btn')
+    // First button is thumbs up
+    await buttons[0].trigger('click')
+
+    expect(mockSendFeedback).toHaveBeenCalledWith(1, 'positive')
+  })
+
+  it('calls sendFeedback with negative when thumbs-down clicked', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { id: 5, role: 'assistant', content: 'Answer' },
+        index: 1
+      }
+    })
+
+    const buttons = wrapper.findAll('.action-btn')
+    // Second button is thumbs down
+    await buttons[1].trigger('click')
+
+    expect(mockSendFeedback).toHaveBeenCalledWith(1, 'negative')
+  })
+
+  // ── Add to analysis emit ────────────────────────────────
+  it('emits add-to-analysis with question and answer', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: 'RAG is great' },
+        index: 1,
+        question: 'What is RAG?'
+      }
+    })
+
+    const addBtn = wrapper.find('.action-btn--accent')
+    await addBtn.trigger('click')
+
+    expect(wrapper.emitted('add-to-analysis')).toBeTruthy()
+    expect(wrapper.emitted('add-to-analysis')![0]).toEqual(['What is RAG?', 'RAG is great'])
+  })
+
+  it('emits add-to-analysis with empty question when no question prop', async () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { role: 'assistant', content: 'Answer' },
+        index: 1
+      }
+    })
+
+    const addBtn = wrapper.find('.action-btn--accent')
+    await addBtn.trigger('click')
+
+    expect(wrapper.emitted('add-to-analysis')![0]).toEqual(['', 'Answer'])
+  })
+
+  // ── Active feedback styling ─────────────────────────────
+  it('applies active class when feedback is positive', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { id: 5, role: 'assistant', content: 'Answer', feedback: 'positive' },
+        index: 1
+      }
+    })
+
+    const buttons = wrapper.findAll('.action-btn')
+    expect(buttons[0].classes()).toContain('active')
+  })
+
+  it('applies active class when feedback is negative', () => {
+    const wrapper = mount(MessageBubble, {
+      props: {
+        message: { id: 5, role: 'assistant', content: 'Answer', feedback: 'negative' },
+        index: 1
+      }
+    })
+
+    const buttons = wrapper.findAll('.action-btn')
+    expect(buttons[1].classes()).toContain('active')
+  })
+})

@@ -25,6 +25,7 @@ beforeEach(() => {
 })
 
 describe('chat store', () => {
+  // ── loadConversations ──────────────────────────────────
   it('loadConversations fills the list', async () => {
     const convos = [
       { id: 1, title: 'First', mode: 'file', created_at: '2026-01-01' },
@@ -38,6 +39,61 @@ describe('chat store', () => {
     expect(store.conversations).toEqual(convos)
   })
 
+  it('loadConversations passes mode parameter when provided', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    await store.loadConversations('kb')
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/conversations',
+      expect.objectContaining({ params: { mode: 'kb' } })
+    )
+  })
+
+  it('loadConversations filters by mode on server side', async () => {
+    const kbConvos = [
+      { id: 10, title: 'KB Chat', mode: 'kb', created_at: '2026-03-01' }
+    ]
+    vi.mocked(api.get).mockResolvedValue({ data: kbConvos } as any)
+
+    const store = useChatStore()
+    await store.loadConversations('kb')
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/conversations',
+      expect.objectContaining({ params: { mode: 'kb' } })
+    )
+    expect(store.conversations).toEqual(kbConvos)
+  })
+
+  it('loadConversations clears previous state before fetching', async () => {
+    const store = useChatStore()
+    // Pre-populate with stale data from another mode
+    store.conversations = [
+      { id: 1, title: 'Old', mode: 'file', created_at: '2026-01-01' }
+    ]
+    store.currentConvId = 1
+    store.messages = [{ role: 'user', content: 'old' }]
+
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+    await store.loadConversations('kb')
+
+    expect(store.conversations).toEqual([])
+    expect(store.currentConvId).toBeNull()
+    expect(store.messages).toEqual([])
+  })
+
+  it('loadConversations silently fails on error', async () => {
+    vi.mocked(api.get).mockRejectedValue(new Error('network'))
+
+    const store = useChatStore()
+    await store.loadConversations()
+
+    expect(store.conversations).toEqual([])
+  })
+
+  // ── createConversation ──────────────────────────────────
   it('createConversation adds to list and sets currentConvId', async () => {
     const newConv = { id: 3, title: 'New', mode: 'file', created_at: '2026-01-03' }
     vi.mocked(api.post).mockResolvedValue({ data: newConv } as any)
@@ -50,6 +106,37 @@ describe('chat store', () => {
     expect(store.currentConvId).toBe(3)
   })
 
+  it('createConversation passes mode parameter', async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      data: { id: 4, title: 'KB', mode: 'kb', created_at: '2026-04-01' }
+    } as any)
+
+    const store = useChatStore()
+    await store.createConversation('kb')
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/conversations',
+      { mode: 'kb' },
+      expect.objectContaining({ headers: expect.any(Object) })
+    )
+  })
+
+  it('createConversation clears messages and selectedFile', async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      data: { id: 5, title: 'New', mode: 'file', created_at: '2026-05-01' }
+    } as any)
+
+    const store = useChatStore()
+    store.messages = [{ role: 'user', content: 'stale' }]
+    store.selectFile('old.pdf')
+
+    await store.createConversation()
+
+    expect(store.messages).toEqual([])
+    expect(store.selectedFile).toBeNull()
+  })
+
+  // ── deleteConversation ─────────────────────────────────
   it('deleteConversation removes from list', async () => {
     const store = useChatStore()
     store.conversations = [
@@ -66,6 +153,7 @@ describe('chat store', () => {
     expect(store.currentConvId).toBeNull()
   })
 
+  // ── selectConversation ─────────────────────────────────
   it('selectConversation sets currentConvId', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
 
@@ -75,6 +163,35 @@ describe('chat store', () => {
     expect(store.currentConvId).toBe(5)
   })
 
+  it('selectConversation loads messages from API', async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: [
+        { id: 1, role: 'user', content: 'Hello' },
+        { id: 2, role: 'assistant', content: 'Hi there' }
+      ]
+    } as any)
+
+    const store = useChatStore()
+    await store.selectConversation(1)
+
+    expect(store.messages).toHaveLength(2)
+    expect(store.messages[0]).toEqual({ id: 1, role: 'user', content: 'Hello' })
+    expect(store.messages[1]).toEqual({ id: 2, role: 'assistant', content: 'Hi there' })
+  })
+
+  it('selectConversation calls GET /conversations/{id}/messages', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    await store.selectConversation(7)
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/conversations/7/messages',
+      expect.objectContaining({ headers: expect.any(Object) })
+    )
+  })
+
+  // ── sendMessage ─────────────────────────────────────────
   it('sendMessage calls /query/stream via fetch', async () => {
     const mockResponse = {
       ok: true,
@@ -104,6 +221,122 @@ describe('chat store', () => {
     expect(store.messages[1].role).toBe('assistant')
   })
 
+  it('sendMessage streams tokens into assistant message', async () => {
+    const encoder = new TextEncoder()
+    const mockResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi.fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: encoder.encode('data: {"type":"token","content":"Hello "}\n')
+            })
+            .mockResolvedValueOnce({
+              done: false,
+              value: encoder.encode('data: {"type":"token","content":"world"}\n')
+            })
+            .mockResolvedValueOnce({
+              done: false,
+              value: encoder.encode('data: {"type":"sources","sources":[{"doc_name":"test.pdf","chunk_index":0}]}\n')
+            })
+            .mockResolvedValueOnce({ done: true, value: undefined })
+        })
+      }
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any)
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    await store.sendMessage('Question')
+
+    const assistantMsg = store.messages[1]
+    expect(assistantMsg.content).toBe('Hello world')
+    expect(assistantMsg.sources).toEqual([{ doc_name: 'test.pdf', chunk_index: 0 }])
+  })
+
+  it('sendMessage includes selectedFile as doc_name in payload', async () => {
+    const mockResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi.fn()
+            .mockResolvedValueOnce({ done: true, value: undefined })
+        })
+      }
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any)
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    store.selectFile('specific.pdf')
+    await store.sendMessage('Question')
+
+    const fetchCall = vi.mocked(globalThis.fetch).mock.calls[0]
+    const init = fetchCall[1] as RequestInit
+    const body = JSON.parse(init.body as string)
+    expect(body.doc_name).toBe('specific.pdf')
+  })
+
+  it('sendMessage shows error text on non-ok response', async () => {
+    const mockResponse = {
+      ok: false,
+      json: vi.fn().mockResolvedValue({ detail: 'Server error occurred' })
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any)
+
+    const store = useChatStore()
+    await store.sendMessage('Hello')
+
+    const assistantMsg = store.messages[1]
+    expect(assistantMsg.content).toBe('Server error occurred')
+  })
+
+  it('sendMessage shows default error when JSON parse fails', async () => {
+    const mockResponse = {
+      ok: false,
+      json: vi.fn().mockRejectedValue(new Error('invalid JSON'))
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any)
+
+    const store = useChatStore()
+    await store.sendMessage('Hello')
+
+    const assistantMsg = store.messages[1]
+    expect(assistantMsg.content).toBe('请求失败')
+  })
+
+  it('sendMessage shows fallback error on network failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'))
+
+    const store = useChatStore()
+    await store.sendMessage('Hello')
+
+    const assistantMsg = store.messages[1]
+    expect(assistantMsg.content).toBe('请求失败，请稍后重试。')
+  })
+
+  it('sendMessage sets isStreaming to false after completion', async () => {
+    const mockResponse = {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi.fn().mockResolvedValue({ done: true, value: undefined })
+        })
+      }
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse as any)
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    expect(store.isStreaming).toBe(false)
+
+    await store.sendMessage('Hello')
+
+    expect(store.isStreaming).toBe(false)
+  })
+
+  // ── sendFeedback ────────────────────────────────────────
   it('sendFeedback calls /feedback', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: {} } as any)
 
@@ -120,6 +353,27 @@ describe('chat store', () => {
     expect(store.messages[0].feedback).toBe('positive')
   })
 
+  it('sendFeedback toggles feedback off when clicking same value', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: {} } as any)
+
+    const store = useChatStore()
+    store.messages = [{ id: 10, role: 'assistant', content: 'Answer', feedback: 'positive' }]
+
+    await store.sendFeedback(0, 'positive')
+
+    expect(store.messages[0].feedback).toBeUndefined()
+  })
+
+  it('sendFeedback does nothing for invalid message index', async () => {
+    const store = useChatStore()
+    store.messages = []
+
+    await store.sendFeedback(5, 'positive')
+
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  // ── regenerate ──────────────────────────────────────────
   it('regenerate calls /regenerate', async () => {
     vi.mocked(api.post).mockResolvedValue({ data: { answer: 'New answer' } } as any)
 
@@ -135,5 +389,109 @@ describe('chat store', () => {
       expect.anything()
     )
     expect(store.messages[0].content).toBe('New answer')
+  })
+
+  it('regenerate does nothing for non-assistant message', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: {} } as any)
+
+    const store = useChatStore()
+    store.currentConvId = 7
+    store.messages = [{ id: 20, role: 'user', content: 'Question' }]
+
+    await store.regenerate(0)
+
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('regenerate does nothing when no current conversation', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: {} } as any)
+
+    const store = useChatStore()
+    store.messages = [{ id: 20, role: 'assistant', content: 'Old' }]
+
+    await store.regenerate(0)
+
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('regenerate sets isStreaming during and after call', async () => {
+    vi.mocked(api.post).mockResolvedValue({ data: { answer: 'New' } } as any)
+
+    const store = useChatStore()
+    store.currentConvId = 1
+    store.messages = [{ id: 1, role: 'assistant', content: 'Old' }]
+
+    expect(store.isStreaming).toBe(false)
+    await store.regenerate(0)
+    expect(store.isStreaming).toBe(false)
+  })
+
+  // ── selectFile ──────────────────────────────────────────
+  it('selectFile sets selectedFile', () => {
+    const store = useChatStore()
+    expect(store.selectedFile).toBeNull()
+
+    store.selectFile('report.pdf')
+    expect(store.selectedFile).toBe('report.pdf')
+  })
+
+  it('selectFile can set to null to clear selection', () => {
+    const store = useChatStore()
+    store.selectFile('report.pdf')
+    expect(store.selectedFile).toBe('report.pdf')
+
+    store.selectFile(null)
+    expect(store.selectedFile).toBeNull()
+  })
+
+  // ── conversationsByMode ─────────────────────────────────
+  it('conversationsByMode filters conversations by mode', () => {
+    const store = useChatStore()
+    store.conversations = [
+      { id: 1, title: 'File 1', mode: 'file', created_at: '2026-01-01' },
+      { id: 2, title: 'KB 1', mode: 'kb', created_at: '2026-01-02' },
+      { id: 3, title: 'File 2', mode: 'file', created_at: '2026-01-03' }
+    ]
+
+    const fileConvos = store.conversationsByMode('file')
+    expect(fileConvos.value).toHaveLength(2)
+    expect(fileConvos.value.every(c => c.mode === 'file')).toBe(true)
+
+    const kbConvos = store.conversationsByMode('kb')
+    expect(kbConvos.value).toHaveLength(1)
+    expect(kbConvos.value[0].mode).toBe('kb')
+  })
+
+  it('conversationsByMode returns empty when no matches', () => {
+    const store = useChatStore()
+    store.conversations = [
+      { id: 1, title: 'File 1', mode: 'file', created_at: '2026-01-01' }
+    ]
+
+    const analysisConvos = store.conversationsByMode('analysis')
+    expect(analysisConvos.value).toHaveLength(0)
+  })
+
+  // ── currentConversation computed ────────────────────────
+  it('currentConversation is null when no conversation selected', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+
+    const store = useChatStore()
+    await store.loadConversations()
+
+    expect(store.currentConversation).toBeFalsy()
+  })
+
+  it('currentConversation returns the active conversation', async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: [{ id: 10, title: 'Active', mode: 'file', created_at: '2026-01-01' }]
+    } as any)
+
+    const store = useChatStore()
+    await store.loadConversations()
+    store.currentConvId = 10
+
+    expect(store.currentConversation).toBeDefined()
+    expect(store.currentConversation!.id).toBe(10)
   })
 })
