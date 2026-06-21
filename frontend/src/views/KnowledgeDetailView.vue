@@ -75,6 +75,10 @@ watch(() => chatStore.messages[chatStore.messages.length - 1]?.content, () => {
 
 onMounted(async () => {
   await chatStore.loadConversations('kb')
+  // Auto-select the most recent conversation if exists
+  if (chatStore.conversations.length > 0 && !chatStore.currentConvId) {
+    await chatStore.selectConversation(chatStore.conversations[0].id)
+  }
   await loadDetail()
 })
 
@@ -115,7 +119,12 @@ async function selectConversation(id: number) {
 }
 
 async function deleteConversation(id: number) {
-  await chatStore.deleteConversation(id)
+  try {
+    await ElMessageBox.confirm('确定删除这个对话？删除后不可恢复。', '确认删除', { type: 'warning' })
+    await chatStore.deleteConversation(id)
+  } catch {
+    // User cancelled
+  }
 }
 
 function formatTime(ts: string | number) {
@@ -516,7 +525,19 @@ function getStatusLabel(status: string) {
     <!-- Chat area (right) -->
     <div class="kb-chat-area">
       <div ref="messagesContainer" class="messages">
-        <div v-if="!chatStore.messages.length" class="empty-chat">
+        <!-- No conversations at all -->
+        <div v-if="!chatStore.conversations.length" class="empty-chat">
+          <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
+          <h3>开始在知识库中提问</h3>
+          <p>创建对话后，在此知识库中检索问答</p>
+          <el-button type="primary" @click="newConversation" style="margin-top: 12px;">
+            <el-icon style="margin-right: 6px;"><Plus /></el-icon>
+            新建对话
+          </el-button>
+        </div>
+
+        <!-- Conversation selected but no messages -->
+        <div v-else-if="!chatStore.messages.length" class="empty-chat">
           <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
           <h3>在此知识库中提问</h3>
           <p>选择左侧的文档，或直接提问</p>
@@ -545,7 +566,7 @@ function getStatusLabel(status: string) {
         </button>
       </div>
 
-      <ChatInput />
+      <ChatInput v-if="chatStore.currentConvId" mode="kb" />
     </div>
 
     <!-- Dialogs -->
