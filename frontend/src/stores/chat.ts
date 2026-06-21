@@ -51,9 +51,6 @@ export const useChatStore = defineStore('chat', () => {
   async function loadConversations(mode?: ChatMode) {
     const auth = useAuthStore()
     try {
-      // Remember current selection before loading
-      const prevConvId = currentConvId.value
-
       const params: Record<string, string> = {}
       if (mode) params.mode = mode
       const res = await api.get(`${API}/conversations`, {
@@ -61,20 +58,15 @@ export const useChatStore = defineStore('chat', () => {
         params
       })
 
-      // Only update state after successful fetch to avoid UI flicker
-      conversations.value = []
-      currentConvId.value = null
-      messages.value = []
-      selectedFile.value = null
-      _selectedFilesByConv.clear()
-
+      // Update conversations list without clearing current state
       conversations.value = res.data
 
-      // Restore previous conversation if it still exists in the new list
-      if (prevConvId !== null) {
-        const found = res.data.find((c: Conversation) => c.id === prevConvId)
-        if (found) {
-          currentConvId.value = prevConvId
+      // If current conversation is no longer in the list, clear it
+      if (currentConvId.value !== null) {
+        const found = res.data.find((c: Conversation) => c.id === currentConvId.value)
+        if (!found) {
+          currentConvId.value = null
+          messages.value = []
         }
       }
     } catch {
