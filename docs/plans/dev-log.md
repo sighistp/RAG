@@ -3264,7 +3264,54 @@ frontend/
 
 ---
 
+## 权限管理系统设计 & 实施计划（2026-06-21）
+
+### 背景
+
+新增基于等级的文档权限管理系统。核心规则：用户等级 ≥ 文档等级 且 同一知识库内 才可查看，辅以共享机制实现细粒度授权。
+
+### 设计文档
+
+- `docs/permission-design.md` — 完整设计文档，含角色等级、权限规则、数据模型、API 设计、查询逻辑、前端变更、边界约定
+- `docs/project-review.md` — 项目全面审阅报告
+
+### 实施计划
+
+- `docs/plans/2026-06-21-permission-management-plan.md` — 16 个 Task 的 TDD 实施计划（Task 0-15）
+
+### 经过多轮 review 修复的问题
+
+| 类别 | 问题 | 修复 |
+|------|------|------|
+| 架构 | `config.py` 缺 `users_db_path`，pipeline 无法访问 UserDB | 新增 Task 0，统一配置 |
+| 架构 | 现有接口缺 `authorization` 参数，无法获取用户信息 | Task 9 补签名 |
+| 架构 | `KnowledgeBaseManager.add_document()` 不传 `doc_permission_id` | Task 7 透传 |
+| Bug | `check_doc_permission` 对旧文档返回 404 | 改为返回 None 放行 |
+| Bug | `filter_chunks_by_permission` N+1 查询 | 改批量查询 |
+| Bug | pipeline 每次查询新建 UserDB 连接 | 注入引用复用 |
+| Bug | `doc_permission_id` 写入 Qdrant 但过滤时不用 | Chunk 加字段，pipeline 用它快速查询 |
+| Bug | 知识库详情页 N+1 查询 + 响应缺权限字段 | 批量查询 + 补充字段 |
+| 工程 | 上传失败时权限记录残留 | 先创建，失败回滚 |
+| 工程 | share 接口 catch 太宽 | 只 catch IntegrityError |
+| 工程 | 管理员初始化访问私有属性 | 新增 `get_user_by_username()` |
+| 工程 | `PUT /admin` 只能设不能撤 | 改为 `PUT /role` |
+| 工程 | ShareDialog 拿不到 `doc_permission_id` | 响应加该字段 |
+| 工程 | `is_document_shared` 仍是 N+1 | 新增 `get_shared_doc_ids_for_user()` 批量方法 |
+| 工程 | RAGPipeline 创建点没列全 | 列出 api.py 中 3 处 |
+
+### 架构决策
+
+| 决策 | 理由 |
+|------|------|
+| 工具函数而非中间件 | 按需调用，更灵活 |
+| 检索后过滤而非检索前 | 侵入性低，实现简单 |
+| 旧文档无记录视为公开 | 向后兼容，不迁移旧数据 |
+| 自增 ID 做主键，`doc_name+kb_id` 做业务约束 | 外键引用更干净 |
+
+---
+
 ## 下一步计划
 
+- 权限管理系统实施（16 个 Task）
 - Docker 容器化
 - CI/CD（GitHub Actions）
