@@ -14,8 +14,9 @@ const messagesContainer = ref<HTMLElement>()
 
 onMounted(async () => {
   await chatStore.loadConversations('file')
-  // Auto-create a conversation if none exists
-  if (!chatStore.currentConversation) {
+  // Auto-create only if no current conversation OR current is not in file mode
+  const hasFileConv = chatStore.conversations.some(c => c.id === chatStore.currentConvId)
+  if (!hasFileConv) {
     await chatStore.createConversation('file')
   }
   filesStore.loadFiles()
