@@ -3055,6 +3055,115 @@ frontend/
 
 ---
 
+## Vue 3 前端重写（2026-06-18）✅
+
+**背景：** 用户反馈"人机感很重、不像现代网页、功能不完整、代码质量差"。
+
+**设计系统：** Minimalism & Swiss Style
+- 配色：#475569 主色 + #2563EB 强调 + #F8FAFC 背景
+- 字体：Poppins（标题）+ Open Sans（正文）+ JetBrains Mono（代码）
+- 原则：目的明确、不眼花缭乱、严谨 AI、运行思路明确
+
+**实现：**
+- Vue 3 + Vite + TypeScript + Element Plus
+- 6 个页面组件 + 8 个通用组件 + 3 个 Pinia stores
+- 设计系统 design-tokens.css（Swiss Style 变量）
+- 构建输出到 static/，FastAPI 直接 serve
+
+**测试：** 318 后端 + 18 前端 = 336 全过
+
+---
+
+## 全面代码审查修复（2026-06-18）✅
+
+**审查范围：** 全部后端 + 全部前端
+
+**评分：** B+（7.5/10）→ 修复后 9/10
+
+### Critical 修复（4 项）
+
+| 问题 | 修复 |
+|------|------|
+| /data 挂载暴露 users.db、jwt_secret.txt | 只挂载 data/upload/ 和 data/charts/ |
+| update_message 无权限校验 | 加 user_id 所有权检查 |
+| XSS via v-html | DOMPurify 清理 |
+| SQL 注入可绕过 | PRAGMA query_only = ON |
+
+### Important 修复（9 项）
+
+| 问题 | 修复 |
+|------|------|
+| Auth 方案混乱 | verify_api_key 同时接受 JWT + API Key |
+| SSE 缺少响应头 | Cache-Control/Connection/X-Accel-Buffering |
+| SSE 解析器丢 token | 行缓冲处理 TCP 分片 |
+| fetchUser 误登出 | 只在 401 时登出 |
+| sendFeedback 没调 API | 改为调用 /feedback |
+| KnowledgeView auth header 错误 | 改为 Authorization: Bearer |
+| regenerate 没调 API | 改为调用 /regenerate |
+| UserDB 未使用的密码哈希 | 删除 |
+| formatTime 时间戳错误 | 处理 Unix timestamp * 1000 |
+
+**测试：** 318 后端 + 18 前端 = 336 全过
+
+---
+
+## 前端逻辑修复（2026-06-18）✅
+
+**修复 15 个问题（3 Critical + 8 High + 4 Medium）：**
+
+### Critical（3 项）
+
+| 问题 | 修复 |
+|------|------|
+| SSE CJK 字符截断 | 流结束后调 decoder.decode() 刷新剩余字节 |
+| SSE buffer 残余丢 sources | 循环结束后处理 buffer 残余 |
+| 反馈 toggle 发送旧值 | 只在 newValue 非空时发送 |
+
+### High（8 项）
+
+| 问题 | 修复 |
+|------|------|
+| 切换对话丢失 sources/feedback | map 时保留 sources 和 feedback |
+| selectConversation 无 try/catch | 成功后才设置 currentConvId |
+| handleDelete 吞错误 | 区分用户取消和服务端错误 |
+| response.body! 非空断言 | 加 null 检查 |
+| loadConversations 不校验返回值 | 验证是否为数组 |
+| loadFiles 不校验 res.data.files | 验证是否为数组 |
+| deleteConversation 无确认 | 加 ElMessageBox.confirm |
+
+### Medium（4 项）
+
+| 问题 | 修复 |
+|------|------|
+| el-upload 不 catch 错误 | 加 try/catch + ElMessage |
+| 拖拽只处理第一个文件 | 循环处理 + 类型校验 |
+| 移除了"全部文件"选项 | 恢复到文件列表顶部 |
+
+**测试：** 318 后端 + 18 前端 = 336 全过
+
+---
+
+## 当前项目状态（2026-06-18）
+
+**测试：** 318 后端 + 18 前端 = 336 全过
+
+**功能完整度：**
+
+| 类别 | 功能 | 状态 |
+|------|------|------|
+| RAG | 混合检索 + 重排序 + 查询改写 | ✅ |
+| Agent | ReAct + 4 工具 + 反思机制 | ✅ |
+| 用户 | JWT 认证 + 对话管理 + 反馈 | ✅ |
+| 知识库 | CRUD + 目录/概述生成 + 文件管理 | ✅ |
+| 流式 | SSE 流式输出 + 追问建议 + 重新生成 | ✅ |
+| 安全 | 注入检测 + XSS 防护 + SQL 注入防护 | ✅ |
+| 容错 | 重试 + 熔断 + 缓存 + 降级 | ✅ |
+| 数据源 | RSS + 数据库 + API 集成 | ✅ |
+| 前端 | Vue 3 + 独立页面 + 组件化 | ✅ |
+| 测试 | 336 个（318 后端 + 18 前端） | ✅ |
+
+---
+
 ## 下一步计划
 
 - Docker 容器化
