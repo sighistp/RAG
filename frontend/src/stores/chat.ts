@@ -136,8 +136,9 @@ export const useChatStore = defineStore('chat', () => {
     suggestedQuestions.value = []
 
     // Add empty assistant message for streaming
-    const assistantMsg: Message = { role: 'assistant', content: '' }
-    messages.value.push(assistantMsg)
+    messages.value.push({ role: 'assistant', content: '' })
+    // Get the reactive proxy from the array (not the plain object)
+    const assistantMsg = messages.value[messages.value.length - 1]
 
     try {
       const payload: Record<string, any> = {
