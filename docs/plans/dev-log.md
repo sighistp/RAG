@@ -3012,6 +3012,49 @@ frontend/
 
 ---
 
+## 全面代码审查修复（2026-06-18）✅
+
+**审查范围：** 全部后端 + 全部前端
+
+**评分：** B+（7.5/10）→ 修复后预计 9/10
+
+### Critical 修复（6 项）
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 1 | 数据源同步只 fetch 不索引 | fetch 后调 chunk → embed → add |
+| 2 | KnowledgeView 路由错误 | goToDetail 改为 /kb/${kb_id} |
+| 3 | user_id 类型不匹配 | user_db 方法兼容 int\|str |
+| 4 | SQL f-string 潜在注入 | 验证 chunk_hashes 是 hex 字符串 |
+| 5 | ReadWriteLock 异常时双重获取 | 重构为 try/finally |
+| 6 | _wrap_tool_with_reflection 误触发 | 改为检查中文关键词 |
+
+### Important 修复（11 项）
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 7 | /files、/tags、/analytics 无认证 | 添加 Security(verify_api_key) |
+| 8 | user.id 硬编码为 0 | login 后设 user=null 强制 fetchUser |
+| 9 | BM25 每次查询重建 | 添加模块级缓存 + 写操作时清除 |
+| 10 | embedder LRU cache 不清理 | 暴露 clear_cache() 函数 |
+| 11 | SQLite 连接泄漏 | try/finally 包装 conn.close() |
+| 12 | add_document_to_kb 不填充 metadata | 填充 file_path、toc、summary |
+| 13 | KB 视图代码重复 | 删除 KnowledgeView.vue（重复） |
+| 14 | 分析页 N+1 API 调用 | Promise.all 并行加载 |
+| 15 | Agent 锁在 async 上下文 | 改为 asyncio.Lock() |
+| 16 | 数据源同步创建新 event loop | 改为 asyncio.run() |
+| 17 | 对话加载时数据闪烁 | 先加载数据，成功后再更新 |
+
+### 测试修复
+
+- Qdrant 锁冲突：test_client fixture 添加 vector_store mock
+- kb_metadata 缺失：测试中插入 kb_metadata 行
+- BM25 缓存污染：conftest 清除 _bm25_cache
+
+**测试：** 451 后端 + 111 前端 = 562 全过
+
+---
+
 ## 下一步计划
 
 - Docker 容器化
