@@ -1,5 +1,7 @@
 """文件夹扫描 + 全量索引模块。"""
 
+import hashlib
+import json
 import logging
 import os
 import time
@@ -7,6 +9,47 @@ import time
 from rag.loader import SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
+
+
+def compute_file_hash(file_path: str) -> str:
+    """计算文件的 MD5 hash。"""
+    h = hashlib.md5()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_index_state(state_path: str) -> dict:
+    """加载索引状态文件。"""
+    if not os.path.exists(state_path):
+        return {}
+    with open(state_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def save_index_state(state_path: str, state: dict):
+    """保存索引状态文件。"""
+    os.makedirs(os.path.dirname(state_path), exist_ok=True)
+    with open(state_path, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def diff_index(current_hashes: dict, stored_state: dict) -> tuple[list, list, list]:
+    """对比当前文件 hash 与存储状态，返回 (新增, 修改, 删除) 的文件名列表。
+
+    stored_state 支持两种格式:
+    - 嵌套格式: {"files": {"name": {"hash": "..."}}}
+    - 平铺格式: {"name": "hash"}（兼容测试）
+    """
+    if "files" in stored_state:
+        stored_hashes = {name: info["hash"] for name, info in stored_state["files"].items()}
+    else:
+        stored_hashes = dict(stored_state)
+    added = [name for name in current_hashes if name not in stored_hashes]
+    modified = [name for name in current_hashes if name in stored_hashes and current_hashes[name] != stored_hashes[name]]
+    deleted = [name for name in stored_hashes if name not in current_hashes]
+    return added, modified, deleted
 
 
 def scan_folder(folder_path: str) -> list[str]:

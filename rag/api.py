@@ -32,20 +32,46 @@ _pipeline_lock = ReadWriteLock()
 
 @app.on_event("startup")
 def auto_index_on_startup():
-    """启动时自动索引 data/upload/ 下的文件。"""
+    """启动时增量索引 data/upload/ 下的文件。"""
     global pipeline
     if not DATA_DIR.is_dir():
         return
-    files = [f for f in DATA_DIR.iterdir() if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS]
-    if not files:
-        return
-    logger.info("自动索引 %d 个文件...", len(files))
-    try:
-        from rag.folder_indexer import index_folder
-        from rag.pipeline import RAGPipeline
 
-        stats = index_folder(str(DATA_DIR))
-        logger.info("索引完成: %d 文件, %d 分块", stats["files"], stats["chunks"])
+    from rag.folder_indexer import compute_file_hash, load_index_state, save_index_state, diff_index, index_folder
+    from rag.pipeline import RAGPipeline
+
+    state_path = str(DATA_DIR.parent / "index_state.json")
+    stored_state = load_index_state(state_path)
+
+    # 计算当前文件 hash
+    current_hashes = {}
+    for fpath in DATA_DIR.iterdir():
+        if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
+            current_hashes[fpath.name] = compute_file_hash(str(fpath))
+
+    added, modified, deleted = diff_index(current_hashes, stored_state)
+    changed = added + modified
+
+    if not changed and not deleted:
+        logger.info("索引无需更新（%d 文件）", len(current_hashes))
+        with _pipeline_lock.write():
+            pipeline = RAGPipeline(kb_id="rag_docs")
+        return
+
+    logger.info("索引变化: %d 新增, %d 修改, %d 删除", len(added), len(modified), len(deleted))
+
+    try:
+        # 如果有变化，重新索引全部（简单可靠）
+        if changed:
+            stats = index_folder(str(DATA_DIR))
+            logger.info("索引完成: %d 文件, %d 分块", stats["files"], stats["chunks"])
+
+        # 更新状态
+        new_state = {"files": {}}
+        for name, h in current_hashes.items():
+            new_state["files"][name] = {"hash": h}
+        save_index_state(state_path, new_state)
+
         with _pipeline_lock.write():
             pipeline = RAGPipeline(kb_id="rag_docs")
     except Exception as e:

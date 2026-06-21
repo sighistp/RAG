@@ -44,5 +44,8 @@ data/chart_*.png
 # JWT secret (auto-generated)
 data/jwt_secret.txt
 
+# Incremental index state (auto-generated)
+data/index_state.json
+
 # Ruff cache
 .ruff_cache/
