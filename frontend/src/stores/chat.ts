@@ -127,8 +127,13 @@ export const useChatStore = defineStore('chat', () => {
     selectedFile.value = name
   }
 
-  async function sendMessage(question: string) {
+  async function sendMessage(question: string, mode?: ChatMode) {
     const auth = useAuthStore()
+
+    // Auto-create conversation if none exists
+    if (!currentConvId.value && mode) {
+      await createConversation(mode)
+    }
 
     // Add user message
     messages.value.push({ role: 'user', content: question })

@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useChatStore } from '../stores/chat'
+import { useChatStore, type ChatMode } from '../stores/chat'
+
+const props = defineProps<{
+  mode?: ChatMode
+}>()
 
 const chatStore = useChatStore()
 const inputText = ref('')
@@ -9,7 +13,7 @@ async function handleSend() {
   const q = inputText.value.trim()
   if (!q || chatStore.isStreaming) return
   inputText.value = ''
-  await chatStore.sendMessage(q)
+  await chatStore.sendMessage(q, props.mode)
 }
 
 function handleKeydown(e: KeyboardEvent) {

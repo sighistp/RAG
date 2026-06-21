@@ -4,7 +4,7 @@ import { useChatStore } from '../stores/chat'
 import { useFilesStore } from '../stores/files'
 import { useAnalysis } from '../composables/useAnalysis'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Delete, FolderOpened } from '@element-plus/icons-vue'
+import { Upload, Delete, FolderOpened, Plus } from '@element-plus/icons-vue'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
 import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
@@ -43,6 +43,10 @@ async function handleDelete(name: string) {
 
 onMounted(async () => {
   await chatStore.loadConversations('file')
+  // Auto-select the most recent conversation if exists
+  if (chatStore.conversations.length > 0 && !chatStore.currentConvId) {
+    await chatStore.selectConversation(chatStore.conversations[0].id)
+  }
   filesStore.loadFiles()
 })
 
@@ -176,10 +180,22 @@ function askSuggested(q: string) {
     <!-- Chat area (right) -->
     <div class="chat-area">
       <div ref="messagesContainer" class="messages">
-        <div v-if="!chatStore.messages.length" class="empty-chat">
+        <!-- No conversations at all -->
+        <div v-if="!chatStore.conversations.length" class="empty-chat">
           <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
-          <h3>开始一个新对话</h3>
+          <h3>开始你的第一个对话</h3>
           <p>上传文档后，向知识库提问</p>
+          <el-button type="primary" @click="newConversation" style="margin-top: 12px;">
+            <el-icon style="margin-right: 6px;"><Plus /></el-icon>
+            新建对话
+          </el-button>
+        </div>
+
+        <!-- Conversation selected but no messages -->
+        <div v-else-if="!chatStore.messages.length" class="empty-chat">
+          <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
+          <h3>开始对话</h3>
+          <p>在下方输入你的问题</p>
         </div>
 
         <MessageBubble
@@ -205,7 +221,7 @@ function askSuggested(q: string) {
         </button>
       </div>
 
-      <ChatInput />
+      <ChatInput v-if="chatStore.currentConvId" mode="file" />
     </div>
 
     <AddToAnalysisDialog
