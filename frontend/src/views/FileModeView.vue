@@ -83,7 +83,7 @@ function askSuggested(q: string) {
 
 <template>
   <div class="file-mode">
-    <!-- Conversation sidebar -->
+    <!-- Conversation sidebar (left) -->
     <aside class="conv-sidebar">
       <div class="conv-sidebar-header">
         <span class="conv-sidebar-title">对话历史</span>
@@ -133,88 +133,79 @@ function askSuggested(q: string) {
       </div>
     </aside>
 
-    <!-- Main content area -->
-    <div class="file-main">
-      <!-- File management area -->
-      <div class="file-section">
-        <div class="file-section-header">
-          <span class="section-title">文件管理</span>
-          <div class="file-actions">
-            <el-upload :show-file-list="false" :before-upload="() => false" :on-change="(f: any) => filesStore.uploadFile(f.raw!)" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
-              <el-button size="small" type="primary">
-                <el-icon><Upload /></el-icon>
-                上传文件
-              </el-button>
-            </el-upload>
-          </div>
-        </div>
-
-        <!-- Drop zone -->
-        <div class="drop-zone" @dragover.prevent="dragover = true" @dragleave="dragover = false" @drop.prevent="handleDrop($event)" :class="{ active: dragover }">
-          <el-icon class="drop-icon"><Upload /></el-icon>
-          <p class="drop-text">拖拽文件到此处上传</p>
-          <p class="drop-hint">支持 txt、md、pdf、docx、xlsx、csv</p>
-        </div>
-
-        <!-- File grid -->
-        <div class="file-grid">
-          <div v-for="file in filesStore.files" :key="file.name" class="file-card" @click="chatStore.selectFile(file.name)" :class="{ selected: chatStore.selectedFile === file.name }">
-            <div class="file-icon">{{ getFileIcon(file.ext) }}</div>
-            <div class="file-info">
-              <div class="file-name" :title="file.name">{{ file.name }}</div>
-              <div class="file-size">{{ file.size_human }}</div>
-            </div>
-            <button class="file-delete" @click.stop="handleDelete(file.name)" title="删除">
-              <el-icon><Delete /></el-icon>
-            </button>
-          </div>
-          <div v-if="!filesStore.files.length" class="empty-files">
-            <el-icon class="empty-icon"><FolderOpened /></el-icon>
-            <p>暂无文件</p>
-          </div>
-        </div>
+    <!-- File management panel (middle) -->
+    <div class="file-panel">
+      <div class="file-panel-header">
+        <h1 class="file-panel-title">文件管理</h1>
+        <el-upload :show-file-list="false" :before-upload="() => false" :on-change="(f: any) => filesStore.uploadFile(f.raw!)" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+          <el-button size="small" type="primary">
+            <el-icon><Upload /></el-icon>
+            上传
+          </el-button>
+        </el-upload>
       </div>
 
-      <!-- Chat area -->
-      <div class="chat-section">
-        <div ref="messagesContainer" class="messages">
-          <div v-if="!chatStore.messages.length" class="empty">
-            <div class="empty-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-              </svg>
-            </div>
-            <h3>开始一个新对话</h3>
-            <p>上传文档后，向知识库提问</p>
+      <!-- Drop zone -->
+      <div class="drop-zone" @dragover.prevent="dragover = true" @dragleave="dragover = false" @drop.prevent="handleDrop($event)" :class="{ active: dragover }">
+        <el-icon class="drop-icon"><Upload /></el-icon>
+        <p class="drop-text">拖拽文件到此处上传</p>
+        <p class="drop-hint">支持 txt、md、pdf、docx、xlsx、csv</p>
+      </div>
+
+      <!-- File list -->
+      <div class="file-list">
+        <div v-for="file in filesStore.files" :key="file.name"
+             :class="['file-item', { selected: chatStore.selectedFile === file.name }]"
+             @click="chatStore.selectFile(file.name)">
+          <div class="file-item-icon">{{ getFileIcon(file.ext) }}</div>
+          <div class="file-item-info">
+            <div class="file-item-name" :title="file.name">{{ file.name }}</div>
+            <div class="file-item-size">{{ file.size_human }}</div>
           </div>
-
-          <MessageBubble
-            v-for="(msg, i) in chatStore.messages"
-            :key="i"
-            :message="msg"
-            :index="i"
-            :question="i > 0 && chatStore.messages[i - 1]?.role === 'user' ? chatStore.messages[i - 1].content : ''"
-            @add-to-analysis="addToAnalysis"
-          />
-
-          <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="msg assistant">
-            <div class="msg-avatar ai-avatar">R</div>
-            <div class="msg-body">
-              <div class="typing">
-                <span></span><span></span><span></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="chatStore.suggestedQuestions.length" class="suggestions">
-          <button v-for="q in chatStore.suggestedQuestions" :key="q" class="suggest-btn" @click="askSuggested(q)">
-            {{ q }}
+          <button class="file-item-delete" @click.stop="handleDelete(file.name)" title="删除">
+            <el-icon><Delete /></el-icon>
           </button>
         </div>
-
-        <ChatInput />
+        <div v-if="!filesStore.files.length" class="empty-files">
+          <el-icon class="empty-icon"><FolderOpened /></el-icon>
+          <p>暂无文件</p>
+        </div>
       </div>
+    </div>
+
+    <!-- Chat area (right) -->
+    <div class="chat-area">
+      <div ref="messagesContainer" class="messages">
+        <div v-if="!chatStore.messages.length" class="empty-chat">
+          <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
+          <h3>开始一个新对话</h3>
+          <p>上传文档后，向知识库提问</p>
+        </div>
+
+        <MessageBubble
+          v-for="(msg, i) in chatStore.messages"
+          :key="i"
+          :message="msg"
+          :index="i"
+          :question="i > 0 && chatStore.messages[i - 1]?.role === 'user' ? chatStore.messages[i - 1].content : ''"
+          @add-to-analysis="addToAnalysis"
+        />
+
+        <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="msg assistant">
+          <div class="msg-avatar ai-avatar">R</div>
+          <div class="msg-body">
+            <div class="typing"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="chatStore.suggestedQuestions.length" class="suggestions">
+        <button v-for="q in chatStore.suggestedQuestions" :key="q" class="suggest-btn" @click="askSuggested(q)">
+          {{ q }}
+        </button>
+      </div>
+
+      <ChatInput />
     </div>
 
     <AddToAnalysisDialog
@@ -386,42 +377,40 @@ function askSuggested(q: string) {
   color: var(--color-secondary);
 }
 
-/* ── Main Content ─────────────────────────────────────── */
-.file-main {
-  flex: 1;
+/* ── File Panel (middle) ───────────────────────────────── */
+.file-panel {
+  width: 320px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   overflow: hidden;
-  min-width: 0;
 }
 
-/* ── File Section ─────────────────────────────────────── */
-.file-section {
-  padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-.file-section-header {
+.file-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
-.section-title {
+.file-panel-title {
   font-family: var(--font-heading);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: var(--font-semibold);
   color: var(--color-foreground);
+  margin: 0;
 }
 
 .drop-zone {
   border: 2px dashed var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-6) var(--space-4);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-3);
   text-align: center;
-  margin-bottom: var(--space-4);
+  margin: var(--space-3) var(--space-4);
   transition: all var(--duration-normal) var(--ease-out);
   cursor: pointer;
 }
@@ -432,16 +421,15 @@ function askSuggested(q: string) {
 }
 
 .drop-icon {
-  font-size: 32px;
+  font-size: 24px;
   color: var(--color-secondary);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-1);
 }
 
 .drop-text {
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
   color: var(--color-foreground);
-  margin-bottom: var(--space-1);
+  margin-bottom: 2px;
 }
 
 .drop-hint {
@@ -449,45 +437,44 @@ function askSuggested(q: string) {
   color: var(--color-secondary);
 }
 
-.file-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--space-3);
+.file-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.file-card {
+.file-item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.file-card:hover {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-sm);
+.file-item:hover {
+  background: var(--color-muted);
 }
 
-.file-card.selected {
-  border-color: var(--color-accent);
+.file-item.selected {
   background: var(--color-accent-light);
 }
 
-.file-icon {
-  font-size: 24px;
+.file-item-icon {
+  font-size: 18px;
   flex-shrink: 0;
 }
 
-.file-info {
+.file-item-info {
   flex: 1;
   min-width: 0;
 }
 
-.file-name {
+.file-item-name {
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   color: var(--color-foreground);
@@ -496,16 +483,16 @@ function askSuggested(q: string) {
   text-overflow: ellipsis;
 }
 
-.file-size {
+.file-item-size {
   font-size: var(--text-xs);
   color: var(--color-secondary);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
-.file-delete {
+.file-item-delete {
   opacity: 0;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -518,17 +505,16 @@ function askSuggested(q: string) {
   flex-shrink: 0;
 }
 
-.file-card:hover .file-delete {
+.file-item:hover .file-item-delete {
   opacity: 1;
 }
 
-.file-delete:hover {
+.file-item-delete:hover {
   background: var(--color-destructive-light);
   color: var(--color-destructive);
 }
 
 .empty-files {
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -538,12 +524,12 @@ function askSuggested(q: string) {
 }
 
 .empty-icon {
-  font-size: 32px;
+  font-size: 24px;
   color: var(--color-border);
 }
 
-/* ── Chat Section ─────────────────────────────────────── */
-.chat-section {
+/* ── Chat Area (right) ─────────────────────────────────── */
+.chat-area {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -558,31 +544,27 @@ function askSuggested(q: string) {
   padding: var(--space-8) 0;
 }
 
-.empty {
+.empty-chat {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
   color: var(--color-secondary);
-  animation: fadeIn 0.5s var(--ease-out);
+  gap: var(--space-3);
 }
 
-.empty-icon {
-  color: var(--color-border);
-  margin-bottom: var(--space-4);
-}
-
-.empty h3 {
+.empty-chat h3 {
   font-family: var(--font-heading);
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-weight: var(--font-semibold);
   color: var(--color-foreground);
-  margin-bottom: var(--space-2);
+  margin: 0;
 }
 
-.empty p {
-  font-size: var(--text-base);
+.empty-chat p {
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
 }
 
 /* ── Typing ───────────────────────────────────────────── */
