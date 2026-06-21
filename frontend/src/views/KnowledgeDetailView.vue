@@ -81,12 +81,7 @@ watch(() => chatStore.messages[chatStore.messages.length - 1]?.content, () => {
 })
 
 onMounted(async () => {
-  // Load KB conversations and auto-create only if no current KB conversation
   await chatStore.loadConversations('kb')
-  const hasKbConv = chatStore.conversations.some(c => c.id === chatStore.currentConvId)
-  if (!hasKbConv) {
-    await chatStore.createConversation('kb')
-  }
   await loadDetail()
 })
 
