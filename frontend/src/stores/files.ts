@@ -22,7 +22,7 @@ export const useFilesStore = defineStore('files', () => {
     loading.value = true
     try {
       const res = await api.get(`${API}/files`)
-      files.value = res.data.files
+      files.value = Array.isArray(res.data?.files) ? res.data.files : []
       _loaded = true
     } catch {
       // Error already shown by global interceptor

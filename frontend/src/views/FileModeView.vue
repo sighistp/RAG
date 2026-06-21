@@ -20,15 +20,24 @@ function getFileIcon(ext: string): string {
   return icons[ext] || '📄'
 }
 
+const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx', '.xlsx', '.csv']
+
 async function handleDrop(e: DragEvent) {
   dragover.value = false
-  const file = e.dataTransfer?.files[0]
-  if (file) {
+  const droppedFiles = e.dataTransfer?.files
+  if (!droppedFiles) return
+
+  for (const file of Array.from(droppedFiles)) {
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase()
+    if (!ALLOWED_EXTS.includes(ext)) {
+      ElMessage.warning(`不支持的文件格式: ${file.name}`)
+      continue
+    }
     try {
       await filesStore.uploadFile(file)
       ElMessage.success(`文件 ${file.name} 上传成功`)
     } catch (err: any) {
-      ElMessage.error(err.response?.data?.detail || '上传失败')
+      ElMessage.error(err.response?.data?.detail || `上传失败: ${file.name}`)
     }
   }
 }
@@ -37,8 +46,16 @@ async function handleDelete(name: string) {
   try {
     await ElMessageBox.confirm(`确定删除文件 "${name}"？`, '确认删除', { type: 'warning' })
     await filesStore.deleteFile(name)
+    // Clear selected file if it was deleted
+    if (chatStore.selectedFile === name) {
+      chatStore.selectFile(null)
+    }
     ElMessage.success('文件已删除')
-  } catch {}
+  } catch (e: any) {
+    if (e !== 'cancel' && e?.message !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
 }
 
 onMounted(async () => {
@@ -67,7 +84,12 @@ async function selectConversation(id: number) {
 }
 
 async function deleteConversation(id: number) {
-  await chatStore.deleteConversation(id)
+  try {
+    await ElMessageBox.confirm('确定删除这个对话？删除后不可恢复。', '确认删除', { type: 'warning' })
+    await chatStore.deleteConversation(id)
+  } catch {
+    // User cancelled
+  }
 }
 
 function formatTime(ts: string | number) {
@@ -141,7 +163,7 @@ function askSuggested(q: string) {
     <div class="file-panel">
       <div class="file-panel-header">
         <h1 class="file-panel-title">文件管理</h1>
-        <el-upload :show-file-list="false" :before-upload="() => false" :on-change="(f: any) => filesStore.uploadFile(f.raw!)" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+        <el-upload :show-file-list="false" :before-upload="() => false" :on-change="async (f: any) => { try { await filesStore.uploadFile(f.raw!); ElMessage.success('上传成功') } catch (e: any) { ElMessage.error(e?.response?.data?.detail || '上传失败') } }" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
           <el-button size="small" type="primary">
             <el-icon><Upload /></el-icon>
             上传
@@ -158,6 +180,15 @@ function askSuggested(q: string) {
 
       <!-- File list -->
       <div class="file-list">
+        <!-- "All files" option -->
+        <div :class="['file-item', { selected: !chatStore.selectedFile }]" @click="chatStore.selectFile(null)">
+          <div class="file-item-icon">📁</div>
+          <div class="file-item-info">
+            <div class="file-item-name">全部文件</div>
+            <div class="file-item-size">搜索所有文件</div>
+          </div>
+        </div>
+        <!-- Individual files -->
         <div v-for="file in filesStore.files" :key="file.name"
              :class="['file-item', { selected: chatStore.selectedFile === file.name }]"
              @click="chatStore.selectFile(file.name)">

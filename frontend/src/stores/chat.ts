@@ -58,8 +58,9 @@ export const useChatStore = defineStore('chat', () => {
         params
       })
 
-      // Update conversations list without clearing current state
-      conversations.value = res.data
+      // Validate response is an array
+      const data = Array.isArray(res.data) ? res.data : []
+      conversations.value = data
 
       // If current conversation is no longer in the list, clear it
       if (currentConvId.value !== null) {
@@ -96,17 +97,23 @@ export const useChatStore = defineStore('chat', () => {
     if (currentConvId.value !== null) {
       _selectedFilesByConv.set(currentConvId.value, selectedFile.value)
     }
-    currentConvId.value = id
     // Restore selection for this conversation
     selectedFile.value = _selectedFilesByConv.has(id) ? _selectedFilesByConv.get(id)! : null
-    const res = await api.get(`${API}/conversations/${id}/messages`, {
-      headers: auth.getAuthHeaders()
-    })
-    messages.value = res.data.map((m: any) => ({
-      id: m.id,
-      role: m.role,
-      content: m.content
-    }))
+    try {
+      const res = await api.get(`${API}/conversations/${id}/messages`, {
+        headers: auth.getAuthHeaders()
+      })
+      currentConvId.value = id
+      messages.value = res.data.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        sources: m.sources || [],
+        feedback: m.feedback || undefined
+      }))
+    } catch {
+      // On failure, don't change currentConvId — keep showing old conversation
+    }
   }
 
   async function deleteConversation(id: number) {
@@ -170,7 +177,11 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
 
-      const reader = response.body!.getReader()
+      if (!response.body) {
+        assistantMsg.content = '响应为空，请重试'
+        return
+      }
+      const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let answer = ''
       let sources: any[] = []
@@ -196,6 +207,26 @@ export const useChatStore = defineStore('chat', () => {
             }
           } catch {}
         }
+      }
+
+      // Flush remaining bytes from TextDecoder (fixes CJK truncation)
+      const tail = decoder.decode()
+      if (tail) {
+        for (const line of tail.split('\n')) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event = JSON.parse(line.slice(6))
+            if (event.type === 'sources') sources = event.sources
+          } catch {}
+        }
+      }
+
+      // Process buffer residual (last event without trailing newline)
+      if (buffer.startsWith('data: ')) {
+        try {
+          const event = JSON.parse(buffer.slice(6))
+          if (event.type === 'sources') sources = event.sources
+        } catch {}
       }
 
       assistantMsg.sources = sources
@@ -241,16 +272,17 @@ export const useChatStore = defineStore('chat', () => {
     const msg = messages.value[messageIndex]
     if (!msg) return
 
-    // Toggle: clicking the same feedback again cancels it visually
+    // Toggle: clicking the same feedback again cancels it
     const newValue = msg.feedback === value ? undefined : value
     msg.feedback = newValue
 
-    if (msg.id) {
+    // Only send to API if giving feedback (not cancelling)
+    if (newValue && msg.id) {
       const auth = useAuthStore()
       try {
         await api.post(`${API}/feedback`, {
           message_id: msg.id,
-          value
+          value: newValue
         }, { headers: auth.getAuthHeaders() })
       } catch {
         // Ignore feedback API errors
