@@ -11,15 +11,11 @@ import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
-  ArrowUp,
-  ArrowDown,
   Edit,
   Check,
-  Close,
   Delete,
   Plus,
   ChatDotRound,
-  Collection,
   Setting,
   Document,
   Upload,
@@ -67,9 +63,6 @@ const removingDoc = ref('')
 // TOC / Overview generation
 const generatingToc = ref(false)
 const generatingOverview = ref(false)
-
-// Collapsible top section
-const showTopSection = ref(true)
 
 // ── Scroll handling ──
 watch(() => chatStore.messages.length, () => {
@@ -363,7 +356,7 @@ function getStatusLabel(status: string) {
 
 <template>
   <div class="kb-detail-layout">
-    <!-- Conversation sidebar -->
+    <!-- Conversation sidebar (left) -->
     <aside class="conv-sidebar">
       <div class="conv-sidebar-header">
         <span class="conv-sidebar-title">对话历史</span>
@@ -413,214 +406,149 @@ function getStatusLabel(status: string) {
       </div>
     </aside>
 
-    <!-- Main content area -->
-    <div class="kb-detail-main">
+    <!-- KB info panel (middle) -->
+    <div class="kb-info-panel">
       <!-- Header -->
-      <div class="kb-detail-header">
-        <div class="kb-detail-header-top">
-          <el-button text @click="goBack">
-            <el-icon style="margin-right: 4px;"><ArrowLeft /></el-icon>
-            返回列表
-          </el-button>
-          <el-button text size="small" @click="showTopSection = !showTopSection" :title="showTopSection ? '收起信息区' : '展开信息区'">
-            <el-icon style="margin-right: 4px;"><ArrowUp v-if="showTopSection" /><ArrowDown v-else /></el-icon>
-            {{ showTopSection ? '收起' : '展开' }}
-          </el-button>
-        </div>
-        <div class="kb-detail-header-row">
-          <div v-if="!loading" class="kb-detail-title-area">
-            <el-icon class="kb-detail-title-icon"><Collection /></el-icon>
-            <h1 class="kb-detail-title">{{ kbName }}</h1>
-            <!-- Settings menu -->
-            <el-dropdown trigger="click" v-model:visible="showSettingsMenu">
-              <el-button text size="small" class="settings-btn">
-                <el-icon><Setting /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item @click="openRenameDialog">
-                    <el-icon style="margin-right: 6px;"><Edit /></el-icon>
-                    编辑名称
-                  </el-dropdown-item>
-                  <el-dropdown-item @click="generateTOC" :loading="generatingToc" :disabled="generatingToc">
-                    <el-icon style="margin-right: 6px;"><Document /></el-icon>
-                    {{ generatingToc ? '生成中...' : '生成目录' }}
-                  </el-dropdown-item>
-                  <el-dropdown-item @click="generateOverview" :loading="generatingOverview" :disabled="generatingOverview">
-                    <el-icon style="margin-right: 6px;"><Document /></el-icon>
-                    {{ generatingOverview ? '生成中...' : '生成概述' }}
-                  </el-dropdown-item>
-                  <el-dropdown-item @click="openAddDialog">
-                    <el-icon style="margin-right: 6px;"><Upload /></el-icon>
-                    添加内容
-                  </el-dropdown-item>
-                  <el-dropdown-item divided @click="deleteKB" class="danger-item">
-                    <el-icon style="margin-right: 6px;"><Delete /></el-icon>
-                    删除知识库
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </div>
-          <div v-else class="skeleton-line skeleton-line--title" style="width: 200px; height: 28px;"></div>
-          <el-button type="primary" @click="chatStore.createConversation('kb')" :disabled="loading">
-            <el-icon style="margin-right: 6px;"><ChatDotRound /></el-icon>
-            新对话
-          </el-button>
+      <div class="kb-info-header">
+        <el-button text size="small" @click="goBack">
+          <el-icon style="margin-right: 4px;"><ArrowLeft /></el-icon>
+          返回
+        </el-button>
+        <div class="kb-info-title-row">
+          <h1 class="kb-info-title">{{ kbName }}</h1>
+          <el-dropdown trigger="click" v-model:visible="showSettingsMenu">
+            <el-button text size="small" class="settings-btn">
+              <el-icon><Setting /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="openRenameDialog">
+                  <el-icon style="margin-right: 6px;"><Edit /></el-icon>
+                  编辑名称
+                </el-dropdown-item>
+                <el-dropdown-item @click="generateTOC" :loading="generatingToc" :disabled="generatingToc">
+                  <el-icon style="margin-right: 6px;"><Document /></el-icon>
+                  {{ generatingToc ? '生成中...' : '生成目录' }}
+                </el-dropdown-item>
+                <el-dropdown-item @click="generateOverview" :loading="generatingOverview" :disabled="generatingOverview">
+                  <el-icon style="margin-right: 6px;"><Document /></el-icon>
+                  {{ generatingOverview ? '生成中...' : '生成概述' }}
+                </el-dropdown-item>
+                <el-dropdown-item @click="openAddDialog">
+                  <el-icon style="margin-right: 6px;"><Upload /></el-icon>
+                  添加文件
+                </el-dropdown-item>
+                <el-dropdown-item divided @click="deleteKB" class="danger-item">
+                  <el-icon style="margin-right: 6px;"><Delete /></el-icon>
+                  删除知识库
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
 
-      <!-- Scrollable content (collapsible) -->
-      <div v-if="showTopSection" class="kb-detail-scroll">
-        <!-- Overview section -->
+      <!-- Scrollable content -->
+      <div class="kb-info-body">
+        <!-- Overview -->
         <div class="kb-section">
           <div class="kb-section-header">
-            <h2 class="kb-section-title">知识库概述</h2>
-            <el-button
-              v-if="!editingOverview"
-              text
-              size="small"
-              @click="startEditOverview"
-            >
+            <h3 class="kb-section-title">概述</h3>
+            <el-button v-if="!editingOverview" text size="small" @click="startEditOverview">
               <el-icon style="margin-right: 4px;"><Edit /></el-icon>
-              编辑概述
+              编辑
             </el-button>
           </div>
-          <div v-if="loading" class="skeleton-line" style="width: 100%; height: 60px;"></div>
+          <div v-if="loading" class="skeleton-line" style="width: 100%; height: 40px;"></div>
           <div v-else-if="editingOverview" class="kb-overview-edit">
-            <el-input
-              v-model="overviewDraft"
-              type="textarea"
-              :rows="4"
-              placeholder="输入知识库概述..."
-            />
+            <el-input v-model="overviewDraft" type="textarea" :rows="3" placeholder="输入概述..." />
             <div class="kb-overview-edit-actions">
-              <el-button size="small" @click="cancelEditOverview">
-                <el-icon style="margin-right: 4px;"><Close /></el-icon>
-                取消
-              </el-button>
-              <el-button type="primary" size="small" :loading="savingOverview" @click="saveOverview">
-                <el-icon style="margin-right: 4px;"><Check /></el-icon>
-                保存
-              </el-button>
+              <el-button size="small" @click="cancelEditOverview">取消</el-button>
+              <el-button type="primary" size="small" :loading="savingOverview" @click="saveOverview">保存</el-button>
             </div>
           </div>
-          <div v-else class="kb-overview-display">
+          <div v-else>
             <p v-if="kbOverview" class="kb-overview-text">{{ kbOverview }}</p>
-            <p v-else class="kb-overview-empty">暂无概述，点击「编辑概述」添加</p>
+            <p v-else class="kb-overview-empty">暂无概述</p>
           </div>
         </div>
 
-        <!-- Documents section -->
+        <!-- Documents -->
         <div class="kb-section">
           <div class="kb-section-header">
-            <h2 class="kb-section-title">文档列表</h2>
-            <el-button type="primary" size="small" @click="openAddDialog">
+            <h3 class="kb-section-title">文档</h3>
+            <el-button type="primary" size="small" text @click="openAddDialog">
               <el-icon style="margin-right: 4px;"><Plus /></el-icon>
-              添加文件
+              添加
             </el-button>
           </div>
 
-          <!-- Loading -->
           <div v-if="loading" class="kb-docs-list">
-            <div v-for="i in 3" :key="i" class="kb-doc-card kb-doc-card--skeleton">
-              <div class="skeleton-line" style="width: 40%; height: 16px;"></div>
-              <div class="skeleton-line" style="width: 25%; height: 12px;"></div>
-            </div>
+            <div v-for="i in 3" :key="i" class="skeleton-line" style="height: 32px; margin-bottom: 8px;"></div>
           </div>
-
-          <!-- Empty -->
           <div v-else-if="documents.length === 0" class="kb-docs-empty">
-            <p>知识库中暂无文档</p>
-            <el-button type="primary" size="small" @click="openAddDialog">
-              <el-icon style="margin-right: 4px;"><Plus /></el-icon>
-              添加文件
-            </el-button>
+            <p>暂无文档</p>
           </div>
-
-          <!-- Document list -->
           <div v-else class="kb-docs-list">
-            <div
-              v-for="doc in documents"
-              :key="doc.filename"
-              class="kb-doc-card"
-            >
+            <div v-for="doc in documents" :key="doc.filename" class="kb-doc-item">
+              <div class="kb-doc-icon">📄</div>
               <div class="kb-doc-info">
                 <div class="kb-doc-name">{{ doc.filename }}</div>
                 <div class="kb-doc-meta">
-                  <span class="kb-doc-chunks">{{ doc.chunk_count }} 个分块</span>
-                  <el-tag
-                    v-if="doc.status"
-                    :type="getStatusType(doc.status)"
-                    size="small"
-                    effect="plain"
-                  >
+                  {{ doc.chunk_count }} 块
+                  <el-tag v-if="doc.status" :type="getStatusType(doc.status)" size="small" effect="plain">
                     {{ getStatusLabel(doc.status) }}
                   </el-tag>
                 </div>
-                <div v-if="doc.summary" class="kb-doc-summary">{{ doc.summary }}</div>
               </div>
               <div class="kb-doc-actions">
-                <el-button
-                  text
-                  size="small"
-                  :loading="removingDoc === doc.filename"
-                  @click="removeFromKB(doc)"
-                >
-                  从知识库移除
-                </el-button>
-                <el-button
-                  type="danger"
-                  text
-                  size="small"
-                  :loading="removingDoc === doc.filename"
-                  @click="deleteFile(doc)"
-                >
-                  <el-icon style="margin-right: 2px;"><Delete /></el-icon>
-                  删除文件
+                <el-button text size="small" @click="removeFromKB(doc)" title="从知识库移除">移除</el-button>
+                <el-button type="danger" text size="small" @click="deleteFile(doc)" title="删除文件">
+                  <el-icon><Delete /></el-icon>
                 </el-button>
               </div>
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- Chat area (fixed at bottom) -->
-      <div class="kb-detail-chat">
-        <div ref="messagesContainer" class="messages">
-          <div v-if="!chatStore.messages.length" class="empty-chat">
-            <el-icon :size="32" style="color: var(--color-border);"><ChatDotRound /></el-icon>
-            <p>在此知识库中提问</p>
-          </div>
-
-          <MessageBubble
-            v-for="(msg, i) in chatStore.messages"
-            :key="i"
-            :message="msg"
-            :index="i"
-            :question="i > 0 && chatStore.messages[i - 1]?.role === 'user' ? chatStore.messages[i - 1].content : ''"
-            @add-to-analysis="addToAnalysis"
-          />
-
-          <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="msg assistant">
-            <div class="msg-avatar ai-avatar">R</div>
-            <div class="msg-body">
-              <div class="typing"><span></span><span></span><span></span></div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="chatStore.suggestedQuestions.length" class="suggestions">
-          <button v-for="q in chatStore.suggestedQuestions" :key="q" class="suggest-btn" @click="askSuggested(q)">
-            {{ q }}
-          </button>
-        </div>
-
-        <ChatInput />
       </div>
     </div>
 
-    <!-- Rename dialog -->
+    <!-- Chat area (right) -->
+    <div class="kb-chat-area">
+      <div ref="messagesContainer" class="messages">
+        <div v-if="!chatStore.messages.length" class="empty-chat">
+          <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
+          <h3>在此知识库中提问</h3>
+          <p>选择左侧的文档，或直接提问</p>
+        </div>
+
+        <MessageBubble
+          v-for="(msg, i) in chatStore.messages"
+          :key="i"
+          :message="msg"
+          :index="i"
+          :question="i > 0 && chatStore.messages[i - 1]?.role === 'user' ? chatStore.messages[i - 1].content : ''"
+          @add-to-analysis="addToAnalysis"
+        />
+
+        <div v-if="chatStore.isStreaming && !chatStore.messages[chatStore.messages.length - 1]?.content" class="msg assistant">
+          <div class="msg-avatar ai-avatar">R</div>
+          <div class="msg-body">
+            <div class="typing"><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="chatStore.suggestedQuestions.length" class="suggestions">
+        <button v-for="q in chatStore.suggestedQuestions" :key="q" class="suggest-btn" @click="askSuggested(q)">
+          {{ q }}
+        </button>
+      </div>
+
+      <ChatInput />
+    </div>
+
+    <!-- Dialogs -->
     <el-dialog v-model="showRenameDialog" title="重命名知识库" width="420px" :close-on-click-modal="false">
       <el-input v-model="renameDraft" placeholder="输入知识库名称" maxlength="100" @keyup.enter="renameKB" />
       <template #footer>
@@ -629,59 +557,32 @@ function getStatusLabel(status: string) {
       </template>
     </el-dialog>
 
-    <!-- Add file dialog -->
-    <el-dialog
-      v-model="showAddDialog"
-      title="添加文件到知识库"
-      width="520px"
-      :close-on-click-modal="false"
-    >
-      <div v-if="loadingFiles" class="kb-add-loading">
-        <p>加载文件列表...</p>
-      </div>
+    <el-dialog v-model="showAddDialog" title="添加文件到知识库" width="520px" :close-on-click-modal="false">
+      <div v-if="loadingFiles" class="kb-add-loading"><p>加载中...</p></div>
       <div v-else-if="availableFiles.length === 0" class="kb-add-empty">
         <p>暂无可添加的文件</p>
         <p class="kb-add-hint">请先在「文件管理」页面上传文件</p>
       </div>
       <div v-else class="kb-add-list">
-        <div
-          v-for="file in availableFiles"
-          :key="file.name"
-          class="kb-add-item"
-          :class="{ 'kb-add-item--selected': selectedFile?.name === file.name }"
-          @click="selectedFile = file"
-        >
+        <div v-for="file in availableFiles" :key="file.name" class="kb-add-item"
+             :class="{ 'kb-add-item--selected': selectedFile?.name === file.name }"
+             @click="selectedFile = file">
           <div class="kb-add-item-info">
             <div class="kb-add-item-name">{{ file.name }}</div>
             <div class="kb-add-item-meta">{{ file.size_human }}</div>
           </div>
-          <div
-            v-if="selectedFile?.name === file.name"
-            class="kb-add-item-check"
-          >
+          <div v-if="selectedFile?.name === file.name" class="kb-add-item-check">
             <el-icon><Check /></el-icon>
           </div>
         </div>
       </div>
       <template #footer>
         <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="addingFile"
-          :disabled="!selectedFile"
-          @click="addFileToKB"
-        >
-          添加
-        </el-button>
+        <el-button type="primary" :loading="addingFile" :disabled="!selectedFile" @click="addFileToKB">添加</el-button>
       </template>
     </el-dialog>
 
-    <AddToAnalysisDialog
-      v-model:visible="dialogVisible"
-      :question="dialogQuestion"
-      :answer="dialogAnswer"
-      @confirm="handleConfirm"
-    />
+    <AddToAnalysisDialog v-model:visible="dialogVisible" :question="dialogQuestion" :answer="dialogAnswer" @confirm="handleConfirm" />
   </div>
 </template>
 
@@ -692,9 +593,9 @@ function getStatusLabel(status: string) {
   overflow: hidden;
 }
 
-/* ── Conversation Sidebar ─────────────────────────────── */
+/* ── Conversation Sidebar (left) ──────────────────────── */
 .conv-sidebar {
-  width: 240px;
+  width: 220px;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   display: flex;
@@ -845,8 +746,156 @@ function getStatusLabel(status: string) {
   color: var(--color-secondary);
 }
 
-/* ── Main Content ──────────────────────────────────────── */
-.kb-detail-main {
+/* ── KB Info Panel (middle) ────────────────────────────── */
+.kb-info-panel {
+  width: 320px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.kb-info-header {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.kb-info-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+}
+
+.kb-info-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--color-foreground);
+  margin: 0;
+}
+
+.kb-info-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+}
+
+.kb-section {
+  margin-bottom: var(--space-6);
+}
+
+.kb-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+}
+
+.kb-section-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
+  color: var(--color-secondary);
+  margin: 0;
+}
+
+.kb-overview-text {
+  font-size: var(--text-sm);
+  color: var(--color-foreground);
+  line-height: var(--leading-relaxed);
+}
+
+.kb-overview-empty {
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+  font-style: italic;
+}
+
+.kb-overview-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.kb-overview-edit-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+/* ── Document List ─────────────────────────────────────── */
+.kb-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kb-doc-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  transition: background var(--duration-fast);
+}
+
+.kb-doc-item:hover {
+  background: var(--color-muted);
+}
+
+.kb-doc-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.kb-doc-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.kb-doc-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kb-doc-meta {
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 2px;
+}
+
+.kb-doc-actions {
+  display: flex;
+  gap: var(--space-1);
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.kb-doc-item:hover .kb-doc-actions {
+  opacity: 1;
+}
+
+.kb-docs-empty {
+  text-align: center;
+  padding: var(--space-6);
+  color: var(--color-secondary);
+  font-size: var(--text-sm);
+}
+
+/* ── Chat Area (right) ─────────────────────────────────── */
+.kb-chat-area {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -854,35 +903,57 @@ function getStatusLabel(status: string) {
   background: var(--color-background);
 }
 
-/* ── Header ── */
-.kb-detail-header {
-  padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--color-border);
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6) 0;
+}
+
+.empty-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-secondary);
+  gap: var(--space-2);
+}
+
+.empty-chat h3 {
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-foreground);
+  margin: 0;
+}
+
+.empty-chat p {
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+}
+
+/* ── Suggestions ──────────────────────────────────────── */
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0 var(--space-6) var(--space-3);
+}
+
+.suggest-btn {
+  padding: var(--space-2) var(--space-4);
   background: var(--color-surface);
-  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all var(--duration-fast);
 }
 
-.kb-detail-header-top {
-  margin-bottom: var(--space-2);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.kb-detail-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.kb-detail-title-area {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.kb-detail-title-icon {
-  font-size: 24px;
+.suggest-btn:hover {
+  border-color: var(--color-accent);
   color: var(--color-accent);
 }
 
@@ -903,180 +974,27 @@ function getStatusLabel(status: string) {
   color: var(--color-foreground);
 }
 
-/* ── Scrollable content ── */
-.kb-detail-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-5) var(--space-6);
-}
-
-/* ── Section ── */
-.kb-section {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  margin-bottom: var(--space-4);
-}
-
-.kb-section-header {
+/* ── Typing indicator ─────────────────────────────────── */
+.typing {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-3);
+  gap: 6px;
+  padding: var(--space-4);
 }
 
-.kb-section-title {
-  font-family: var(--font-heading);
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
-  color: var(--color-foreground);
-  margin: 0;
+.typing span {
+  width: 8px;
+  height: 8px;
+  background: var(--color-border);
+  border-radius: 50%;
+  animation: bounce 1.4s infinite;
 }
 
-/* ── Overview ── */
-.kb-overview-display {
-  min-height: 40px;
-}
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
 
-.kb-overview-text {
-  font-size: var(--text-sm);
-  color: var(--color-secondary);
-  line-height: var(--leading-relaxed);
-  white-space: pre-wrap;
-  margin: 0;
-}
-
-.kb-overview-empty {
-  font-size: var(--text-sm);
-  color: var(--color-muted);
-  font-style: italic;
-  margin: 0;
-}
-
-.kb-overview-edit {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.kb-overview-edit-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-/* ── Documents list ── */
-.kb-docs-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.kb-doc-card {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  transition: border-color var(--duration-normal) var(--ease-out);
-}
-
-.kb-doc-card:hover {
-  border-color: var(--color-accent);
-}
-
-.kb-doc-card--skeleton {
-  cursor: default;
-  pointer-events: none;
-}
-
-.kb-doc-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.kb-doc-name {
-  font-size: var(--text-sm);
-  font-weight: var(--font-medium);
-  color: var(--color-foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.kb-doc-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-1);
-}
-
-.kb-doc-chunks {
-  font-size: var(--text-xs);
-  color: var(--color-secondary);
-}
-
-.kb-doc-summary {
-  font-size: var(--text-xs);
-  color: var(--color-muted);
-  margin-top: var(--space-2);
-  line-height: var(--leading-relaxed);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.kb-doc-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  flex-shrink: 0;
-  margin-left: var(--space-3);
-}
-
-.kb-docs-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-6) var(--space-4);
-  color: var(--color-secondary);
-  font-size: var(--text-sm);
-}
-
-/* ── Chat area ── */
-.kb-detail-chat {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 200px;
-  overflow: hidden;
-}
-
-.messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-4) 0;
-}
-
-.empty-chat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--color-secondary);
-  gap: var(--space-2);
-}
-
-.empty-chat p {
-  font-size: var(--text-sm);
-  margin: 0;
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-8px); }
 }
 
 .msg {
@@ -1111,54 +1029,6 @@ function getStatusLabel(status: string) {
   flex: 1;
   min-width: 0;
   max-width: 85%;
-}
-
-.typing {
-  display: flex;
-  gap: 6px;
-  padding: var(--space-4);
-}
-
-.typing span {
-  width: 8px;
-  height: 8px;
-  background: var(--color-border);
-  border-radius: 50%;
-  animation: bounce 1.4s infinite;
-}
-
-.typing span:nth-child(2) { animation-delay: 0.2s; }
-.typing span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes bounce {
-  0%, 60%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-8px); }
-}
-
-.suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  max-width: var(--content-max-width);
-  margin: 0 auto;
-  padding: 0 var(--space-6) var(--space-3);
-}
-
-.suggest-btn {
-  padding: var(--space-1) var(--space-3);
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  color: var(--color-secondary);
-  cursor: pointer;
-  font-family: var(--font-body);
-  transition: all var(--duration-normal) var(--ease-out);
-}
-
-.suggest-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
 }
 
 /* ── Add file dialog ── */

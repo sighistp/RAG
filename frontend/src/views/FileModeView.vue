@@ -3,6 +3,8 @@ import { ref, nextTick, watch, onMounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useFilesStore } from '../stores/files'
 import { useAnalysis } from '../composables/useAnalysis'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, Delete, FolderOpened } from '@element-plus/icons-vue'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
 import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
@@ -11,6 +13,33 @@ const chatStore = useChatStore()
 const filesStore = useFilesStore()
 const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer, handleConfirm } = useAnalysis()
 const messagesContainer = ref<HTMLElement>()
+const dragover = ref(false)
+
+function getFileIcon(ext: string): string {
+  const icons: Record<string, string> = { '.pdf': '📕', '.docx': '📘', '.xlsx': '📊', '.csv': '📊', '.md': '📝', '.txt': '📄' }
+  return icons[ext] || '📄'
+}
+
+async function handleDrop(e: DragEvent) {
+  dragover.value = false
+  const file = e.dataTransfer?.files[0]
+  if (file) {
+    try {
+      await filesStore.uploadFile(file)
+      ElMessage.success(`文件 ${file.name} 上传成功`)
+    } catch (err: any) {
+      ElMessage.error(err.response?.data?.detail || '上传失败')
+    }
+  }
+}
+
+async function handleDelete(name: string) {
+  try {
+    await ElMessageBox.confirm(`确定删除文件 "${name}"？`, '确认删除', { type: 'warning' })
+    await filesStore.deleteFile(name)
+    ElMessage.success('文件已删除')
+  } catch {}
+}
 
 onMounted(async () => {
   await chatStore.loadConversations('file')
@@ -109,27 +138,39 @@ function askSuggested(q: string) {
       <!-- File management area -->
       <div class="file-section">
         <div class="file-section-header">
-          <span class="section-label">检索范围</span>
-          <el-upload :show-file-list="false" :before-upload="() => false" :on-change="(f: any) => filesStore.uploadFile(f.raw!)" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
-            <el-button size="small" type="primary" text>上传文件</el-button>
-          </el-upload>
-        </div>
-        <div class="file-list">
-          <div
-            :class="['file-chip', { active: chatStore.selectedFile === null }]"
-            @click="chatStore.selectFile(null)"
-          >
-            <span class="file-chip-icon">🔍</span>
-            <span>全部文件</span>
+          <span class="section-title">文件管理</span>
+          <div class="file-actions">
+            <el-upload :show-file-list="false" :before-upload="() => false" :on-change="(f: any) => filesStore.uploadFile(f.raw!)" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+              <el-button size="small" type="primary">
+                <el-icon><Upload /></el-icon>
+                上传文件
+              </el-button>
+            </el-upload>
           </div>
-          <div
-            v-for="file in filesStore.files"
-            :key="file.name"
-            :class="['file-chip', { active: chatStore.selectedFile === file.name }]"
-            @click="chatStore.selectFile(file.name)"
-          >
-            <span class="file-chip-icon">📄</span>
-            <span class="file-chip-name" :title="file.name">{{ file.name }}</span>
+        </div>
+
+        <!-- Drop zone -->
+        <div class="drop-zone" @dragover.prevent="dragover = true" @dragleave="dragover = false" @drop.prevent="handleDrop($event)" :class="{ active: dragover }">
+          <el-icon class="drop-icon"><Upload /></el-icon>
+          <p class="drop-text">拖拽文件到此处上传</p>
+          <p class="drop-hint">支持 txt、md、pdf、docx、xlsx、csv</p>
+        </div>
+
+        <!-- File grid -->
+        <div class="file-grid">
+          <div v-for="file in filesStore.files" :key="file.name" class="file-card" @click="chatStore.selectFile(file.name)" :class="{ selected: chatStore.selectedFile === file.name }">
+            <div class="file-icon">{{ getFileIcon(file.ext) }}</div>
+            <div class="file-info">
+              <div class="file-name" :title="file.name">{{ file.name }}</div>
+              <div class="file-size">{{ file.size_human }}</div>
+            </div>
+            <button class="file-delete" @click.stop="handleDelete(file.name)" title="删除">
+              <el-icon><Delete /></el-icon>
+            </button>
+          </div>
+          <div v-if="!filesStore.files.length" class="empty-files">
+            <el-icon class="empty-icon"><FolderOpened /></el-icon>
+            <p>暂无文件</p>
           </div>
         </div>
       </div>
@@ -356,7 +397,7 @@ function askSuggested(q: string) {
 
 /* ── File Section ─────────────────────────────────────── */
 .file-section {
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-4) var(--space-6);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
@@ -365,59 +406,140 @@ function askSuggested(q: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
-.section-label {
-  font-size: 11px;
+.section-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
   font-weight: var(--font-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-secondary);
-}
-
-.file-list {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  padding-bottom: var(--space-1);
-}
-
-.file-chip {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  color: var(--color-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all var(--duration-fast) var(--ease-out);
-  flex-shrink: 0;
-}
-
-.file-chip:hover {
-  border-color: var(--color-accent);
   color: var(--color-foreground);
 }
 
-.file-chip.active {
+.drop-zone {
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  margin-bottom: var(--space-4);
+  transition: all var(--duration-normal) var(--ease-out);
+  cursor: pointer;
+}
+
+.drop-zone:hover, .drop-zone.active {
   border-color: var(--color-accent);
   background: var(--color-accent-light);
-  color: var(--color-accent);
+}
+
+.drop-icon {
+  font-size: 32px;
+  color: var(--color-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.drop-text {
+  font-size: var(--text-sm);
   font-weight: var(--font-medium);
+  color: var(--color-foreground);
+  margin-bottom: var(--space-1);
 }
 
-.file-chip-icon {
-  font-size: 12px;
+.drop-hint {
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
 }
 
-.file-chip-name {
-  max-width: 150px;
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.file-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.file-card.selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+
+.file-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-foreground);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.file-size {
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
+  margin-top: 2px;
+}
+
+.file-delete {
+  opacity: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--color-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  flex-shrink: 0;
+}
+
+.file-card:hover .file-delete {
+  opacity: 1;
+}
+
+.file-delete:hover {
+  background: var(--color-destructive-light);
+  color: var(--color-destructive);
+}
+
+.empty-files {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  color: var(--color-secondary);
+}
+
+.empty-icon {
+  font-size: 32px;
+  color: var(--color-border);
 }
 
 /* ── Chat Section ─────────────────────────────────────── */
