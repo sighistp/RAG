@@ -77,6 +77,22 @@ def auto_index_on_startup():
     except Exception as e:
         logger.warning("启动索引失败: %s", e)
 
+    # 管理员初始化：首次启动时根据环境变量设置管理员
+    def _init_admin():
+        admin_username = os.getenv("INIT_ADMIN_USERNAME")
+        if not admin_username:
+            return
+        # 查找目标用户
+        target = user_db.get_user_by_username(admin_username)
+        if target and not target.get("is_admin"):
+            user_db.set_user_admin(target["id"], True)
+            logger.info("已将用户 %s 设置为管理员", admin_username)
+
+    try:
+        _init_admin()
+    except Exception as e:
+        logger.warning("管理员初始化失败: %s", e)
+
 
 @app.middleware("http")
 async def request_id_middleware(request, call_next):
@@ -1035,6 +1051,14 @@ async def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Secu
         finally:
             conn.close()
     await asyncio.to_thread(_cleanup)
+
+    # 清理权限记录（级联会自动清理 shares）
+    def _cleanup_perm():
+        perm = user_db.get_document_permission(doc_name, kb_id)
+        if perm:
+            user_db.delete_document_permission(perm["id"])
+    await asyncio.to_thread(_cleanup_perm)
+
     return {"status": "removed", "kb_id": kb_id, "doc_name": doc_name}
 
 
@@ -1327,6 +1351,119 @@ async def generate_kb_overview(kb_id: str, user_id: str = Security(verify_api_ke
     if error:
         raise HTTPException(status_code=500, detail=f"概述生成失败: {error}")
     return {"kb_id": kb_id, "overview": result}
+
+
+# ── 权限管理端点 ──────────────────────────────────────────────────────
+
+
+@app.get("/documents/{doc_id}/permissions", summary="查看文档权限信息")
+async def get_document_permissions(doc_id: int, authorization: str = Header(default="")):
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
+    def _get():
+        perm = user_db.get_document_permission_by_id(doc_id)
+        if not perm:
+            return None
+        shared_users = user_db.list_shared_users(doc_id)
+        owner = user_db.get_user_by_id(perm["owner_id"])
+        return {
+            "doc_id": doc_id,
+            "doc_name": perm["doc_name"],
+            "permission_level": perm["permission_level"],
+            "owner": {"id": owner["id"], "username": owner["username"]} if owner else None,
+            "shared_with": shared_users,
+        }
+
+    result = await asyncio.to_thread(_get)
+    if not result:
+        raise HTTPException(status_code=404, detail="文档权限记录不存在")
+    return result
+
+
+@app.put("/documents/{doc_id}/permission", summary="修改文档权限等级")
+async def update_document_permission(doc_id: int, req: UpdatePermissionRequest, authorization: str = Header(default="")):
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
+    def _update():
+        perm = user_db.get_document_permission_by_id(doc_id)
+        if not perm:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        if user_dict and not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
+            raise HTTPException(status_code=403, detail="仅文档上传者或管理员可修改权限")
+        user_db.update_document_permission_level(doc_id, req.permission_level)
+        return {"id": doc_id, "permission_level": req.permission_level}
+
+    return await asyncio.to_thread(_update)
+
+
+@app.post("/documents/{doc_id}/share", summary="共享文档给指定用户")
+async def share_document(doc_id: int, req: ShareRequest, authorization: str = Header(default="")):
+    import sqlite3 as _sqlite3
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
+    def _share():
+        perm = user_db.get_document_permission_by_id(doc_id)
+        if not perm:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        if user_dict and not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
+            raise HTTPException(status_code=403, detail="仅文档上传者或管理员可共享")
+        try:
+            share_id = user_db.share_document(doc_id, req.user_id, user_dict["id"])
+        except _sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="该用户已被共享")
+        return {"doc_id": doc_id, "user_id": req.user_id, "granted_by": user_dict["id"]}
+
+    return await asyncio.to_thread(_share)
+
+
+@app.delete("/documents/{doc_id}/share/{user_id}", summary="撤销文档共享", status_code=204)
+async def unshare_document(doc_id: int, user_id: int, authorization: str = Header(default="")):
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
+    def _unshare():
+        perm = user_db.get_document_permission_by_id(doc_id)
+        if not perm:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        if user_dict and not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
+            raise HTTPException(status_code=403, detail="仅文档上传者或管理员可撤销共享")
+        user_db.unshare_document(doc_id, user_id)
+
+    await asyncio.to_thread(_unshare)
+    return None
+
+
+@app.put("/users/{uid}/role", summary="设置用户角色（管理员/权限等级）")
+async def set_user_role(uid: int, req: UpdateRoleRequest, authorization: str = Header(default="")):
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+    if not user_dict or not user_dict.get("is_admin"):
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+
+    def _set():
+        target = user_db.get_user_by_id(uid)
+        if not target:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        if req.is_admin is not None:
+            user_db.set_user_admin(uid, req.is_admin)
+        if req.permission_level is not None:
+            user_db.set_user_permission_level(uid, req.permission_level)
+        return user_db.get_user_by_id(uid)
+
+    return await asyncio.to_thread(_set)
 
 
 # ── 分析端点 ──────────────────────────────────────────────────────
