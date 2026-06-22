@@ -244,3 +244,57 @@ def test_search_collection_no_filter_when_no_doc_no_tags(mock_client_class):
 
     call_args = mock_client.query_points.call_args
     assert call_args.kwargs["query_filter"] is None
+
+
+# ── doc_permission_id support ──────────────────────────────────────
+
+def test_add_to_collection_with_permission_id(tmp_path):
+    """add_to_collection 写入 doc_permission_id 到 payload。"""
+    import rag.vector_store as vs
+    from qdrant_client import QdrantClient
+    vs._client = QdrantClient(path=str(tmp_path / "qdrant"))
+    vs._ensure_collection_name("test_col")
+
+    from rag.models import Chunk
+    chunks = [Chunk(text="hello", doc_name="a.pdf", chunk_index=0)]
+    embeddings = [[0.1] * 1024]
+    vs.add_to_collection("test_col", chunks, embeddings, doc_permission_id=42)
+
+    client = vs._get_client()
+    points, _ = client.scroll(collection_name="test_col", limit=1, with_payload=True)
+    assert len(points) == 1
+    assert points[0].payload["doc_permission_id"] == 42
+
+
+def test_search_collection_returns_doc_permission_id(tmp_path):
+    """search_collection 返回的 Chunk 包含 doc_permission_id。"""
+    import rag.vector_store as vs
+    from qdrant_client import QdrantClient
+    vs._client = QdrantClient(path=str(tmp_path / "qdrant"))
+    vs._ensure_collection_name("test_col")
+
+    from rag.models import Chunk
+    chunks = [Chunk(text="hello", doc_name="a.pdf", chunk_index=0)]
+    embeddings = [[0.1] * 1024]
+    vs.add_to_collection("test_col", chunks, embeddings, doc_permission_id=42)
+
+    results = vs.search_collection("test_col", [0.1] * 1024, top_k=1)
+    assert len(results) == 1
+    assert results[0].doc_permission_id == 42
+
+
+def test_add_to_collection_without_permission_id(tmp_path):
+    """不传 doc_permission_id 时，payload 中不包含该字段。"""
+    import rag.vector_store as vs
+    from qdrant_client import QdrantClient
+    vs._client = QdrantClient(path=str(tmp_path / "qdrant"))
+    vs._ensure_collection_name("test_col")
+
+    from rag.models import Chunk
+    chunks = [Chunk(text="hello", doc_name="a.pdf", chunk_index=0)]
+    embeddings = [[0.1] * 1024]
+    vs.add_to_collection("test_col", chunks, embeddings)
+
+    results = vs.search_collection("test_col", [0.1] * 1024, top_k=1)
+    assert len(results) == 1
+    assert results[0].doc_permission_id is None

@@ -55,7 +55,7 @@ def auto_index_on_startup():
     if not changed and not deleted:
         logger.info("索引无需更新（%d 文件）", len(current_hashes))
         with _pipeline_lock.write():
-            pipeline = RAGPipeline(kb_id="rag_docs")
+            pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
         return
 
     logger.info("索引变化: %d 新增, %d 修改, %d 删除", len(added), len(modified), len(deleted))
@@ -73,7 +73,7 @@ def auto_index_on_startup():
         save_index_state(state_path, new_state)
 
         with _pipeline_lock.write():
-            pipeline = RAGPipeline(kb_id="rag_docs")
+            pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
     except Exception as e:
         logger.warning("启动索引失败: %s", e)
 
@@ -385,7 +385,7 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(default
         current_pipeline = pipeline
 
     session_id = f"conv_{req.conversation_id}"
-    prepared, error = current_pipeline._prepare_context(user_question, session_id, None)
+    prepared, error = current_pipeline._prepare_context(user_question, session_id, None, user=user, kb_id="rag_docs")
     if error:
         raise HTTPException(status_code=400, detail=error)
 
@@ -495,7 +495,7 @@ async def upload_file(file: UploadFile = File(..., description="要上传的文�
     # Refresh pipeline
     with _pipeline_lock.write():
         try:
-            pipeline = RAGPipeline(kb_id="rag_docs")
+            pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
         except Exception as e:
             logger.error("Pipeline 刷新失败（上传后）: %s", e)
 
@@ -527,7 +527,7 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
         if remaining:
             try:
                 index_folder(str(DATA_DIR))
-                pipeline = RAGPipeline(kb_id="rag_docs")
+                pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"重新索引失败: {e}")
         else:
@@ -621,7 +621,7 @@ async def index_all(user_id: str = Security(verify_api_key)):
         raise HTTPException(status_code=500, detail=str(e))
     with _pipeline_lock.write():
         try:
-            pipeline = await asyncio.to_thread(RAGPipeline, kb_id="rag_docs")
+            pipeline = await asyncio.to_thread(RAGPipeline, kb_id="rag_docs", user_db=user_db)
         except Exception as e:
             logger.error("Pipeline 刷新失败（全量索引后）: %s", e)
     return {"status": "indexed", **stats}
@@ -655,7 +655,7 @@ async def index(file: UploadFile = File(..., description="要索引的文档文�
     # 刷新 pipeline（冷启动时创建，运行时更新）
     with _pipeline_lock.write():
         try:
-            pipeline = RAGPipeline(kb_id="rag_docs")
+            pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
         except Exception as e:
             logger.error("Pipeline 刷新失败（索引后）: %s", e)
     return {"status": "indexed", "chunks": count}
@@ -711,7 +711,7 @@ async def batch_import(
         from rag.pipeline import RAGPipeline
         with _pipeline_lock.write():
             try:
-                pipeline = RAGPipeline(kb_id="rag_docs")
+                pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
             except Exception as e:
                 logger.error("Pipeline 刷新失败: %s", e)
 
@@ -755,6 +755,8 @@ async def query(req: QueryRequest, user_id: str = Security(verify_api_key), auth
         session_id=session_id,
         doc_name=req.doc_name,
         tags=req.tags,
+        user=user,
+        kb_id="rag_docs",
     )
 
     # Save messages to chat_messages if user and conversation_id are provided
@@ -792,7 +794,8 @@ async def query_stream(
     async def event_generator():
         answer_buffer = ""
         async for event in current_pipeline.query_stream(
-            req.question, top_k=req.top_k, session_id=session_id, doc_name=req.doc_name, tags=req.tags
+            req.question, top_k=req.top_k, session_id=session_id, doc_name=req.doc_name, tags=req.tags,
+            user=user, kb_id="rag_docs",
         ):
             # 从 token 事件中提取 answer 用于持久化
             if '"type": "token"' in event:

@@ -31,7 +31,7 @@ class QueryResult(NamedTuple):
 
 class RAGPipeline:
     def __init__(
-        self, file_path: str = None, session_id: str = None, memory_db_path: str = settings.memory_db_path, kb_id: str = None
+        self, file_path: str = None, session_id: str = None, memory_db_path: str = settings.memory_db_path, kb_id: str = None, user_db=None
     ):
         if kb_id:
             # 查询已有知识库，不重新索引
@@ -66,7 +66,11 @@ class RAGPipeline:
         self._agent_lock = threading.Lock()
         self._async_agent_lock = asyncio.Lock()
 
-    def _prepare_context(self, question: str, session_id: str, doc_name: str, top_k: int = 8, tags: list[str] = None):
+        # 权限管理：注入 user_db 引用（由 api.py 传入，避免每次查询新建连接）
+        self._user_db = user_db
+        self._kb_id = kb_id or "rag_docs"
+
+    def _prepare_context(self, question: str, session_id: str, doc_name: str, top_k: int = 8, tags: list[str] = None, user: dict = None, kb_id: str = None):
         """公共逻辑：guard -> cache -> route -> retrieve -> rerank -> build_messages。"""
         question = sanitize_input(question)
         guard = check_injection(question)
@@ -84,8 +88,16 @@ class RAGPipeline:
             return {"route": "agent", "question": question}, None
 
         rewritten = rewrite_query(question)
-        context = self.retriever.retrieve(rewritten, top_k=top_k, doc_name=doc_name, tags=tags)
-        context = self.reranker.rerank(rewritten, context)
+        # Oversampling: 检索更多结果，过滤后再截取 top_k
+        oversample_factor = 3
+        raw_context = self.retriever.retrieve(rewritten, top_k=top_k * oversample_factor, doc_name=doc_name, tags=tags)
+        context = self.reranker.rerank(rewritten, raw_context)
+
+        # 权限过滤：移除无权文档的 chunks（user is not None 且有 user_db 时才过滤）
+        if user is not None and self._user_db is not None:
+            from rag.permissions import filter_chunks_by_permission
+            context = filter_chunks_by_permission(self._user_db, kb_id or self._kb_id, context, user)
+        context = context[:top_k]
 
         # Compute feedback weights for reranked chunks
         import hashlib
@@ -109,11 +121,11 @@ class RAGPipeline:
             "chunk_hashes": chunk_hashes, "weights": weights,
         }, None
 
-    def query(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None, tags: list[str] = None) -> QueryResult:
+    def query(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None, tags: list[str] = None, user: dict = None, kb_id: str = None) -> QueryResult:
         sid = session_id or self.session_id or "default"
         start_time = time.time()
 
-        prepared, error = self._prepare_context(question, sid, doc_name, top_k, tags=tags)
+        prepared, error = self._prepare_context(question, sid, doc_name, top_k, tags=tags, user=user, kb_id=kb_id)
         if error:
             self.tracker.save(ExecutionTrace(question=question, route="blocked", answer=error, total_ms=0))
             return QueryResult(answer=error, context=[], sources=[])
@@ -165,12 +177,12 @@ class RAGPipeline:
         self._cache.set(question, answer)
         return QueryResult(answer=answer, context=context, sources=sources)
 
-    async def query_stream(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None, tags: list[str] = None):
+    async def query_stream(self, question: str, top_k: int = 8, session_id: str = None, doc_name: str = None, tags: list[str] = None, user: dict = None, kb_id: str = None):
         """流式查询，yield SSE 格式的事件字符串。"""
         sid = session_id or self.session_id or "default"
         start_time = time.time()
 
-        prepared, error = self._prepare_context(question, sid, doc_name, top_k, tags=tags)
+        prepared, error = self._prepare_context(question, sid, doc_name, top_k, tags=tags, user=user, kb_id=kb_id)
         if error:
             yield f'data: {_json.dumps({"type": "error", "reason": error}, ensure_ascii=False)}\n\n'
             self.tracker.save(ExecutionTrace(question=question, route="blocked", answer=error, total_ms=0))

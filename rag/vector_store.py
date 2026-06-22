@@ -93,7 +93,7 @@ def _ensure_collection_name(collection_name: str):
         )
 
 
-def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: list[list[float]], tags: list[str] = None):
+def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: list[list[float]], tags: list[str] = None, doc_permission_id: int = None):
     with _write_lock.write():
         client = _get_client()
         if not client.collection_exists(collection_name):
@@ -107,6 +107,7 @@ def add_to_collection(collection_name: str, chunks: list[Chunk], embeddings: lis
                     "doc_name": chunks[i].doc_name,
                     "chunk_index": chunks[i].chunk_index,
                     "tags": tags or [],
+                    **({"doc_permission_id": doc_permission_id} if doc_permission_id is not None else {}),
                 },
             )
             for i in range(len(chunks))
@@ -143,6 +144,7 @@ def search_collection(collection_name: str, query_embedding: list[float], top_k:
                 text=h.payload["text"],
                 doc_name=h.payload.get("doc_name", ""),
                 chunk_index=h.payload.get("chunk_index", 0),
+                doc_permission_id=h.payload.get("doc_permission_id"),
             )
             for h in hits.points
             if h.payload
