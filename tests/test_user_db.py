@@ -177,3 +177,68 @@ def test_document_permission_unique_per_kb(db):
     import sqlite3
     with pytest.raises(sqlite3.IntegrityError):
         db.create_document_permission("report.pdf", "rag_docs", uid, 2)
+
+
+# -- Document Shares ---------------------------------------------------------
+
+
+def test_share_document(db):
+    """共享文档给指定用户。"""
+    owner = db.create_user("alice", "s3cret")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", owner, 3)
+    share_id = db.share_document(doc_id, viewer, owner)
+    assert isinstance(share_id, int) and share_id > 0
+
+
+def test_is_shared(db):
+    owner = db.create_user("alice", "s3cret")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", owner, 3)
+    assert db.is_document_shared(doc_id, viewer) is False
+    db.share_document(doc_id, viewer, owner)
+    assert db.is_document_shared(doc_id, viewer) is True
+
+
+def test_unshare_document(db):
+    owner = db.create_user("alice", "s3cret")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", owner, 3)
+    db.share_document(doc_id, viewer, owner)
+    db.unshare_document(doc_id, viewer)
+    assert db.is_document_shared(doc_id, viewer) is False
+
+
+def test_share_unique_per_user(db):
+    """同一用户不能重复共享同一文档。"""
+    owner = db.create_user("alice", "s3cret")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", owner, 3)
+    db.share_document(doc_id, viewer, owner)
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        db.share_document(doc_id, viewer, owner)
+
+
+def test_list_shared_users(db):
+    owner = db.create_user("alice", "s3cret")
+    bob = db.create_user("bob", "pwd")
+    carol = db.create_user("carol", "pwd")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", owner, 3)
+    db.share_document(doc_id, bob, owner)
+    db.share_document(doc_id, carol, owner)
+    shared = db.list_shared_users(doc_id)
+    assert len(shared) == 2
+    usernames = {u["username"] for u in shared}
+    assert usernames == {"bob", "carol"}
+
+
+def test_delete_permission_cascades_shares(db):
+    """删除权限记录时级联删除共享记录。"""
+    owner = db.create_user("alice", "s3cret")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", owner, 3)
+    db.share_document(doc_id, viewer, owner)
+    db.delete_document_permission(doc_id)
+    # 共享记录应该也被删除（外键 CASCADE）
+    assert db.is_document_shared(doc_id, viewer) is False

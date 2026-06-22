@@ -124,6 +124,21 @@ class UserDB:
 
                 CREATE INDEX IF NOT EXISTS idx_doc_permissions_kb ON document_permissions(kb_id);
                 CREATE INDEX IF NOT EXISTS idx_doc_permissions_owner ON document_permissions(owner_id);
+
+                CREATE TABLE IF NOT EXISTS document_shares (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    granted_by INTEGER NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(doc_id, user_id),
+                    FOREIGN KEY (doc_id) REFERENCES document_permissions(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (granted_by) REFERENCES users(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_doc_shares_user ON document_shares(user_id);
+                CREATE INDEX IF NOT EXISTS idx_doc_shares_doc ON document_shares(doc_id);
                 """
             )
             # Add permission_level column to users if it doesn't exist (idempotent)
@@ -661,6 +676,57 @@ class UserDB:
             "permission_level": row["permission_level"],
             "is_admin": bool(row["is_admin"]),
         }
+
+    # ------------------------------------------------------------------
+    # Document Shares
+    # ------------------------------------------------------------------
+
+    def share_document(self, doc_id: int, user_id: int, granted_by: int) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO document_shares (doc_id, user_id, granted_by) VALUES (?, ?, ?)",
+                (doc_id, user_id, granted_by),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
+    def unshare_document(self, doc_id: int, user_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM document_shares WHERE doc_id = ? AND user_id = ?",
+                (doc_id, user_id),
+            )
+            self._conn.commit()
+
+    def is_document_shared(self, doc_id: int, user_id: int) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM document_shares WHERE doc_id = ? AND user_id = ?",
+                (doc_id, user_id),
+            ).fetchone()
+        return row is not None
+
+    def list_shared_users(self, doc_id: int) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT u.id, u.username, ds.granted_by, ds.created_at AS granted_at "
+                "FROM document_shares ds JOIN users u ON ds.user_id = u.id "
+                "WHERE ds.doc_id = ? ORDER BY ds.created_at",
+                (doc_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_shared_doc_ids_for_user(self, user_id: int, doc_ids: list[int]) -> set[int]:
+        """批量查询用户被共享的 doc_id 集合。返回指定 doc_ids 中被共享的子集。"""
+        if not doc_ids:
+            return set()
+        with self._lock:
+            placeholders = ",".join("?" for _ in doc_ids)
+            rows = self._conn.execute(
+                f"SELECT doc_id FROM document_shares WHERE user_id = ? AND doc_id IN ({placeholders})",
+                (user_id, *doc_ids),
+            ).fetchall()
+        return {r["doc_id"] for r in rows}
 
     # ------------------------------------------------------------------
     # Cleanup
