@@ -1095,8 +1095,28 @@ async def query_knowledge_base(kb_id: str, req: QueryKBRequest, user_id: str = S
 
 
 @app.get("/knowledge-bases/{kb_id}", summary="获取知识库详情")
-async def get_knowledge_base_detail(kb_id: str, user_id: str = Security(verify_api_key)):
-    """获取知识库详情，包括元数据、文档列表、概述、目录。"""
+async def get_knowledge_base_detail(
+    kb_id: str,
+    scope: str = "accessible",
+    authorization: str = Header(default=""),
+    user_id: str = Security(verify_api_key),
+):
+    """获取知识库详情，包括元数据、文档列表、概述、目录。
+
+    Args:
+        scope: "accessible"（默认）= 仅返回当前用户有权访问的文档；"all" = 返回全部文档（仅管理员）。
+        authorization: Bearer token，用于识别当前用户。
+    """
+    # 获取当前用户
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
+    # scope=="all" 仅管理员可用（在线程外检查，避免 to_thread 中抛 HTTPException）
+    if scope == "all" and (not user_dict or not user_dict.get("is_admin")):
+        raise HTTPException(status_code=403, detail="仅管理员可查看全部文档")
+
     def _get():
         import sqlite3
         from config import settings as _settings
@@ -1113,14 +1133,61 @@ async def get_knowledge_base_detail(kb_id: str, user_id: str = Security(verify_a
         conn.row_factory = sqlite3.Row
         try:
             meta = conn.execute("SELECT * FROM kb_metadata WHERE kb_id = ?", (kb_id,)).fetchone()
-            docs = conn.execute("SELECT * FROM kb_documents WHERE kb_id = ?", (kb_id,)).fetchall()
+
+            docs = conn.execute(
+                "SELECT * FROM kb_documents WHERE kb_id = ? ORDER BY added_at DESC",
+                (kb_id,),
+            ).fetchall()
+
+            if scope == "all":
+                doc_list = [dict(d) for d in docs]
+            elif not user_dict or user_dict.get("id") == "anonymous":
+                # 未登录用户：返回全部文档（兼容旧行为）
+                doc_list = [dict(d) for d in docs]
+            else:
+                # scope == "accessible"：按权限过滤
+                doc_names = [d["filename"] for d in docs]
+                perm_map = user_db.get_document_permissions_by_names(doc_names, kb_id)
+
+                all_perm_ids = [p["id"] for p in perm_map.values() if p is not None]
+                shared_doc_ids = user_db.get_shared_doc_ids_for_user(user_dict["id"], all_perm_ids)
+
+                allowed_names = set()
+                for d in docs:
+                    perm = perm_map.get(d["filename"])
+                    if perm is None:
+                        allowed_names.add(d["filename"])
+                    elif perm["owner_id"] == user_dict["id"]:
+                        allowed_names.add(d["filename"])
+                    elif perm["id"] in shared_doc_ids:
+                        allowed_names.add(d["filename"])
+                    elif user_dict.get("permission_level", 1) >= perm["permission_level"]:
+                        allowed_names.add(d["filename"])
+
+                doc_list = []
+                for d in docs:
+                    if d["filename"] not in allowed_names:
+                        continue
+                    perm = perm_map.get(d["filename"])
+                    owner = user_db.get_user_by_id(perm["owner_id"]) if perm else None
+                    entry = dict(d)
+                    entry["doc_permission_id"] = perm["id"] if perm else None
+                    entry["permission_level"] = perm["permission_level"] if perm else 1
+                    entry["owner"] = {"id": owner["id"], "username": owner["username"]} if owner else None
+                    entry["can_edit"] = (
+                        user_dict.get("is_admin")
+                        or (perm and perm["owner_id"] == user_dict["id"])
+                    )
+                    entry["can_share"] = entry["can_edit"]
+                    doc_list.append(entry)
+
             return {
                 "kb_id": kb_id,
                 "name": meta["name"] if meta else kb.name,
                 "description": meta["description"] if meta else "",
                 "overview": meta["overview"] if meta else "",
                 "doc_count": kb.doc_count,
-                "documents": [dict(d) for d in docs],
+                "documents": doc_list,
             }
         finally:
             conn.close()
