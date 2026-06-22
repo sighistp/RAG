@@ -194,6 +194,19 @@ class SuggestCardRequest(BaseModel):
     answer: str = Field(..., max_length=10000, description="回答内容")
 
 
+class UpdatePermissionRequest(BaseModel):
+    permission_level: int = Field(..., ge=1, le=5)
+
+
+class ShareRequest(BaseModel):
+    user_id: int
+
+
+class UpdateRoleRequest(BaseModel):
+    is_admin: bool | None = None
+    permission_level: int | None = Field(default=None, ge=1, le=5)
+
+
 # Module-level UserDB instance
 from config import settings as _settings
 _DB_PATH = Path(_settings.users_db_path)
@@ -456,7 +469,11 @@ def _human_size(size: int) -> str:
     summary="上传文件",
     description="上传文件到 data/upload/ 并索引，支持 txt/md/pdf/docx/xlsx/csv 格式，最大 10MB",
 )
-async def upload_file(file: UploadFile = File(..., description="要上传的文件"), authorization: str = Header(default="")):
+async def upload_file(
+    file: UploadFile = File(..., description="要上传的文件"),
+    permission_level: int = 1,
+    authorization: str = Header(default=""),
+):
     from rag.pipeline import RAGPipeline
 
     global pipeline
@@ -484,12 +501,28 @@ async def upload_file(file: UploadFile = File(..., description="要上传的文�
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {e}")
 
+    # 获取当前用户
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
+    # 先创建权限记录（索引失败时回滚）
+    perm_id = None
+    if user_dict:
+        def _create_perm():
+            return user_db.create_document_permission(filename, "rag_docs", user_dict["id"], permission_level)
+        perm_id = await asyncio.to_thread(_create_perm)
+
     # Index the file
     try:
         manager = KnowledgeBaseManager()
-        count = manager.add_document("rag_docs", str(dest), doc_name=filename)
+        count = manager.add_document("rag_docs", str(dest), doc_name=filename, doc_permission_id=perm_id)
     except Exception as e:
         dest.unlink(missing_ok=True)
+        # 回滚权限记录
+        if perm_id:
+            await asyncio.to_thread(user_db.delete_document_permission, perm_id)
         raise HTTPException(status_code=400, detail=str(e))
 
     # Refresh pipeline
@@ -516,6 +549,15 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
 
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"文件 {safe_name} 不存在")
+
+    # 权限校验（旧文档无记录时 check_doc_permission 返回 None，放行）
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+    if user_dict and user_dict.get("id") != "anonymous":
+        from rag.permissions import check_doc_permission
+        await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "delete")
 
     # Delete the file
     file_path.unlink()
@@ -547,6 +589,16 @@ async def add_tags_to_file(filename: str, tags: list[str], authorization: str = 
     from rag.vector_store import _get_client, COLLECTION_NAME
 
     safe_name = Path(filename).name
+
+    # 权限校验（旧文档无记录时放行）
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+    if user_dict and user_dict.get("id") != "anonymous":
+        from rag.permissions import check_doc_permission
+        await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "edit")
+
     client = _get_client()
     if not client.collection_exists(COLLECTION_NAME):
         raise HTTPException(status_code=404, detail="集合不存在")
@@ -882,7 +934,13 @@ async def delete_knowledge_base(kb_id: str, user_id: str = Security(verify_api_k
 
 
 @app.post("/knowledge-bases/{kb_id}/documents", summary="添加文档到知识库", description="上传文档到指定知识库")
-async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: str = Security(verify_api_key)):
+async def add_document_to_kb(
+    kb_id: str,
+    file: UploadFile = File(...),
+    permission_level: int = 1,
+    user_id: str = Security(verify_api_key),
+    authorization: str = Header(default=""),
+):
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail=f"文件大小超过 {MAX_FILE_SIZE // 1024 // 1024} MB 限制")
@@ -894,10 +952,26 @@ async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: 
         tmp_path = tmp.name
     finally:
         tmp.close()
+    # 获取当前用户
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
+    # 先创建权限记录（索引失败时回滚）
+    perm_id = None
+    if user_dict:
+        def _create_perm():
+            return user_db.create_document_permission(filename, kb_id, user_dict["id"], permission_level)
+        perm_id = await asyncio.to_thread(_create_perm)
+
     try:
         manager = KnowledgeBaseManager()
-        count = manager.add_document(kb_id, tmp_path)
+        count = manager.add_document(kb_id, tmp_path, doc_name=filename, doc_permission_id=perm_id)
     except Exception as e:
+        # 回滚权限记录
+        if perm_id:
+            await asyncio.to_thread(user_db.delete_document_permission, perm_id)
         raise HTTPException(status_code=400, detail=str(e))
     finally:
         os.unlink(tmp_path)
@@ -936,7 +1010,16 @@ async def add_document_to_kb(kb_id: str, file: UploadFile = File(...), user_id: 
 
 
 @app.delete("/knowledge-bases/{kb_id}/documents/{doc_name}", summary="删除文档", description="从知识库中删除指定文档")
-async def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Security(verify_api_key)):
+async def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Security(verify_api_key), authorization: str = Header(default="")):
+    # 权限校验（旧文档无记录时放行）
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+    if user_dict and user_dict.get("id") != "anonymous":
+        from rag.permissions import check_doc_permission
+        await asyncio.to_thread(check_doc_permission, user_db, doc_name, kb_id, user_dict, "delete")
+
     manager = KnowledgeBaseManager()
     try:
         manager.remove_document(kb_id, doc_name)
