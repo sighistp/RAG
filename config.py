@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     agent_max_iterations: int = 5
     memory_db_path: str = str(Path(__file__).resolve().parent / "data" / "memory.db")
     analysis_db_path: str = str(Path(__file__).resolve().parent / "data" / "analysis.db")
+    users_db_path: str = str(Path(__file__).resolve().parent / "data" / "users.db")
 
     # 鉴权
     auth_enabled: bool = False

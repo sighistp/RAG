@@ -195,7 +195,8 @@ class SuggestCardRequest(BaseModel):
 
 
 # Module-level UserDB instance
-_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "users.db"
+from config import settings as _settings
+_DB_PATH = Path(_settings.users_db_path)
 user_db = UserDB(str(_DB_PATH))
 
 
