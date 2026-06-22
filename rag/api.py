@@ -52,10 +52,21 @@ def auto_index_on_startup():
     added, modified, deleted = diff_index(current_hashes, stored_state)
     changed = added + modified
 
+    # 管理员初始化：首次启动时根据环境变量设置管理员
+    def _init_admin():
+        admin_username = os.getenv("INIT_ADMIN_USERNAME")
+        if not admin_username:
+            return
+        target = user_db.get_user_by_username(admin_username)
+        if target and not target.get("is_admin"):
+            user_db.set_user_admin(target["id"], True)
+            logger.info("已将用户 %s 设置为管理员", admin_username)
+
     if not changed and not deleted:
         logger.info("索引无需更新（%d 文件）", len(current_hashes))
         with _pipeline_lock.write():
             pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
+        _init_admin()
         return
 
     logger.info("索引变化: %d 新增, %d 修改, %d 删除", len(added), len(modified), len(deleted))
@@ -76,17 +87,6 @@ def auto_index_on_startup():
             pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
     except Exception as e:
         logger.warning("启动索引失败: %s", e)
-
-    # 管理员初始化：首次启动时根据环境变量设置管理员
-    def _init_admin():
-        admin_username = os.getenv("INIT_ADMIN_USERNAME")
-        if not admin_username:
-            return
-        # 查找目标用户
-        target = user_db.get_user_by_username(admin_username)
-        if target and not target.get("is_admin"):
-            user_db.set_user_admin(target["id"], True)
-            logger.info("已将用户 %s 设置为管理员", admin_username)
 
     try:
         _init_admin()
