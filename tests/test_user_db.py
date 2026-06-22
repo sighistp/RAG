@@ -103,3 +103,28 @@ def test_add_feedback(db):
     mid = db.add_message(cid, "assistant", "answer")
     fid = db.add_feedback(mid, uid, 1, "helpful")
     assert isinstance(fid, int) and fid > 0
+
+
+# -- Permission fields on users table ----------------------------------------
+
+
+def test_user_has_permission_level_default(db):
+    """新建用户默认 permission_level=1, is_admin=False。"""
+    uid = db.create_user("alice", "s3cret")
+    user = db.get_user_by_id(uid)
+    assert user["permission_level"] == 1
+    assert user["is_admin"] is False
+
+
+def test_set_user_permission_level(db):
+    uid = db.create_user("alice", "s3cret")
+    db.set_user_permission_level(uid, 3)
+    user = db.get_user_by_id(uid)
+    assert user["permission_level"] == 3
+
+
+def test_set_user_admin(db):
+    uid = db.create_user("alice", "s3cret")
+    db.set_user_admin(uid, True)
+    user = db.get_user_by_id(uid)
+    assert user["is_admin"] is True

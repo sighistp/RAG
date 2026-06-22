@@ -113,6 +113,24 @@ class UserDB:
                 );
                 """
             )
+            # Add permission_level column to users if it doesn't exist (idempotent)
+            try:
+                self._conn.execute("SELECT permission_level FROM users LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute(
+                    "ALTER TABLE users ADD COLUMN permission_level INTEGER NOT NULL DEFAULT 1"
+                )
+                self._conn.commit()
+
+            # Add is_admin column to users if it doesn't exist (idempotent)
+            try:
+                self._conn.execute("SELECT is_admin FROM users LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute(
+                    "ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"
+                )
+                self._conn.commit()
+
             # Add mode column to conversations if it doesn't exist (idempotent)
             try:
                 self._conn.execute("SELECT mode FROM conversations LIMIT 1")
@@ -172,10 +190,18 @@ class UserDB:
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
         """Return user dict or ``None``."""
         with self._lock:
-            row = self._conn.execute("SELECT id, username FROM users WHERE id = ?", (user_id,)).fetchone()
+            row = self._conn.execute(
+                "SELECT id, username, permission_level, is_admin FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
         if row is None:
             return None
-        return {"id": row["id"], "username": row["username"]}
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "permission_level": row["permission_level"],
+            "is_admin": bool(row["is_admin"]),
+        }
 
     # ------------------------------------------------------------------
     # Conversations
@@ -504,6 +530,26 @@ class UserDB:
             )
             self._conn.commit()
             return cur.rowcount > 0
+
+    # ------------------------------------------------------------------
+    # Permission helpers
+    # ------------------------------------------------------------------
+
+    def set_user_permission_level(self, user_id: int, level: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE users SET permission_level = ? WHERE id = ?",
+                (level, user_id),
+            )
+            self._conn.commit()
+
+    def set_user_admin(self, user_id: int, is_admin: bool) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE users SET is_admin = ? WHERE id = ?",
+                (int(is_admin), user_id),
+            )
+            self._conn.commit()
 
     # ------------------------------------------------------------------
     # Cleanup
