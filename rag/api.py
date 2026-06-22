@@ -6,7 +6,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Header, HTTPException, Security, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, Security, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -304,6 +304,17 @@ async def get_me(user_id: str = Security(verify_api_key), authorization: str = H
     return {"id": user_id, "username": "anonymous"}
 
 
+async def _require_auth(authorization: str) -> dict:
+    """要求认证，返回完整 user dict。无 token 或 token 无效时返回 401。"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    token = authorization.replace("Bearer ", "")
+    user_dict = await asyncio.to_thread(_get_current_user, token)
+    if not user_dict:
+        raise HTTPException(status_code=401, detail="token 无效或已过期")
+    return user_dict
+
+
 def _get_current_user(token: str) -> dict | None:
     """从 JWT token 获取当前用户。返回 None 表示认证失败。
 
@@ -487,7 +498,7 @@ def _human_size(size: int) -> str:
 )
 async def upload_file(
     file: UploadFile = File(..., description="要上传的文件"),
-    permission_level: int = 1,
+    permission_level: int = Query(default=1, ge=1, le=5),
     authorization: str = Header(default=""),
 ):
     from rag.pipeline import RAGPipeline
@@ -573,7 +584,10 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
         user_dict = await asyncio.to_thread(_get_current_user, token)
     if user_dict and user_dict.get("id") != "anonymous":
         from rag.permissions import check_doc_permission
-        await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "delete")
+        try:
+            await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "delete")
+        except HTTPException:
+            raise
 
     # Delete the file
     file_path.unlink()
@@ -613,7 +627,10 @@ async def add_tags_to_file(filename: str, tags: list[str], authorization: str = 
         user_dict = await asyncio.to_thread(_get_current_user, token)
     if user_dict and user_dict.get("id") != "anonymous":
         from rag.permissions import check_doc_permission
-        await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "edit")
+        try:
+            await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "edit")
+        except HTTPException:
+            raise
 
     client = _get_client()
     if not client.collection_exists(COLLECTION_NAME):
@@ -953,7 +970,7 @@ async def delete_knowledge_base(kb_id: str, user_id: str = Security(verify_api_k
 async def add_document_to_kb(
     kb_id: str,
     file: UploadFile = File(...),
-    permission_level: int = 1,
+    permission_level: int = Query(default=1, ge=1, le=5),
     user_id: str = Security(verify_api_key),
     authorization: str = Header(default=""),
 ):
@@ -1034,7 +1051,10 @@ async def remove_document_from_kb(kb_id: str, doc_name: str, user_id: str = Secu
         user_dict = await asyncio.to_thread(_get_current_user, token)
     if user_dict and user_dict.get("id") != "anonymous":
         from rag.permissions import check_doc_permission
-        await asyncio.to_thread(check_doc_permission, user_db, doc_name, kb_id, user_dict, "delete")
+        try:
+            await asyncio.to_thread(check_doc_permission, user_db, doc_name, kb_id, user_dict, "delete")
+        except HTTPException:
+            raise
 
     manager = KnowledgeBaseManager()
     try:
@@ -1425,15 +1445,16 @@ async def generate_kb_overview(kb_id: str, user_id: str = Security(verify_api_ke
 
 @app.get("/documents/{doc_id}/permissions", summary="查看文档权限信息")
 async def get_document_permissions(doc_id: int, authorization: str = Header(default="")):
-    user_dict = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        user_dict = await asyncio.to_thread(_get_current_user, token)
+    # C1: 要求认证
+    user_dict = await _require_auth(authorization)
 
     def _get():
         perm = user_db.get_document_permission_by_id(doc_id)
         if not perm:
             return None
+        # I3: 检查查看权限
+        if not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"] and not user_db.is_document_shared(doc_id, user_dict["id"]) and user_dict.get("permission_level", 1) < perm["permission_level"]:
+            raise HTTPException(status_code=403, detail="无权查看该文档权限信息")
         shared_users = user_db.list_shared_users(doc_id)
         owner = user_db.get_user_by_id(perm["owner_id"])
         return {
@@ -1444,7 +1465,10 @@ async def get_document_permissions(doc_id: int, authorization: str = Header(defa
             "shared_with": shared_users,
         }
 
-    result = await asyncio.to_thread(_get)
+    try:
+        result = await asyncio.to_thread(_get)
+    except HTTPException:
+        raise
     if not result:
         raise HTTPException(status_code=404, detail="文档权限记录不存在")
     return result
@@ -1452,72 +1476,76 @@ async def get_document_permissions(doc_id: int, authorization: str = Header(defa
 
 @app.put("/documents/{doc_id}/permission", summary="修改文档权限等级")
 async def update_document_permission(doc_id: int, req: UpdatePermissionRequest, authorization: str = Header(default="")):
-    user_dict = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        user_dict = await asyncio.to_thread(_get_current_user, token)
+    # C1: 要求认证
+    user_dict = await _require_auth(authorization)
 
     def _update():
         perm = user_db.get_document_permission_by_id(doc_id)
         if not perm:
             raise HTTPException(status_code=404, detail="文档不存在")
-        if user_dict and not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
+        if not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
             raise HTTPException(status_code=403, detail="仅文档上传者或管理员可修改权限")
         user_db.update_document_permission_level(doc_id, req.permission_level)
         return {"id": doc_id, "permission_level": req.permission_level}
 
-    return await asyncio.to_thread(_update)
+    try:
+        return await asyncio.to_thread(_update)
+    except HTTPException:
+        raise
 
 
 @app.post("/documents/{doc_id}/share", summary="共享文档给指定用户")
 async def share_document(doc_id: int, req: ShareRequest, authorization: str = Header(default="")):
     import sqlite3 as _sqlite3
-    user_dict = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        user_dict = await asyncio.to_thread(_get_current_user, token)
+    # C1: 要求认证
+    user_dict = await _require_auth(authorization)
 
     def _share():
         perm = user_db.get_document_permission_by_id(doc_id)
         if not perm:
             raise HTTPException(status_code=404, detail="文档不存在")
-        if user_dict and not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
+        if not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
             raise HTTPException(status_code=403, detail="仅文档上传者或管理员可共享")
+        # I4: 检查目标用户是否存在
+        target = user_db.get_user_by_id(req.user_id)
+        if not target:
+            raise HTTPException(status_code=404, detail=f"用户 ID {req.user_id} 不存在")
         try:
             share_id = user_db.share_document(doc_id, req.user_id, user_dict["id"])
         except _sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="该用户已被共享")
         return {"doc_id": doc_id, "user_id": req.user_id, "granted_by": user_dict["id"]}
 
-    return await asyncio.to_thread(_share)
+    try:
+        return await asyncio.to_thread(_share)
+    except HTTPException:
+        raise
 
 
 @app.delete("/documents/{doc_id}/share/{user_id}", summary="撤销文档共享", status_code=204)
 async def unshare_document(doc_id: int, user_id: int, authorization: str = Header(default="")):
-    user_dict = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        user_dict = await asyncio.to_thread(_get_current_user, token)
+    # C1: 要求认证
+    user_dict = await _require_auth(authorization)
 
     def _unshare():
         perm = user_db.get_document_permission_by_id(doc_id)
         if not perm:
             raise HTTPException(status_code=404, detail="文档不存在")
-        if user_dict and not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
+        if not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
             raise HTTPException(status_code=403, detail="仅文档上传者或管理员可撤销共享")
         user_db.unshare_document(doc_id, user_id)
 
-    await asyncio.to_thread(_unshare)
+    try:
+        await asyncio.to_thread(_unshare)
+    except HTTPException:
+        raise
     return None
 
 
 @app.put("/users/{uid}/role", summary="设置用户角色（管理员/权限等级）")
 async def set_user_role(uid: int, req: UpdateRoleRequest, authorization: str = Header(default="")):
-    user_dict = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        user_dict = await asyncio.to_thread(_get_current_user, token)
-    if not user_dict or not user_dict.get("is_admin"):
+    user_dict = await _require_auth(authorization)
+    if not user_dict.get("is_admin"):
         raise HTTPException(status_code=403, detail="仅管理员可操作")
 
     def _set():
@@ -1530,7 +1558,10 @@ async def set_user_role(uid: int, req: UpdateRoleRequest, authorization: str = H
             user_db.set_user_permission_level(uid, req.permission_level)
         return user_db.get_user_by_id(uid)
 
-    return await asyncio.to_thread(_set)
+    try:
+        return await asyncio.to_thread(_set)
+    except HTTPException:
+        raise
 
 
 # ── 分析端点 ──────────────────────────────────────────────────────
