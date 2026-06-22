@@ -14,6 +14,7 @@ const filesStore = useFilesStore()
 const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer, handleConfirm } = useAnalysis()
 const messagesContainer = ref<HTMLElement>()
 const dragover = ref(false)
+const uploadPermissionLevel = ref(1)
 
 function getFileIcon(ext: string): string {
   const icons: Record<string, string> = { '.pdf': '📕', '.docx': '📘', '.xlsx': '📊', '.csv': '📊', '.md': '📝', '.txt': '📄' }
@@ -34,7 +35,7 @@ async function handleDrop(e: DragEvent) {
       continue
     }
     try {
-      await filesStore.uploadFile(file)
+      await filesStore.uploadFile(file, uploadPermissionLevel.value)
       ElMessage.success(`文件 ${file.name} 上传成功`)
     } catch (err: any) {
       ElMessage.error(err.response?.data?.detail || `上传失败: ${file.name}`)
@@ -163,12 +164,21 @@ function askSuggested(q: string) {
     <div class="file-panel">
       <div class="file-panel-header">
         <h1 class="file-panel-title">文件管理</h1>
-        <el-upload :show-file-list="false" :before-upload="() => false" :on-change="async (f: any) => { try { await filesStore.uploadFile(f.raw!); ElMessage.success('上传成功') } catch (e: any) { ElMessage.error(e?.response?.data?.detail || '上传失败') } }" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
-          <el-button size="small" type="primary">
-            <el-icon><Upload /></el-icon>
-            上传
-          </el-button>
-        </el-upload>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <el-select v-model="uploadPermissionLevel" size="small" style="width: 100px;">
+            <el-option :value="1" label="等级 1" />
+            <el-option :value="2" label="等级 2" />
+            <el-option :value="3" label="等级 3" />
+            <el-option :value="4" label="等级 4" />
+            <el-option :value="5" label="等级 5" />
+          </el-select>
+          <el-upload :show-file-list="false" :before-upload="() => false" :on-change="async (f: any) => { try { await filesStore.uploadFile(f.raw!, uploadPermissionLevel); ElMessage.success('上传成功') } catch (e: any) { ElMessage.error(e?.response?.data?.detail || '上传失败') } }" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+            <el-button size="small" type="primary">
+              <el-icon><Upload /></el-icon>
+              上传
+            </el-button>
+          </el-upload>
+        </div>
       </div>
 
       <!-- Drop zone -->

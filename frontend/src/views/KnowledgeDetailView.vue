@@ -8,6 +8,7 @@ import { useAnalysis } from '../composables/useAnalysis'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
 import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
+import ShareDialog from '../components/ShareDialog.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowLeft,
@@ -57,6 +58,13 @@ const loadingFiles = ref(false)
 const selectedFile = ref<any>(null)
 const addingFile = ref(false)
 
+// Permission scope
+const docScope = ref('accessible')
+
+// Share dialog
+const shareDialogVisible = ref(false)
+const shareDoc = ref<any>(null)
+
 // Remove / delete states
 const removingDoc = ref('')
 
@@ -86,6 +94,7 @@ async function loadDetail() {
   loading.value = true
   try {
     const res = await api.get(`/knowledge-bases/${kbId}`, {
+      params: { scope: docScope.value },
       headers: authStore.getAuthHeaders()
     })
     const data = res.data
@@ -361,6 +370,11 @@ function getStatusLabel(status: string) {
     default: return status || '未知'
   }
 }
+
+function openShareDialog(doc: any) {
+  shareDoc.value = doc
+  shareDialogVisible.value = true
+}
 </script>
 
 <template>
@@ -492,6 +506,11 @@ function getStatusLabel(status: string) {
             </el-button>
           </div>
 
+          <el-radio-group v-model="docScope" @change="loadDetail" size="small" style="margin-bottom: 12px;">
+            <el-radio-button value="accessible">我能看的</el-radio-button>
+            <el-radio-button v-if="(authStore.user as any)?.is_admin" value="all">全部</el-radio-button>
+          </el-radio-group>
+
           <div v-if="loading" class="kb-docs-list">
             <div v-for="i in 3" :key="i" class="skeleton-line" style="height: 32px; margin-bottom: 8px;"></div>
           </div>
@@ -508,9 +527,16 @@ function getStatusLabel(status: string) {
                   <el-tag v-if="doc.status" :type="getStatusType(doc.status)" size="small" effect="plain">
                     {{ getStatusLabel(doc.status) }}
                   </el-tag>
+                  <el-tag v-if="doc.permission_level" size="small" type="info">
+                    等级 {{ doc.permission_level }}
+                  </el-tag>
+                  <el-tag v-if="doc.owner" size="small">
+                    {{ doc.owner.username }}
+                  </el-tag>
                 </div>
               </div>
               <div class="kb-doc-actions">
+                <el-button v-if="doc.can_share" text size="small" type="primary" @click="openShareDialog(doc)" title="共享">共享</el-button>
                 <el-button text size="small" @click="removeFromKB(doc)" title="从知识库移除">移除</el-button>
                 <el-button type="danger" text size="small" @click="deleteFile(doc)" title="删除文件">
                   <el-icon><Delete /></el-icon>
@@ -604,6 +630,8 @@ function getStatusLabel(status: string) {
     </el-dialog>
 
     <AddToAnalysisDialog v-model:visible="dialogVisible" :question="dialogQuestion" :answer="dialogAnswer" @confirm="handleConfirm" />
+
+    <ShareDialog v-model:visible="shareDialogVisible" :doc-id="shareDoc?.id ?? null" />
   </div>
 </template>
 

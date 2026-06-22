@@ -31,10 +31,13 @@ export const useFilesStore = defineStore('files', () => {
     }
   }
 
-  async function uploadFile(file: File) {
+  async function uploadFile(file: File, permissionLevel?: number) {
     const auth = useAuthStore()
     const formData = new FormData()
     formData.append('file', file)
+    if (permissionLevel !== undefined) {
+      formData.append('permission_level', String(permissionLevel))
+    }
 
     const res = await api.post(`${API}/upload`, formData, {
       headers: auth.getAuthHeaders()
