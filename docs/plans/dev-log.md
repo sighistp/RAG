@@ -3310,8 +3310,72 @@ frontend/
 
 ---
 
+## 权限管理系统实施完成（2026-06-21）
+
+### 实施结果
+
+16 个 Task（Task 0-15）全部完成，TDD 模式，12 个 commit：
+
+| Commit | Task | 内容 |
+|--------|------|------|
+| `b4ec01d` | 0 | config.py 新增 users_db_path |
+| `26c45e7` | 1 | users 表扩展 permission_level / is_admin |
+| `fa11f99` | 2 | document_permissions 表及 CRUD + 批量查询 |
+| `20cfe06` | 3 | document_shares 表及共享方法 |
+| `596f6d9` | 4 | 权限工具函数（check/filter/get_accessible） |
+| `5ccf6f4` | 7 | Chunk 加 doc_permission_id，vector_store 读写 |
+| `91438be` | 8 | POST /upload 支持 permission_level |
+| `ca7a2fe` | 9 | DELETE /files、POST tags、DELETE KB doc 加权限校验 |
+| `46def27` | 12 | GET /knowledge-bases/{kb_id} 支持 scope 参数 |
+| `5e7fc3c` | 11 | 启动时 INIT_ADMIN_USERNAME 管理员初始化 |
+| `7dd2559` | fix | _init_admin 移到 early return 之前 |
+| `a5cde38` | 13-15 | 前端权限 UI |
+
+### Code Review 修复
+
+| 级别 | Issue | 修复 |
+|------|-------|------|
+| Critical | C1: 权限端点无认证可被匿名操作 | 新增 `_require_auth()`，所有权限端点要求认证，401 if no token |
+| Critical | C2: HTTPException inside asyncio.to_thread 被包装为 500 | try/except re-raise |
+| Critical | C3: upload permission_level 无范围验证 | 改用 `Query(ge=1, le=5)` |
+| Important | I3: GET /documents/{id}/permissions 信息泄露 | 加 view 权限检查 |
+| Important | I4: ShareRequest.user_id 不验证用户存在 | 先查用户存在性，404 if not found |
+| Important | I6: 权限端点中 HTTPException in to_thread | 同 C2 |
+
+### 测试结果
+
+- 后端：**496 tests pass**（原 248 + 新增 248）
+- 前端：构建成功
+- 手动测试：15 项权限场景全部通过
+
+### 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `rag/permissions.py` | 权限工具函数模块 |
+| `tests/test_permissions.py` | 权限单元测试（18 个） |
+| `tests/test_permissions_api.py` | 权限 API 测试 |
+| `frontend/src/components/ShareDialog.vue` | 共享管理弹窗 |
+
+### 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| `config.py` | 新增 users_db_path |
+| `rag/user_db.py` | 3 张表 + 15 个方法 |
+| `rag/models.py` | Chunk 加 doc_permission_id |
+| `rag/vector_store.py` | add_to_collection/search_collection 读写 doc_permission_id |
+| `rag/knowledge_base.py` | add_document 透传 doc_permission_id |
+| `rag/pipeline.py` | oversampling + 检索后权限过滤 |
+| `rag/api.py` | 上传权限参数 + 端点权限校验 + 权限管理 API + scope 参数 |
+| `.env.example` | INIT_ADMIN_USERNAME |
+| `frontend/src/views/FileModeView.vue` | 上传权限选择器 |
+| `frontend/src/views/KnowledgeDetailView.vue` | scope 选择器 + 权限标签 + 共享按钮 |
+| `frontend/src/stores/files.ts` | uploadFile 支持 permissionLevel |
+
+---
+
 ## 下一步计划
 
-- 权限管理系统实施（16 个 Task）
 - Docker 容器化
 - CI/CD（GitHub Actions）
