@@ -128,3 +128,52 @@ def test_set_user_admin(db):
     db.set_user_admin(uid, True)
     user = db.get_user_by_id(uid)
     assert user["is_admin"] is True
+
+
+# -- Document Permissions ----------------------------------------------------
+
+
+def test_create_document_permission(db):
+    """上传文档时创建权限记录。"""
+    uid = db.create_user("alice", "s3cret")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid, 2)
+    assert isinstance(doc_id, int) and doc_id > 0
+
+
+def test_get_document_permission_by_name(db):
+    uid = db.create_user("alice", "s3cret")
+    db.create_document_permission("report.pdf", "rag_docs", uid, 2)
+    perm = db.get_document_permission("report.pdf", "rag_docs")
+    assert perm is not None
+    assert perm["doc_name"] == "report.pdf"
+    assert perm["permission_level"] == 2
+    assert perm["owner_id"] == uid
+
+
+def test_get_document_permission_nonexistent(db):
+    """不存在的文档返回 None。"""
+    assert db.get_document_permission("nope.pdf", "rag_docs") is None
+
+
+def test_update_document_permission_level(db):
+    uid = db.create_user("alice", "s3cret")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid, 1)
+    db.update_document_permission_level(doc_id, 4)
+    perm = db.get_document_permission_by_id(doc_id)
+    assert perm["permission_level"] == 4
+
+
+def test_delete_document_permission(db):
+    uid = db.create_user("alice", "s3cret")
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid, 1)
+    db.delete_document_permission(doc_id)
+    assert db.get_document_permission_by_id(doc_id) is None
+
+
+def test_document_permission_unique_per_kb(db):
+    """同一知识库内同名文档只能有一条权限记录。"""
+    uid = db.create_user("alice", "s3cret")
+    db.create_document_permission("report.pdf", "rag_docs", uid, 1)
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        db.create_document_permission("report.pdf", "rag_docs", uid, 2)

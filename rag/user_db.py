@@ -111,6 +111,19 @@ class UserDB:
                     created_at          TEXT    DEFAULT (datetime('now')),
                     FOREIGN KEY (card_id) REFERENCES analysis_cards(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS document_permissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_name TEXT NOT NULL,
+                    kb_id TEXT NOT NULL,
+                    owner_id INTEGER NOT NULL,
+                    permission_level INTEGER DEFAULT 1,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(doc_name, kb_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_doc_permissions_kb ON document_permissions(kb_id);
+                CREATE INDEX IF NOT EXISTS idx_doc_permissions_owner ON document_permissions(owner_id);
                 """
             )
             # Add permission_level column to users if it doesn't exist (idempotent)
@@ -550,6 +563,104 @@ class UserDB:
                 (int(is_admin), user_id),
             )
             self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Document Permissions
+    # ------------------------------------------------------------------
+
+    def create_document_permission(self, doc_name: str, kb_id: str, owner_id: int, permission_level: int = 1) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO document_permissions (doc_name, kb_id, owner_id, permission_level) VALUES (?, ?, ?, ?)",
+                (doc_name, kb_id, owner_id, permission_level),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
+    def get_document_permission(self, doc_name: str, kb_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                "FROM document_permissions WHERE doc_name = ? AND kb_id = ?",
+                (doc_name, kb_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_document_permission_by_id(self, doc_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                "FROM document_permissions WHERE id = ?",
+                (doc_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_document_permission_level(self, doc_id: int, level: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE document_permissions SET permission_level = ? WHERE id = ?",
+                (level, doc_id),
+            )
+            self._conn.commit()
+
+    def delete_document_permission(self, doc_id: int) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM document_permissions WHERE id = ?", (doc_id,))
+            self._conn.commit()
+
+    def get_accessible_doc_names(self, kb_id: str, user_id: int, user_level: int) -> list[str]:
+        """返回用户在指定知识库中有权查看的文档名列表。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT dp.doc_name FROM document_permissions dp "
+                "LEFT JOIN document_shares ds ON ds.doc_id = dp.id AND ds.user_id = ? "
+                "WHERE dp.kb_id = ? AND (dp.owner_id = ? OR ds.id IS NOT NULL OR ? >= dp.permission_level)",
+                (user_id, kb_id, user_id, user_level),
+            ).fetchall()
+        return [r["doc_name"] for r in rows]
+
+    def get_document_permissions_by_names(self, doc_names: list[str], kb_id: str) -> dict[str, dict[str, Any] | None]:
+        """批量查询多个文档的权限记录。返回 {doc_name: perm_dict_or_None}。"""
+        if not doc_names:
+            return {}
+        with self._lock:
+            placeholders = ",".join("?" for _ in doc_names)
+            rows = self._conn.execute(
+                f"SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                f"FROM document_permissions WHERE doc_name IN ({placeholders}) AND kb_id = ?",
+                (*doc_names, kb_id),
+            ).fetchall()
+        perm_map = {r["doc_name"]: dict(r) for r in rows}
+        return {name: perm_map.get(name) for name in doc_names}
+
+    def get_document_permissions_by_ids(self, doc_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """批量查询多个权限记录（按 ID）。返回 {doc_id: perm_dict}。"""
+        if not doc_ids:
+            return {}
+        with self._lock:
+            placeholders = ",".join("?" for _ in doc_ids)
+            rows = self._conn.execute(
+                f"SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                f"FROM document_permissions WHERE id IN ({placeholders})",
+                doc_ids,
+            ).fetchall()
+        return {r["id"]: dict(r) for r in rows}
+
+    def get_user_by_username(self, username: str) -> dict[str, Any] | None:
+        """按用户名查询用户。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, username, permission_level, is_admin FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "permission_level": row["permission_level"],
+            "is_admin": bool(row["is_admin"]),
+        }
 
     # ------------------------------------------------------------------
     # Cleanup
