@@ -63,46 +63,30 @@ def auto_index_on_startup():
             logger.info("已将用户 %s 设置为管理员", admin_username)
 
     # 同步 git 仓库中的受保护文件到服务器
+    # owner_id=0 表示系统所有（不依赖用户是否存在）
+    SYSTEM_OWNER_ID = 0
+
     def _sync_repo_files():
         import shutil
-        # git 仓库中的 data/upload/ 目录
         repo_upload = Path(__file__).resolve().parent.parent / "data" / "upload"
         if not repo_upload.is_dir():
             return
         if not DATA_DIR.is_dir():
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-        # 找到第一个可用用户作为默认 owner（优先 admin）
-        owner_user = None
-        with user_db._lock:
-            row = user_db._conn.execute("SELECT id FROM users WHERE is_admin = 1 LIMIT 1").fetchone()
-        if row:
-            owner_user = user_db.get_user_by_id(row["id"])
-        if not owner_user:
-            # 没有 admin，用第一个用户
-            with user_db._lock:
-                row = user_db._conn.execute("SELECT id FROM users LIMIT 1").fetchone()
-            if row:
-                owner_user = user_db.get_user_by_id(row["id"])
-        if not owner_user:
-            logger.warning("无用户，跳过仓库文件同步")
-            return
         for fpath in repo_upload.iterdir():
             if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
                 dest = DATA_DIR / fpath.name
-                # 如果服务器上没有这个文件，复制过去
                 if not dest.exists():
                     shutil.copy2(str(fpath), str(dest))
                     logger.info("同步仓库文件: %s", fpath.name)
-                # 确保有权限记录且标记为受保护
                 existing = user_db.get_document_permission(fpath.name, "rag_docs")
                 if not existing:
                     user_db.create_document_permission(
-                        fpath.name, "rag_docs", owner_user["id"],
+                        fpath.name, "rag_docs", SYSTEM_OWNER_ID,
                         is_public=True, protected=True
                     )
-                    logger.info("创建受保护权限: %s (owner=%s)", fpath.name, owner_user["username"])
+                    logger.info("创建受保护权限: %s (owner=system)", fpath.name)
                 elif not existing.get("protected"):
-                    # 已有记录但未标记为受保护，更新标记
                     with user_db._lock:
                         user_db._conn.execute(
                             "UPDATE document_permissions SET protected = 1, is_public = 1 WHERE id = ?",
