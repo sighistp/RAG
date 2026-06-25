@@ -9,11 +9,62 @@ import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
 import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
 
+import { computed } from 'vue'
+
 const chatStore = useChatStore()
 const filesStore = useFilesStore()
 const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer, handleConfirm } = useAnalysis()
 const messagesContainer = ref<HTMLElement>()
 const dragover = ref(false)
+
+// File filter
+const fileFilter = ref<'all' | 'default' | 'private' | 'public'>('all')
+
+const filteredFiles = computed(() => {
+  if (fileFilter.value === 'all') return filesStore.files
+  return filesStore.files.filter(f => {
+    if (fileFilter.value === 'default') return f.protected
+    if (fileFilter.value === 'private') return !f.protected && !f.is_public
+    if (fileFilter.value === 'public') return !f.protected && f.is_public
+    return true
+  })
+})
+
+// Visibility dialog
+const visibilityDialogVisible = ref(false)
+const visibilityTargetFile = ref('')
+const visibilityTargetAction = ref<'private' | 'public'>('private')
+
+function handleFileClick(file: any) {
+  if (file.protected) {
+    // Protected files just select, no dialog
+    chatStore.selectFile(file.name)
+    return
+  }
+  // Show visibility dialog
+  visibilityTargetFile.value = file.name
+  visibilityTargetAction.value = file.is_public ? 'private' : 'public'
+  visibilityDialogVisible.value = true
+  chatStore.selectFile(file.name)
+}
+
+async function confirmToggleVisibility() {
+  try {
+    const resp = await fetch(`/api/files/${encodeURIComponent(visibilityTargetFile.value)}/visibility`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('rag_token')}` }
+    })
+    if (!resp.ok) throw new Error('切换失败')
+    const data = await resp.json()
+    // Update local state
+    const file = filesStore.files.find(f => f.name === visibilityTargetFile.value)
+    if (file) file.is_public = data.is_public
+    ElMessage.success(data.is_public ? '已切换为共享' : '已切换为私有')
+  } catch (e: any) {
+    ElMessage.error(e.message || '切换失败')
+  }
+  visibilityDialogVisible.value = false
+}
 
 function getFileIcon(ext: string): string {
   const icons: Record<string, string> = { '.pdf': '📕', '.docx': '📘', '.xlsx': '📊', '.csv': '📊', '.md': '📝', '.txt': '📄' }
@@ -39,23 +90,6 @@ async function handleDrop(e: DragEvent) {
     } catch (err: any) {
       ElMessage.error(err.response?.data?.detail || `上传失败: ${file.name}`)
     }
-  }
-}
-
-async function toggleVisibility(name: string) {
-  try {
-    const resp = await fetch(`/api/files/${encodeURIComponent(name)}/visibility`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('rag_token')}` }
-    })
-    if (!resp.ok) throw new Error('切换失败')
-    const data = await resp.json()
-    // 更新本地状态
-    const file = filesStore.files.find(f => f.name === name)
-    if (file) file.is_public = data.is_public
-    ElMessage.success(data.is_public ? '已设为公开' : '已设为私有')
-  } catch (e: any) {
-    ElMessage.error(e.message || '切换失败')
   }
 }
 
@@ -197,6 +231,14 @@ function askSuggested(q: string) {
         <p class="drop-hint">支持 txt、md、pdf、docx、xlsx、csv</p>
       </div>
 
+      <!-- File type filter tabs -->
+      <div class="file-filter-tabs">
+        <button :class="['filter-tab', { active: fileFilter === 'all' }]" @click="fileFilter = 'all'">全部</button>
+        <button :class="['filter-tab', { active: fileFilter === 'default' }]" @click="fileFilter = 'default'">默认</button>
+        <button :class="['filter-tab', { active: fileFilter === 'private' }]" @click="fileFilter = 'private'">私有</button>
+        <button :class="['filter-tab', { active: fileFilter === 'public' }]" @click="fileFilter = 'public'">共享</button>
+      </div>
+
       <!-- File list -->
       <div class="file-list">
         <!-- "All files" option -->
@@ -207,36 +249,39 @@ function askSuggested(q: string) {
             <div class="file-item-size">搜索所有文件</div>
           </div>
         </div>
-        <!-- Individual files -->
-        <div v-for="file in filesStore.files" :key="file.name"
+        <!-- Individual files (filtered) -->
+        <div v-for="file in filteredFiles" :key="file.name"
              :class="['file-item', { selected: chatStore.selectedFile === file.name }]"
-             @click="chatStore.selectFile(file.name)">
+             @click="handleFileClick(file)">
           <div class="file-item-icon">{{ getFileIcon(file.ext) }}</div>
           <div class="file-item-info">
-            <div class="file-item-name" :title="file.name">
-              {{ file.name }}
-              <span v-if="file.protected" class="protected-badge" title="受保护文件">🔒</span>
-            </div>
+            <div class="file-item-name" :title="file.name">{{ file.name }}</div>
             <div class="file-item-size">{{ file.size_human }}</div>
           </div>
           <div class="file-item-actions">
-            <button v-if="file.is_owner && !file.protected" :class="['visibility-btn', { public: file.is_public }]"
-                    @click.stop="toggleVisibility(file.name)" :title="file.is_public ? '公开 - 点击切换为私有' : '私有 - 点击切换为公开'">
-              {{ file.is_public ? '公开' : '私有' }}
-            </button>
-            <span v-else-if="!file.protected" :class="['visibility-tag', { public: file.is_public }]">
-              {{ file.is_public ? '公开' : '私有' }}
-            </span>
             <button v-if="!file.protected" class="file-item-delete" @click.stop="handleDelete(file.name)" title="删除">
               <el-icon><Delete /></el-icon>
             </button>
           </div>
         </div>
-        <div v-if="!filesStore.files.length" class="empty-files">
+        <div v-if="!filteredFiles.length" class="empty-files">
           <el-icon class="empty-icon"><FolderOpened /></el-icon>
           <p>暂无文件</p>
         </div>
       </div>
+
+      <!-- Visibility switch dialog -->
+      <el-dialog v-model="visibilityDialogVisible" title="切换文件可见性" width="360px" :show-close="false">
+        <p style="margin-bottom: 16px;">确定将文件 <strong>{{ visibilityTargetFile }}</strong> 切换为：</p>
+        <div style="display: flex; gap: 12px; justify-content: center;">
+          <el-button :type="visibilityTargetAction === 'private' ? 'primary' : 'default'" @click="visibilityTargetAction = 'private'">私有</el-button>
+          <el-button :type="visibilityTargetAction === 'public' ? 'primary' : 'default'" @click="visibilityTargetAction = 'public'">共享</el-button>
+        </div>
+        <template #footer>
+          <el-button @click="visibilityDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="confirmToggleVisibility">确定</el-button>
+        </template>
+      </el-dialog>
     </div>
 
     <!-- Chat area (right) -->
@@ -522,6 +567,37 @@ function askSuggested(q: string) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.file-filter-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.filter-tab {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-secondary);
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  font-family: var(--font-body);
+}
+
+.filter-tab:hover {
+  background: var(--color-muted);
+  border-color: var(--color-border-hover);
+}
+
+.filter-tab.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
 }
 
 .file-item {
