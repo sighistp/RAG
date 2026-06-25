@@ -609,6 +609,10 @@ async def upload_file(
     perm_id = None
     if user_dict:
         def _create_perm():
+            # 检查是否已有权限记录（避免重复上传同名文件时冲突）
+            existing = user_db.get_document_permission(filename, "rag_docs")
+            if existing:
+                return existing["id"]
             return user_db.create_document_permission(filename, "rag_docs", user_dict["id"], is_public=False)
         perm_id = await asyncio.to_thread(_create_perm)
 
