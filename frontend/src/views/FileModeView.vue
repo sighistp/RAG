@@ -4,7 +4,7 @@ import { useChatStore } from '../stores/chat'
 import { useFilesStore } from '../stores/files'
 import { useAnalysis } from '../composables/useAnalysis'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Delete, FolderOpened, Plus } from '@element-plus/icons-vue'
+import { Upload, FolderOpened, Plus } from '@element-plus/icons-vue'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
 import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
@@ -30,40 +30,31 @@ const filteredFiles = computed(() => {
   })
 })
 
-// Visibility dialog
-const visibilityDialogVisible = ref(false)
-const visibilityTargetFile = ref('')
-const visibilityTargetAction = ref<'private' | 'public'>('private')
-
-function handleFileClick(file: any) {
-  if (file.protected) {
-    // Protected files just select, no dialog
-    chatStore.selectFile(file.name)
-    return
+// File action handler (dropdown menu)
+async function handleFileAction(command: string, fileName: string) {
+  if (command === 'delete') {
+    await handleDelete(fileName)
+  } else if (command === 'public' || command === 'private') {
+    await toggleVisibility(fileName)
   }
-  // Show visibility dialog
-  visibilityTargetFile.value = file.name
-  visibilityTargetAction.value = file.is_public ? 'private' : 'public'
-  visibilityDialogVisible.value = true
-  chatStore.selectFile(file.name)
 }
 
-async function confirmToggleVisibility() {
+// Visibility toggle
+async function toggleVisibility(fileName: string) {
   try {
-    const resp = await fetch(`/api/files/${encodeURIComponent(visibilityTargetFile.value)}/visibility`, {
+    const resp = await fetch(`/api/files/${encodeURIComponent(fileName)}/visibility`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${localStorage.getItem('rag_token')}` }
     })
     if (!resp.ok) throw new Error('切换失败')
     const data = await resp.json()
     // Update local state
-    const file = filesStore.files.find(f => f.name === visibilityTargetFile.value)
+    const file = filesStore.files.find(f => f.name === fileName)
     if (file) file.is_public = data.is_public
     ElMessage.success(data.is_public ? '已切换为共享' : '已切换为私有')
   } catch (e: any) {
     ElMessage.error(e.message || '切换失败')
   }
-  visibilityDialogVisible.value = false
 }
 
 function getFileIcon(ext: string): string {
@@ -252,16 +243,24 @@ function askSuggested(q: string) {
         <!-- Individual files (filtered) -->
         <div v-for="file in filteredFiles" :key="file.name"
              :class="['file-item', { selected: chatStore.selectedFile === file.name }]"
-             @click="handleFileClick(file)">
+             @click="chatStore.selectFile(file.name)">
           <div class="file-item-icon">{{ getFileIcon(file.ext) }}</div>
           <div class="file-item-info">
             <div class="file-item-name" :title="file.name">{{ file.name }}</div>
             <div class="file-item-size">{{ file.size_human }}</div>
           </div>
           <div class="file-item-actions">
-            <button v-if="!file.protected" class="file-item-delete" @click.stop="handleDelete(file.name)" title="删除">
-              <el-icon><Delete /></el-icon>
-            </button>
+            <el-dropdown v-if="!file.protected" trigger="click" @command="(cmd: string) => handleFileAction(cmd, file.name)" @click.stop>
+              <button class="file-item-more" @click.stop>⋯</button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :command="file.is_public ? 'private' : 'public'">
+                    {{ file.is_public ? '切换为私有' : '切换为共享' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
         <div v-if="!filteredFiles.length" class="empty-files">
@@ -269,19 +268,6 @@ function askSuggested(q: string) {
           <p>暂无文件</p>
         </div>
       </div>
-
-      <!-- Visibility switch dialog -->
-      <el-dialog v-model="visibilityDialogVisible" title="切换文件可见性" width="360px" :show-close="false">
-        <p style="margin-bottom: 16px;">确定将文件 <strong>{{ visibilityTargetFile }}</strong> 切换为：</p>
-        <div style="display: flex; gap: 12px; justify-content: center;">
-          <el-button :type="visibilityTargetAction === 'private' ? 'primary' : 'default'" @click="visibilityTargetAction = 'private'">私有</el-button>
-          <el-button :type="visibilityTargetAction === 'public' ? 'primary' : 'default'" @click="visibilityTargetAction = 'public'">共享</el-button>
-        </div>
-        <template #footer>
-          <el-button @click="visibilityDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="confirmToggleVisibility">确定</el-button>
-        </template>
-      </el-dialog>
     </div>
 
     <!-- Chat area (right) -->
@@ -656,43 +642,7 @@ function askSuggested(q: string) {
   flex-shrink: 0;
 }
 
-.visibility-btn {
-  font-size: var(--text-xs);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--color-border);
-  background: var(--color-muted);
-  color: var(--color-secondary);
-  cursor: pointer;
-  transition: all var(--duration-fast);
-  white-space: nowrap;
-}
-
-.visibility-btn.public {
-  background: var(--color-accent-light);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-}
-
-.visibility-btn:hover {
-  background: var(--color-accent-subtle);
-}
-
-.visibility-tag {
-  font-size: var(--text-xs);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-muted);
-  color: var(--color-secondary);
-  white-space: nowrap;
-}
-
-.visibility-tag.public {
-  background: var(--color-accent-light);
-  color: var(--color-accent);
-}
-
-.file-item-delete {
+.file-item-more {
   opacity: 0;
   width: 24px;
   height: 24px;
@@ -706,15 +656,17 @@ function askSuggested(q: string) {
   cursor: pointer;
   transition: all var(--duration-fast);
   flex-shrink: 0;
+  font-size: 16px;
+  font-weight: bold;
 }
 
-.file-item:hover .file-item-delete {
+.file-item:hover .file-item-more {
   opacity: 1;
 }
 
-.file-item-delete:hover {
-  background: var(--color-destructive-light);
-  color: var(--color-destructive);
+.file-item-more:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
 }
 
 .empty-files {
