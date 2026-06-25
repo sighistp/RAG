@@ -506,12 +506,13 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
                     }
                 )
 
-    # 批量查询权限信息
+    # 批量查询权限信息并过滤
     if files and user_dict:
         filenames = [f["name"] for f in files]
         perm_map = await asyncio.to_thread(
             user_db.get_document_permissions_by_names, filenames, "rag_docs"
         )
+        filtered_files = []
         for f in files:
             perm = perm_map.get(f["name"])
             if perm:
@@ -519,12 +520,17 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
                 f["protected"] = perm.get("protected", False)
                 f["owner_id"] = perm.get("owner_id")
                 f["is_owner"] = perm["owner_id"] == user_dict["id"]
+                # 过滤：私有文件只对 owner 可见
+                if not f["is_public"] and not f["protected"] and not f["is_owner"]:
+                    continue
             else:
                 # 旧文档无权限记录，视为公开
                 f["is_public"] = True
                 f["protected"] = False
                 f["owner_id"] = None
                 f["is_owner"] = True
+            filtered_files.append(f)
+        files = filtered_files
 
     # Batch check which files are in KBs
     if files:
