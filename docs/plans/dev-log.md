@@ -3375,7 +3375,59 @@ frontend/
 
 ---
 
+## 权限模型简化 + Docker 部署 + Bug 修复（2026-06-26）
+
+### 权限模型重构
+
+将原来的 5 级权限系统简化为公开/私有切换：
+
+| 之前 | 之后 |
+|------|------|
+| 5 个等级（1-5） | 公开/私有 一个开关 |
+| 上传时选等级 | 上传时不用选，默认私有 |
+| 等级比较逻辑 | owner 或 is_public 放行 |
+| 共享机制 | 去掉（用公开代替） |
+
+**核心改动：**
+- `document_permissions` 表加 `is_public` 字段（默认 0=私有）
+- `check_doc_permission` 简化：owner 或 is_public → 放行
+- 新增 `PUT /files/{filename}/visibility` 切换端点
+- 启动时 `_ensure_permissions()` 为旧文件自动补建权限（owner=admin, public=True）
+- `GET /files` 返回 `is_public`、`owner_id`、`is_owner` 字段
+
+### Bug 修复
+
+| Bug | 修复 |
+|-----|------|
+| 删除一个文件导致全部文件向量丢失 | 改为 `delete_doc()` 只删除目标文件向量，不再 `clear()` 全部 |
+| `python-multipart` 缺失导致上传 500 | 添加到 `requirements.txt` |
+| `_init_admin()` 放在 early return 之后不执行 | 移到 early return 之前 |
+| Docker 容器内监听 127.0.0.1 无法外部访问 | `start.py` 根据 `DOCKER_CONTAINER` 环境变量切换 0.0.0.0 |
+
+### Docker 部署
+
+- 优化 Dockerfile：使用阿里云 apt/pypi 镜像源加速构建
+- 添加 Java（PDF 解析需要）
+- `docker-compose.yml` 挂载 `data/` 和 `qdrant_data/` 实现数据持久化
+- 服务器部署成功：http://39.105.89.99:8000
+
+### GitHub Actions 自动部署
+
+- 写好 `.github/workflows/deploy.yml`（SSH 部署）
+- 需要在 GitHub 仓库设置 3 个 Secrets：DEPLOY_HOST、DEPLOY_USER、DEPLOY_KEY
+- 因 PAT token 缺少 workflow 权限，该文件暂未推送
+
+### 前端改动
+
+- 去掉上传时的等级选择器
+- 文件列表每行显示 `[公开]` / `[私有]` 切换按钮
+- owner 可点击切换，非 owner 只显示状态
+- 文件列表显示 `is_owner` 标识
+
+---
+
 ## 下一步计划
 
-- Docker 容器化
-- CI/CD（GitHub Actions）
+- 修复删除后多用户不同步的问题
+- GitHub Actions 自动部署配置
+- Docker 容器化优化
