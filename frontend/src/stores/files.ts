@@ -10,6 +10,10 @@ interface FileInfo {
   size: number
   size_human: string
   ext: string
+  is_public?: boolean
+  owner_id?: number
+  is_owner?: boolean
+  in_kb?: boolean
 }
 
 export const useFilesStore = defineStore('files', () => {
@@ -31,13 +35,10 @@ export const useFilesStore = defineStore('files', () => {
     }
   }
 
-  async function uploadFile(file: File, permissionLevel?: number) {
+  async function uploadFile(file: File) {
     const auth = useAuthStore()
     const formData = new FormData()
     formData.append('file', file)
-    if (permissionLevel !== undefined) {
-      formData.append('permission_level', String(permissionLevel))
-    }
 
     const res = await api.post(`${API}/upload`, formData, {
       headers: auth.getAuthHeaders()

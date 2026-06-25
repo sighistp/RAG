@@ -14,7 +14,6 @@ const filesStore = useFilesStore()
 const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer, handleConfirm } = useAnalysis()
 const messagesContainer = ref<HTMLElement>()
 const dragover = ref(false)
-const uploadPermissionLevel = ref(1)
 
 function getFileIcon(ext: string): string {
   const icons: Record<string, string> = { '.pdf': '📕', '.docx': '📘', '.xlsx': '📊', '.csv': '📊', '.md': '📝', '.txt': '📄' }
@@ -35,11 +34,28 @@ async function handleDrop(e: DragEvent) {
       continue
     }
     try {
-      await filesStore.uploadFile(file, uploadPermissionLevel.value)
+      await filesStore.uploadFile(file)
       ElMessage.success(`文件 ${file.name} 上传成功`)
     } catch (err: any) {
       ElMessage.error(err.response?.data?.detail || `上传失败: ${file.name}`)
     }
+  }
+}
+
+async function toggleVisibility(name: string) {
+  try {
+    const resp = await fetch(`/api/files/${encodeURIComponent(name)}/visibility`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('rag_token')}` }
+    })
+    if (!resp.ok) throw new Error('切换失败')
+    const data = await resp.json()
+    // 更新本地状态
+    const file = filesStore.files.find(f => f.name === name)
+    if (file) file.is_public = data.is_public
+    ElMessage.success(data.is_public ? '已设为公开' : '已设为私有')
+  } catch (e: any) {
+    ElMessage.error(e.message || '切换失败')
   }
 }
 
@@ -165,14 +181,7 @@ function askSuggested(q: string) {
       <div class="file-panel-header">
         <h1 class="file-panel-title">文件管理</h1>
         <div style="display: flex; align-items: center; gap: 8px;">
-          <el-select v-model="uploadPermissionLevel" size="small" style="width: 100px;">
-            <el-option :value="1" label="等级 1" />
-            <el-option :value="2" label="等级 2" />
-            <el-option :value="3" label="等级 3" />
-            <el-option :value="4" label="等级 4" />
-            <el-option :value="5" label="等级 5" />
-          </el-select>
-          <el-upload :show-file-list="false" :before-upload="() => false" :on-change="async (f: any) => { try { await filesStore.uploadFile(f.raw!, uploadPermissionLevel); ElMessage.success('上传成功') } catch (e: any) { ElMessage.error(e?.response?.data?.detail || '上传失败') } }" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+          <el-upload :show-file-list="false" :before-upload="() => false" :on-change="async (f: any) => { try { await filesStore.uploadFile(f.raw!); ElMessage.success('上传成功') } catch (e: any) { ElMessage.error(e?.response?.data?.detail || '上传失败') } }" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
             <el-button size="small" type="primary">
               <el-icon><Upload /></el-icon>
               上传
@@ -207,9 +216,18 @@ function askSuggested(q: string) {
             <div class="file-item-name" :title="file.name">{{ file.name }}</div>
             <div class="file-item-size">{{ file.size_human }}</div>
           </div>
-          <button class="file-item-delete" @click.stop="handleDelete(file.name)" title="删除">
-            <el-icon><Delete /></el-icon>
-          </button>
+          <div class="file-item-actions">
+            <button v-if="file.is_owner" :class="['visibility-btn', { public: file.is_public }]"
+                    @click.stop="toggleVisibility(file.name)" :title="file.is_public ? '公开 - 点击切换为私有' : '私有 - 点击切换为公开'">
+              {{ file.is_public ? '公开' : '私有' }}
+            </button>
+            <span v-else :class="['visibility-tag', { public: file.is_public }]">
+              {{ file.is_public ? '公开' : '私有' }}
+            </span>
+            <button class="file-item-delete" @click.stop="handleDelete(file.name)" title="删除">
+              <el-icon><Delete /></el-icon>
+            </button>
+          </div>
         </div>
         <div v-if="!filesStore.files.length" class="empty-files">
           <el-icon class="empty-icon"><FolderOpened /></el-icon>
@@ -544,6 +562,49 @@ function askSuggested(q: string) {
   font-size: var(--text-xs);
   color: var(--color-secondary);
   margin-top: 1px;
+}
+
+.file-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.visibility-btn {
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-muted);
+  color: var(--color-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  white-space: nowrap;
+}
+
+.visibility-btn.public {
+  background: var(--color-accent-light);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.visibility-btn:hover {
+  background: var(--color-accent-subtle);
+}
+
+.visibility-tag {
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-muted);
+  color: var(--color-secondary);
+  white-space: nowrap;
+}
+
+.visibility-tag.public {
+  background: var(--color-accent-light);
+  color: var(--color-accent);
 }
 
 .file-item-delete {
