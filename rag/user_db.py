@@ -159,6 +159,15 @@ class UserDB:
                 )
                 self._conn.commit()
 
+            # Add is_public column to document_permissions if it doesn't exist (idempotent)
+            try:
+                self._conn.execute("SELECT is_public FROM document_permissions LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute(
+                    "ALTER TABLE document_permissions ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT 0"
+                )
+                self._conn.commit()
+
             # Add mode column to conversations if it doesn't exist (idempotent)
             try:
                 self._conn.execute("SELECT mode FROM conversations LIMIT 1")
@@ -583,11 +592,11 @@ class UserDB:
     # Document Permissions
     # ------------------------------------------------------------------
 
-    def create_document_permission(self, doc_name: str, kb_id: str, owner_id: int, permission_level: int = 1) -> int:
+    def create_document_permission(self, doc_name: str, kb_id: str, owner_id: int, permission_level: int = 1, is_public: bool = False) -> int:
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO document_permissions (doc_name, kb_id, owner_id, permission_level) VALUES (?, ?, ?, ?)",
-                (doc_name, kb_id, owner_id, permission_level),
+                "INSERT INTO document_permissions (doc_name, kb_id, owner_id, permission_level, is_public) VALUES (?, ?, ?, ?, ?)",
+                (doc_name, kb_id, owner_id, permission_level, int(is_public)),
             )
             self._conn.commit()
             return cur.lastrowid
@@ -595,20 +604,28 @@ class UserDB:
     def get_document_permission(self, doc_name: str, kb_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
                 "FROM document_permissions WHERE doc_name = ? AND kb_id = ?",
                 (doc_name, kb_id),
             ).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        d = dict(row)
+        d["is_public"] = bool(d.get("is_public", 0))
+        return d
 
     def get_document_permission_by_id(self, doc_id: int) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
                 "FROM document_permissions WHERE id = ?",
                 (doc_id,),
             ).fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        d = dict(row)
+        d["is_public"] = bool(d.get("is_public", 0))
+        return d
 
     def update_document_permission_level(self, doc_id: int, level: int) -> None:
         with self._lock:
@@ -618,19 +635,37 @@ class UserDB:
             )
             self._conn.commit()
 
+    def toggle_document_visibility(self, doc_id: int) -> bool:
+        """切换文档公开/私有状态，返回新的 is_public 值。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT is_public FROM document_permissions WHERE id = ?", (doc_id,)
+            ).fetchone()
+            if not row:
+                return False
+            new_val = 0 if row["is_public"] else 1
+            self._conn.execute(
+                "UPDATE document_permissions SET is_public = ? WHERE id = ?",
+                (new_val, doc_id),
+            )
+            self._conn.commit()
+            return bool(new_val)
+
     def delete_document_permission(self, doc_id: int) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM document_permissions WHERE id = ?", (doc_id,))
             self._conn.commit()
 
-    def get_accessible_doc_names(self, kb_id: str, user_id: int, user_level: int) -> list[str]:
-        """返回用户在指定知识库中有权查看的文档名列表。"""
+    def get_accessible_doc_names(self, kb_id: str, user_id: int, user_level: int = 1) -> list[str]:
+        """返回用户在指定知识库中有权查看的文档名列表。
+
+        规则：owner 或 is_public=1 的文档可见。
+        """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT DISTINCT dp.doc_name FROM document_permissions dp "
-                "LEFT JOIN document_shares ds ON ds.doc_id = dp.id AND ds.user_id = ? "
-                "WHERE dp.kb_id = ? AND (dp.owner_id = ? OR ds.id IS NOT NULL OR ? >= dp.permission_level)",
-                (user_id, kb_id, user_id, user_level),
+                "WHERE dp.kb_id = ? AND (dp.owner_id = ? OR dp.is_public = 1)",
+                (kb_id, user_id),
             ).fetchall()
         return [r["doc_name"] for r in rows]
 
@@ -641,11 +676,15 @@ class UserDB:
         with self._lock:
             placeholders = ",".join("?" for _ in doc_names)
             rows = self._conn.execute(
-                f"SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
                 f"FROM document_permissions WHERE doc_name IN ({placeholders}) AND kb_id = ?",
                 (*doc_names, kb_id),
             ).fetchall()
-        perm_map = {r["doc_name"]: dict(r) for r in rows}
+        perm_map = {}
+        for r in rows:
+            d = dict(r)
+            d["is_public"] = bool(d.get("is_public", 0))
+            perm_map[d["doc_name"]] = d
         return {name: perm_map.get(name) for name in doc_names}
 
     def get_document_permissions_by_ids(self, doc_ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -655,11 +694,16 @@ class UserDB:
         with self._lock:
             placeholders = ",".join("?" for _ in doc_ids)
             rows = self._conn.execute(
-                f"SELECT id, doc_name, kb_id, owner_id, permission_level, created_at "
+                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
                 f"FROM document_permissions WHERE id IN ({placeholders})",
                 doc_ids,
             ).fetchall()
-        return {r["id"]: dict(r) for r in rows}
+        result = {}
+        for r in rows:
+            d = dict(r)
+            d["is_public"] = bool(d.get("is_public", 0))
+            result[d["id"]] = d
+        return result
 
     def get_user_by_username(self, username: str) -> dict[str, Any] | None:
         """按用户名查询用户。"""

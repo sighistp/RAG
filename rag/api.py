@@ -62,11 +62,31 @@ def auto_index_on_startup():
             user_db.set_user_admin(target["id"], True)
             logger.info("已将用户 %s 设置为管理员", admin_username)
 
+    # 为旧文件自动补建权限记录（owner=admin, is_public=True）
+    def _ensure_permissions():
+        if not DATA_DIR.is_dir():
+            return
+        # 找到第一个 admin 用户作为默认 owner
+        admin_user = None
+        with user_db._lock:
+            row = user_db._conn.execute("SELECT id FROM users WHERE is_admin = 1 LIMIT 1").fetchone()
+        if row:
+            admin_user = user_db.get_user_by_id(row["id"])
+        if not admin_user:
+            return
+        for fpath in DATA_DIR.iterdir():
+            if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
+                existing = user_db.get_document_permission(fpath.name, "rag_docs")
+                if not existing:
+                    user_db.create_document_permission(fpath.name, "rag_docs", admin_user["id"], is_public=True)
+                    logger.info("为旧文件补建权限: %s (owner=%s, public=True)", fpath.name, admin_user["username"])
+
     if not changed and not deleted:
         logger.info("索引无需更新（%d 文件）", len(current_hashes))
         with _pipeline_lock.write():
             pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
         _init_admin()
+        _ensure_permissions()
         return
 
     logger.info("索引变化: %d 新增, %d 修改, %d 删除", len(added), len(modified), len(deleted))
@@ -90,6 +110,7 @@ def auto_index_on_startup():
 
     try:
         _init_admin()
+        _ensure_permissions()
     except Exception as e:
         logger.warning("管理员初始化失败: %s", e)
 
@@ -440,7 +461,13 @@ async def regenerate(req: RegenerateRequest, authorization: str = Header(default
 
 
 @app.get("/files", summary="列出可索引文件", description="列出 data/upload/ 目录下的所有支持格式文件")
-async def list_files(user_id: str = Security(verify_api_key)):
+async def list_files(user_id: str = Security(verify_api_key), authorization: str = Header(default="")):
+    # 获取当前用户
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
     files = []
     if DATA_DIR.is_dir():
         for fpath in sorted(DATA_DIR.iterdir()):
@@ -454,6 +481,25 @@ async def list_files(user_id: str = Security(verify_api_key)):
                         "ext": fpath.suffix.lower(),
                     }
                 )
+
+    # 批量查询权限信息
+    if files and user_dict:
+        filenames = [f["name"] for f in files]
+        perm_map = await asyncio.to_thread(
+            user_db.get_document_permissions_by_names, filenames, "rag_docs"
+        )
+        for f in files:
+            perm = perm_map.get(f["name"])
+            if perm:
+                f["is_public"] = perm.get("is_public", False)
+                f["owner_id"] = perm.get("owner_id")
+                f["is_owner"] = perm["owner_id"] == user_dict["id"]
+            else:
+                # 旧文档无权限记录，视为公开
+                f["is_public"] = True
+                f["owner_id"] = None
+                f["is_owner"] = True
+
     # Batch check which files are in KBs
     if files:
         filenames = [f["name"] for f in files]
@@ -498,7 +544,6 @@ def _human_size(size: int) -> str:
 )
 async def upload_file(
     file: UploadFile = File(..., description="要上传的文件"),
-    permission_level: int = Query(default=1, ge=1, le=5),
     authorization: str = Header(default=""),
 ):
     from rag.pipeline import RAGPipeline
@@ -534,11 +579,11 @@ async def upload_file(
         token = authorization.replace("Bearer ", "")
         user_dict = await asyncio.to_thread(_get_current_user, token)
 
-    # 先创建权限记录（索引失败时回滚）
+    # 先创建权限记录（默认私有，索引失败时回滚）
     perm_id = None
     if user_dict:
         def _create_perm():
-            return user_db.create_document_permission(filename, "rag_docs", user_dict["id"], permission_level)
+            return user_db.create_document_permission(filename, "rag_docs", user_dict["id"], is_public=False)
         perm_id = await asyncio.to_thread(_create_perm)
 
     # Index the file
@@ -607,6 +652,26 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
             logger.error("Pipeline 刷新失败（删除后）: %s", e)
 
     return {"status": "deleted", "filename": safe_name}
+
+
+@app.put("/files/{filename}/visibility", summary="切换文件公开/私有")
+async def toggle_file_visibility(filename: str, authorization: str = Header(default="")):
+    safe_name = Path(filename).name
+    user_dict = await _require_auth(authorization)
+
+    def _toggle():
+        perm = user_db.get_document_permission(safe_name, "rag_docs")
+        if not perm:
+            raise HTTPException(status_code=404, detail="文件无权限记录")
+        if not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
+            raise HTTPException(status_code=403, detail="仅文件所有者可切换")
+        new_val = user_db.toggle_document_visibility(perm["id"])
+        return {"filename": safe_name, "is_public": new_val}
+
+    try:
+        return await asyncio.to_thread(_toggle)
+    except HTTPException:
+        raise
 
 
 @app.post("/files/{filename}/tags", summary="为文档添加标签", description="为指定文档的所有分块添加标签")
@@ -966,7 +1031,6 @@ async def delete_knowledge_base(kb_id: str, user_id: str = Security(verify_api_k
 async def add_document_to_kb(
     kb_id: str,
     file: UploadFile = File(...),
-    permission_level: int = Query(default=1, ge=1, le=5),
     user_id: str = Security(verify_api_key),
     authorization: str = Header(default=""),
 ):
@@ -991,7 +1055,7 @@ async def add_document_to_kb(
     perm_id = None
     if user_dict:
         def _create_perm():
-            return user_db.create_document_permission(filename, kb_id, user_dict["id"], permission_level)
+            return user_db.create_document_permission(filename, kb_id, user_dict["id"], is_public=False)
         perm_id = await asyncio.to_thread(_create_perm)
 
     try:

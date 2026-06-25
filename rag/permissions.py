@@ -1,7 +1,10 @@
 """文档权限校验工具函数。
 
-统一的权限校验入口，供 API 层和 pipeline 层调用。
-不是中间件 — 各接口按需调用。
+简化模型：
+- 文件归上传者所有（owner）
+- 文件可选公开/私有（is_public）
+- 知识库所有人共享
+- admin 绕过所有限制
 """
 
 from __future__ import annotations
@@ -23,16 +26,15 @@ def check_doc_permission(
 ) -> dict | None:
     """校验用户对指定文档的操作权限。
 
-    Args:
-        db: UserDB 实例
-        doc_name: 文档名
-        kb_id: 知识库 ID
-        user: 当前用户 dict，需含 id / is_admin / permission_level
-        action: "view" | "edit" | "delete"
+    规则：
+    - 无权限记录（旧文档）→ 放行
+    - admin → 放行
+    - 查看：owner 或 is_public → 放行
+    - 编辑/删除：仅 owner → 放行
 
     Returns:
         document_permission 记录 dict（有记录时）
-        None（无权限记录 — 旧文档视为公开，放行）
+        None（无权限记录 — 旧文档，放行）
 
     Raises:
         HTTPException 403: 无权操作
@@ -48,18 +50,16 @@ def check_doc_permission(
         return doc
 
     if action == "view":
-        if doc["owner_id"] == user["id"]:
-            return doc
-        if db.is_document_shared(doc["id"], user["id"]):
-            return doc
-        if user.get("permission_level", 1) >= doc["permission_level"]:
+        # owner 或公开文档 → 可查看
+        if doc["owner_id"] == user["id"] or doc.get("is_public"):
             return doc
         raise HTTPException(status_code=403, detail="无权查看该文档")
 
     if action in ("edit", "delete"):
+        # 仅 owner 可操作
         if doc["owner_id"] == user["id"]:
             return doc
-        raise HTTPException(status_code=403, detail="仅文档上传者或管理员可操作")
+        raise HTTPException(status_code=403, detail="仅文档上传者可操作")
 
     raise HTTPException(status_code=400, detail=f"未知操作: {action}")
 
@@ -67,7 +67,7 @@ def check_doc_permission(
 def get_accessible_doc_names(db: UserDB, kb_id: str, user: dict) -> list[str]:
     """返回用户在指定知识库中有权查看的文档名列表。
 
-    用于 RAG 检索后过滤。
+    规则：owner 或 is_public 的文档可见。admin 返回 None（不过滤）。
     """
     if user.get("is_admin"):
         return None  # None 表示不过滤
@@ -75,7 +75,6 @@ def get_accessible_doc_names(db: UserDB, kb_id: str, user: dict) -> list[str]:
     return db.get_accessible_doc_names(
         kb_id=kb_id,
         user_id=user["id"],
-        user_level=user.get("permission_level", 1),
     )
 
 
@@ -87,19 +86,11 @@ def filter_chunks_by_permission(
 ) -> list:
     """过滤掉用户无权查看的文档的 chunks。
 
-    策略：
+    规则：
     - 管理员：不过滤
     - 旧文档无权限记录：视为公开，保留
-    - 有权限记录的文档：按权限规则过滤
-
-    Args:
-        db: UserDB 实例
-        kb_id: 知识库 ID
-        chunks: Chunk 列表
-        user: 当前用户 dict
-
-    Returns:
-        过滤后的 Chunk 列表
+    - owner 或 is_public：保留
+    - 其他：过滤掉
     """
     if user.get("is_admin"):
         return list(chunks)
@@ -112,7 +103,6 @@ def filter_chunks_by_permission(
     allowed_names = db.get_accessible_doc_names(
         kb_id=kb_id,
         user_id=user["id"],
-        user_level=user.get("permission_level", 1),
     )
     allowed_set = set(allowed_names)
 
