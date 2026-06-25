@@ -663,15 +663,17 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
         except HTTPException:
             raise
 
-    # Delete the file
-    file_path.unlink()
-
-    # 只删除该文件的向量，不清空整个集合
+    # 先删向量，再删文件（确保向量删除成功）
     from rag.vector_store import delete_doc, COLLECTION_NAME
     try:
         delete_doc(COLLECTION_NAME, safe_name)
+        logger.info("向量已删除: %s", safe_name)
     except Exception as e:
-        logger.warning("删除向量失败: %s", e)
+        logger.error("删除向量失败: %s", e)
+        raise HTTPException(status_code=500, detail=f"删除向量失败: {e}")
+
+    # 向量删除成功后，再删文件
+    file_path.unlink()
 
     # 刷新 pipeline
     with _pipeline_lock.write():
