@@ -592,23 +592,19 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
     # Delete the file
     file_path.unlink()
 
-    # Re-index remaining files
-    remaining = [f for f in DATA_DIR.iterdir() if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS]
+    # 只删除该文件的向量，不清空整个集合
+    from rag.vector_store import delete_doc, COLLECTION_NAME
+    try:
+        delete_doc(COLLECTION_NAME, safe_name)
+    except Exception as e:
+        logger.warning("删除向量失败: %s", e)
 
+    # 刷新 pipeline
     with _pipeline_lock.write():
-        if remaining:
-            try:
-                index_folder(str(DATA_DIR))
-                pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"重新索引失败: {e}")
-        else:
-            # No files left — clear the collection and reset pipeline
-            try:
-                clear_collection()
-            except Exception as e:
-                logger.error("清空集合失败: %s", e)
-            pipeline = None
+        try:
+            pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
+        except Exception as e:
+            logger.error("Pipeline 刷新失败（删除后）: %s", e)
 
     return {"status": "deleted", "filename": safe_name}
 
