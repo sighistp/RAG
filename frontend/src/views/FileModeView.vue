@@ -213,18 +213,21 @@ function askSuggested(q: string) {
              @click="chatStore.selectFile(file.name)">
           <div class="file-item-icon">{{ getFileIcon(file.ext) }}</div>
           <div class="file-item-info">
-            <div class="file-item-name" :title="file.name">{{ file.name }}</div>
+            <div class="file-item-name" :title="file.name">
+              {{ file.name }}
+              <span v-if="file.protected" class="protected-badge" title="受保护文件">🔒</span>
+            </div>
             <div class="file-item-size">{{ file.size_human }}</div>
           </div>
           <div class="file-item-actions">
-            <button v-if="file.is_owner" :class="['visibility-btn', { public: file.is_public }]"
+            <button v-if="file.is_owner && !file.protected" :class="['visibility-btn', { public: file.is_public }]"
                     @click.stop="toggleVisibility(file.name)" :title="file.is_public ? '公开 - 点击切换为私有' : '私有 - 点击切换为公开'">
               {{ file.is_public ? '公开' : '私有' }}
             </button>
-            <span v-else :class="['visibility-tag', { public: file.is_public }]">
+            <span v-else-if="!file.protected" :class="['visibility-tag', { public: file.is_public }]">
               {{ file.is_public ? '公开' : '私有' }}
             </span>
-            <button class="file-item-delete" @click.stop="handleDelete(file.name)" title="删除">
+            <button v-if="!file.protected" class="file-item-delete" @click.stop="handleDelete(file.name)" title="删除">
               <el-icon><Delete /></el-icon>
             </button>
           </div>
@@ -562,6 +565,12 @@ function askSuggested(q: string) {
   font-size: var(--text-xs);
   color: var(--color-secondary);
   margin-top: 1px;
+}
+
+.protected-badge {
+  font-size: 12px;
+  margin-left: 4px;
+  vertical-align: middle;
 }
 
 .file-item-actions {

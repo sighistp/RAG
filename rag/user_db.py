@@ -168,6 +168,15 @@ class UserDB:
                 )
                 self._conn.commit()
 
+            # Add protected column to document_permissions if it doesn't exist (idempotent)
+            try:
+                self._conn.execute("SELECT protected FROM document_permissions LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute(
+                    "ALTER TABLE document_permissions ADD COLUMN protected BOOLEAN NOT NULL DEFAULT 0"
+                )
+                self._conn.commit()
+
             # Add mode column to conversations if it doesn't exist (idempotent)
             try:
                 self._conn.execute("SELECT mode FROM conversations LIMIT 1")
@@ -592,11 +601,11 @@ class UserDB:
     # Document Permissions
     # ------------------------------------------------------------------
 
-    def create_document_permission(self, doc_name: str, kb_id: str, owner_id: int, permission_level: int = 1, is_public: bool = False) -> int:
+    def create_document_permission(self, doc_name: str, kb_id: str, owner_id: int, permission_level: int = 1, is_public: bool = False, protected: bool = False) -> int:
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO document_permissions (doc_name, kb_id, owner_id, permission_level, is_public) VALUES (?, ?, ?, ?, ?)",
-                (doc_name, kb_id, owner_id, permission_level, int(is_public)),
+                "INSERT INTO document_permissions (doc_name, kb_id, owner_id, permission_level, is_public, protected) VALUES (?, ?, ?, ?, ?, ?)",
+                (doc_name, kb_id, owner_id, permission_level, int(is_public), int(protected)),
             )
             self._conn.commit()
             return cur.lastrowid
@@ -604,7 +613,7 @@ class UserDB:
     def get_document_permission(self, doc_name: str, kb_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, created_at "
                 "FROM document_permissions WHERE doc_name = ? AND kb_id = ?",
                 (doc_name, kb_id),
             ).fetchone()
@@ -612,12 +621,13 @@ class UserDB:
             return None
         d = dict(row)
         d["is_public"] = bool(d.get("is_public", 0))
+        d["protected"] = bool(d.get("protected", 0))
         return d
 
     def get_document_permission_by_id(self, doc_id: int) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, created_at "
                 "FROM document_permissions WHERE id = ?",
                 (doc_id,),
             ).fetchone()
@@ -625,6 +635,7 @@ class UserDB:
             return None
         d = dict(row)
         d["is_public"] = bool(d.get("is_public", 0))
+        d["protected"] = bool(d.get("protected", 0))
         return d
 
     def update_document_permission_level(self, doc_id: int, level: int) -> None:
@@ -676,7 +687,7 @@ class UserDB:
         with self._lock:
             placeholders = ",".join("?" for _ in doc_names)
             rows = self._conn.execute(
-                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
+                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, created_at "
                 f"FROM document_permissions WHERE doc_name IN ({placeholders}) AND kb_id = ?",
                 (*doc_names, kb_id),
             ).fetchall()
@@ -684,6 +695,7 @@ class UserDB:
         for r in rows:
             d = dict(r)
             d["is_public"] = bool(d.get("is_public", 0))
+            d["protected"] = bool(d.get("protected", 0))
             perm_map[d["doc_name"]] = d
         return {name: perm_map.get(name) for name in doc_names}
 
@@ -694,7 +706,7 @@ class UserDB:
         with self._lock:
             placeholders = ",".join("?" for _ in doc_ids)
             rows = self._conn.execute(
-                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, created_at "
+                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, created_at "
                 f"FROM document_permissions WHERE id IN ({placeholders})",
                 doc_ids,
             ).fetchall()
@@ -702,6 +714,7 @@ class UserDB:
         for r in rows:
             d = dict(r)
             d["is_public"] = bool(d.get("is_public", 0))
+            d["protected"] = bool(d.get("protected", 0))
             result[d["id"]] = d
         return result
 

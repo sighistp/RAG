@@ -11,6 +11,7 @@ interface FileInfo {
   size_human: string
   ext: string
   is_public?: boolean
+  protected?: boolean
   owner_id?: number
   is_owner?: boolean
   in_kb?: boolean

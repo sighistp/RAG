@@ -62,31 +62,52 @@ def auto_index_on_startup():
             user_db.set_user_admin(target["id"], True)
             logger.info("已将用户 %s 设置为管理员", admin_username)
 
-    # 为旧文件自动补建权限记录（owner=admin, is_public=True）
-    def _ensure_permissions():
-        if not DATA_DIR.is_dir():
+    # 同步 git 仓库中的受保护文件到服务器
+    def _sync_repo_files():
+        import shutil
+        # git 仓库中的 data/upload/ 目录
+        repo_upload = Path(__file__).resolve().parent.parent / "data" / "upload"
+        if not repo_upload.is_dir():
             return
+        if not DATA_DIR.is_dir():
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
         # 找到第一个 admin 用户作为默认 owner
         admin_user = None
         with user_db._lock:
             row = user_db._conn.execute("SELECT id FROM users WHERE is_admin = 1 LIMIT 1").fetchone()
         if row:
             admin_user = user_db.get_user_by_id(row["id"])
-        if not admin_user:
-            return
-        for fpath in DATA_DIR.iterdir():
+        for fpath in repo_upload.iterdir():
             if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
+                dest = DATA_DIR / fpath.name
+                # 如果服务器上没有这个文件，复制过去
+                if not dest.exists():
+                    shutil.copy2(str(fpath), str(dest))
+                    logger.info("同步仓库文件: %s", fpath.name)
+                # 确保有权限记录且标记为受保护
                 existing = user_db.get_document_permission(fpath.name, "rag_docs")
                 if not existing:
-                    user_db.create_document_permission(fpath.name, "rag_docs", admin_user["id"], is_public=True)
-                    logger.info("为旧文件补建权限: %s (owner=%s, public=True)", fpath.name, admin_user["username"])
+                    if admin_user:
+                        user_db.create_document_permission(
+                            fpath.name, "rag_docs", admin_user["id"],
+                            is_public=True, protected=True
+                        )
+                        logger.info("创建受保护权限: %s", fpath.name)
+                elif not existing.get("protected"):
+                    # 已有记录但未标记为受保护，更新标记
+                    with user_db._lock:
+                        user_db._conn.execute(
+                            "UPDATE document_permissions SET protected = 1 WHERE id = ?",
+                            (existing["id"],)
+                        )
+                        user_db._conn.commit()
 
     if not changed and not deleted:
         logger.info("索引无需更新（%d 文件）", len(current_hashes))
         with _pipeline_lock.write():
             pipeline = RAGPipeline(kb_id="rag_docs", user_db=user_db)
         _init_admin()
-        _ensure_permissions()
+        _sync_repo_files()
         return
 
     logger.info("索引变化: %d 新增, %d 修改, %d 删除", len(added), len(modified), len(deleted))
@@ -110,7 +131,7 @@ def auto_index_on_startup():
 
     try:
         _init_admin()
-        _ensure_permissions()
+        _sync_repo_files()
     except Exception as e:
         logger.warning("管理员初始化失败: %s", e)
 
@@ -495,11 +516,13 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
             perm = perm_map.get(f["name"])
             if perm:
                 f["is_public"] = perm.get("is_public", False)
+                f["protected"] = perm.get("protected", False)
                 f["owner_id"] = perm.get("owner_id")
                 f["is_owner"] = perm["owner_id"] == user_dict["id"]
             else:
                 # 旧文档无权限记录，视为公开
                 f["is_public"] = True
+                f["protected"] = False
                 f["owner_id"] = None
                 f["is_owner"] = True
 
@@ -612,9 +635,7 @@ async def upload_file(
 
 @app.delete("/files/{filename}", summary="删除文件", description="从 data/upload/ 删除文件并重新索引")
 async def delete_file(filename: str, authorization: str = Header(default="")):
-    from rag.folder_indexer import index_folder
-    from rag.pipeline import RAGPipeline
-    from rag.vector_store import clear as clear_collection
+    from rag.vector_store import delete_doc, COLLECTION_NAME
 
     global pipeline
 
@@ -625,7 +646,12 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"文件 {safe_name} 不存在")
 
-    # 权限校验（旧文档无记录时 check_doc_permission 返回 None，放行）
+    # 检查是否为受保护文件
+    perm = user_db.get_document_permission(safe_name, "rag_docs")
+    if perm and perm.get("protected"):
+        raise HTTPException(status_code=403, detail=f"文件 {safe_name} 受保护，不可删除")
+
+    # 权限校验
     user_dict = None
     if authorization and authorization.startswith("Bearer "):
         token = authorization.replace("Bearer ", "")
