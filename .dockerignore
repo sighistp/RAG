@@ -1,0 +1,17 @@
+node_modules
+frontend/node_modules
+__pycache__
+*.pyc
+.git
+.env
+data/
+qdrant_data/
+*.db
+*.db-shm
+*.db-wal
+.vite
+dist
+.pytest_cache
+.ruff_cache
+.claude
+history
