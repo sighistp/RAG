@@ -71,12 +71,21 @@ def auto_index_on_startup():
             return
         if not DATA_DIR.is_dir():
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-        # 找到第一个 admin 用户作为默认 owner
-        admin_user = None
+        # 找到第一个可用用户作为默认 owner（优先 admin）
+        owner_user = None
         with user_db._lock:
             row = user_db._conn.execute("SELECT id FROM users WHERE is_admin = 1 LIMIT 1").fetchone()
         if row:
-            admin_user = user_db.get_user_by_id(row["id"])
+            owner_user = user_db.get_user_by_id(row["id"])
+        if not owner_user:
+            # 没有 admin，用第一个用户
+            with user_db._lock:
+                row = user_db._conn.execute("SELECT id FROM users LIMIT 1").fetchone()
+            if row:
+                owner_user = user_db.get_user_by_id(row["id"])
+        if not owner_user:
+            logger.warning("无用户，跳过仓库文件同步")
+            return
         for fpath in repo_upload.iterdir():
             if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
                 dest = DATA_DIR / fpath.name
@@ -87,20 +96,20 @@ def auto_index_on_startup():
                 # 确保有权限记录且标记为受保护
                 existing = user_db.get_document_permission(fpath.name, "rag_docs")
                 if not existing:
-                    if admin_user:
-                        user_db.create_document_permission(
-                            fpath.name, "rag_docs", admin_user["id"],
-                            is_public=True, protected=True
-                        )
-                        logger.info("创建受保护权限: %s", fpath.name)
+                    user_db.create_document_permission(
+                        fpath.name, "rag_docs", owner_user["id"],
+                        is_public=True, protected=True
+                    )
+                    logger.info("创建受保护权限: %s (owner=%s)", fpath.name, owner_user["username"])
                 elif not existing.get("protected"):
                     # 已有记录但未标记为受保护，更新标记
                     with user_db._lock:
                         user_db._conn.execute(
-                            "UPDATE document_permissions SET protected = 1 WHERE id = ?",
+                            "UPDATE document_permissions SET protected = 1, is_public = 1 WHERE id = ?",
                             (existing["id"],)
                         )
                         user_db._conn.commit()
+                    logger.info("更新为受保护: %s", fpath.name)
 
     if not changed and not deleted:
         logger.info("索引无需更新（%d 文件）", len(current_hashes))
@@ -507,7 +516,7 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
                 )
 
     # 批量查询权限信息并过滤
-    if files and user_dict:
+    if files:
         filenames = [f["name"] for f in files]
         perm_map = await asyncio.to_thread(
             user_db.get_document_permissions_by_names, filenames, "rag_docs"
@@ -519,9 +528,12 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
                 f["is_public"] = perm.get("is_public", False)
                 f["protected"] = perm.get("protected", False)
                 f["owner_id"] = perm.get("owner_id")
-                f["is_owner"] = perm["owner_id"] == user_dict["id"]
+                f["is_owner"] = user_dict and perm["owner_id"] == user_dict["id"]
                 # 过滤：私有文件只对 owner 可见
-                if not f["is_public"] and not f["protected"] and not f["is_owner"]:
+                if user_dict and not f["is_public"] and not f["protected"] and not f["is_owner"]:
+                    continue
+                # 未登录用户只能看到公开和受保护文件
+                if not user_dict and not f["is_public"] and not f["protected"]:
                     continue
             else:
                 # 旧文档无权限记录，视为公开
