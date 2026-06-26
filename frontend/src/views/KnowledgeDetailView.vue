@@ -274,28 +274,6 @@ async function removeFromKB(doc: any) {
   }
 }
 
-async function deleteFile(doc: any) {
-  try {
-    await ElMessageBox.confirm(
-      `确定永久删除文件「${doc.filename}」？此操作不可恢复。`,
-      '删除文件',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'error' }
-    )
-    removingDoc.value = doc.filename
-    await api.delete(`/files/${encodeURIComponent(doc.filename)}`, {
-      headers: authStore.getAuthHeaders()
-    })
-    ElMessage.success('文件已删除')
-    await loadDetail()
-  } catch (err: any) {
-    if (err !== 'cancel' && err?.message !== 'cancel') {
-      ElMessage.error('删除失败')
-    }
-  } finally {
-    removingDoc.value = ''
-  }
-}
-
 // ── Add files to KB ──
 async function openAddDialog() {
   showSettingsMenu.value = false
@@ -513,9 +491,6 @@ function getStatusLabel(status: string) {
               </div>
               <div class="kb-doc-actions">
                 <el-button text size="small" @click="removeFromKB(doc)" title="从知识库移除">移除</el-button>
-                <el-button type="danger" text size="small" @click="deleteFile(doc)" title="删除文件">
-                  <el-icon><Delete /></el-icon>
-                </el-button>
               </div>
             </div>
           </div>
