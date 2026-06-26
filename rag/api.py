@@ -62,13 +62,17 @@ def auto_index_on_startup():
             user_db.set_user_admin(target["id"], True)
             logger.info("已将用户 %s 设置为管理员", admin_username)
 
-    # 同步 git 仓库中的受保护文件到服务器
+    # 同步仓库文件到服务器（从 /app/repo_upload/ 复制，不被 volume 覆盖）
     # owner_id=0 表示系统所有（不依赖用户是否存在）
     SYSTEM_OWNER_ID = 0
 
     def _sync_repo_files():
         import shutil
-        repo_upload = Path(__file__).resolve().parent.parent / "data" / "upload"
+        # Docker 构建时把仓库文件备份到 /app/repo_upload/
+        repo_upload = Path("/app/repo_upload")
+        if not repo_upload.is_dir():
+            # 非 Docker 环境，用 git 仓库路径
+            repo_upload = Path(__file__).resolve().parent.parent / "data" / "upload"
         if not repo_upload.is_dir():
             return
         if not DATA_DIR.is_dir():
