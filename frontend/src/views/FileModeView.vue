@@ -51,7 +51,7 @@ async function handleFileAction(command: string, fileName: string) {
 // Visibility toggle
 async function toggleVisibility(fileName: string) {
   try {
-    const resp = await fetch(`/api/files/${encodeURIComponent(fileName)}/visibility`, {
+    const resp = await fetch(`/files/${encodeURIComponent(fileName)}/visibility`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${localStorage.getItem('rag_token')}` }
     })
