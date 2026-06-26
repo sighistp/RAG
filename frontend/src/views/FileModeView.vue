@@ -643,7 +643,7 @@ function askSuggested(q: string) {
 }
 
 .file-item-more {
-  opacity: 0;
+  opacity: 1;
   width: 24px;
   height: 24px;
   display: flex;
@@ -658,10 +658,6 @@ function askSuggested(q: string) {
   flex-shrink: 0;
   font-size: 16px;
   font-weight: bold;
-}
-
-.file-item:hover .file-item-more {
-  opacity: 1;
 }
 
 .file-item-more:hover {
