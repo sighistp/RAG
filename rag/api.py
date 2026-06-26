@@ -169,8 +169,10 @@ _VUE_ROUTE_PREFIXES = {"/kb/"}
 async def spa_fallback_middleware(request, call_next):
     path = request.url.path
     accept = request.headers.get("accept", "")
-    # Only for GET requests from browsers to known Vue routes
-    if request.method == "GET" and "text/html" in accept:
+    # API 请求（带 Authorization header）不走 SPA fallback
+    has_auth = "authorization" in {k.lower() for k in request.headers}
+    # Only for GET requests from browsers to known Vue routes (no auth header)
+    if request.method == "GET" and "text/html" in accept and not has_auth:
         if path in _VUE_ROUTES or any(path.startswith(p) for p in _VUE_ROUTE_PREFIXES):
             index = STATIC_DIR / "index.html"
             if index.exists():
