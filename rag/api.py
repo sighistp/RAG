@@ -669,6 +669,14 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
 
     global pipeline
 
+    # 权限校验（必须登录，先于文件存在性检查以避免信息泄露）
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="请先登录")
+    token = authorization.replace("Bearer ", "")
+    user_dict = await asyncio.to_thread(_get_current_user, token)
+    if not user_dict or user_dict.get("id") == "anonymous":
+        raise HTTPException(status_code=401, detail="请先登录")
+
     # Sanitize filename to prevent path traversal
     safe_name = Path(filename).name
     file_path = DATA_DIR / safe_name
@@ -680,18 +688,8 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
     perm = user_db.get_document_permission(safe_name, "rag_docs")
     if perm and perm.get("protected"):
         raise HTTPException(status_code=403, detail=f"文件 {safe_name} 受保护，不可删除")
-
-    # 权限校验
-    user_dict = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        user_dict = await asyncio.to_thread(_get_current_user, token)
-    if user_dict and user_dict.get("id") != "anonymous":
-        from rag.permissions import check_doc_permission
-        try:
-            await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "delete")
-        except HTTPException:
-            raise
+    from rag.permissions import check_doc_permission
+    await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "delete")
 
     # 先删向量，再删文件（确保向量删除成功）
     from rag.vector_store import delete_doc, COLLECTION_NAME
@@ -704,6 +702,13 @@ async def delete_file(filename: str, authorization: str = Header(default="")):
 
     # 向量删除成功后，再删文件
     file_path.unlink()
+
+    # 清理权限记录（I19）
+    if perm:
+        try:
+            user_db.delete_document_permission(perm["id"])
+        except Exception as e:
+            logger.warning("清理权限记录失败: %s", e)
 
     # 刷新 pipeline
     with _pipeline_lock.write():
@@ -742,17 +747,15 @@ async def add_tags_to_file(filename: str, tags: list[str], authorization: str = 
 
     safe_name = Path(filename).name
 
-    # 权限校验（旧文档无记录时放行）
-    user_dict = None
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        user_dict = await asyncio.to_thread(_get_current_user, token)
-    if user_dict and user_dict.get("id") != "anonymous":
-        from rag.permissions import check_doc_permission
-        try:
-            await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "edit")
-        except HTTPException:
-            raise
+    # 权限校验（必须登录）
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="请先登录")
+    token = authorization.replace("Bearer ", "")
+    user_dict = await asyncio.to_thread(_get_current_user, token)
+    if not user_dict or user_dict.get("id") == "anonymous":
+        raise HTTPException(status_code=401, detail="请先登录")
+    from rag.permissions import check_doc_permission
+    await asyncio.to_thread(check_doc_permission, user_db, safe_name, "rag_docs", user_dict, "edit")
 
     client = _get_client()
     if not client.collection_exists(COLLECTION_NAME):
