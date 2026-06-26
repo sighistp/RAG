@@ -4,7 +4,6 @@ __pycache__
 *.pyc
 .git
 .env
-data/
 qdrant_data/
 *.db
 *.db-shm
@@ -15,3 +14,9 @@ dist
 .ruff_cache
 .claude
 history
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/jwt_secret.txt
+data/index_state.json
+data/charts/
