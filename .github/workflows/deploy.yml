@@ -1,22 +1,22 @@
-name: Deploy to Coze
+name: Deploy to Server
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Deploy to Coze
-        run: |
-          curl -X POST "https://api.coze.cn/v1/workspace/run_pipeline" \
-            -H "Authorization: Bearer ${{ secrets.COZE_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "workspace_id": "${{ secrets.COZE_PROJECT_ID }}",
-              "pipeline_id": 1
-            }'
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd ~/RAG
+            git pull origin main
+            docker compose down
+            docker compose up -d --build
+            echo "Deploy completed at $(date)"
