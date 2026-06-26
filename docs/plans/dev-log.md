@@ -3563,3 +3563,251 @@ frontend/
 - `permission_level` 字段仍在数据库中（遗留，不影响功能）
 - `_sync_repo_files` 逻辑复杂，容易出 bug
 - 前端筛选标签需要重新设计
+
+---
+
+## 系统性调试：刷新后文件消失 + 私有变默认（2026-06-26）
+
+### 问题描述
+
+用户执行 `docker compose up -d --build` 重建容器后：
+1. 登录后刷新页面，所有文件消失
+2. 私有文件被重新分类为"默认"（protected=True）
+3. 换账号登录也看不到文件
+4. 问题反复出现，每次改动后都会复发
+
+### 调试过程（系统性排查，四阶段）
+
+#### Phase 1: Root Cause Investigation — 收集证据
+
+**第一步：服务器环境检查**
+
+```bash
+docker exec ragv3 env | grep -i auth    # 检查 auth_enabled
+docker exec ragv3 ls -la /app/data/upload/    # 数据目录
+docker exec ragv3 ls -la /app/repo_upload/    # 仓库文件目录
+docker exec ragv3 python3 -c "..."    # 查数据库内容
+```
+
+**关键发现 1：`auth_enabled` 没有设置！**
+
+`docker exec ragv3 env | grep -i auth` 输出为空。`config.py` 默认 `auth_enabled: bool = False`。
+
+→ `verify_api_key()` 对所有请求返回 `"anonymous"`
+→ `/files` 端点把所有请求当匿名用户处理
+→ 匿名用户看不到 `is_public=0 AND protected=0` 的文件
+→ **这就是"刷新后文件消失"的根因**
+
+**关键发现 2：`repo_upload/` 和 `data/upload/` 内容完全一致！**
+
+```
+=== 2. data/upload/ ===
+test.txt, 智能语音复习资料.docx, 自然语言知识点.docx, ...（8 个文件）
+
+=== 3. repo_upload/ ===
+test.txt, 智能语音复习资料.docx, 自然语言知识点.docx, ...（完全一样！）
+```
+
+但 git 追踪的只有 4 个文件（`.gitkeep` + 3 个测试文档）。用户上传的 5 个文件也被拷进了 `repo_upload/`。
+
+[Dockerfile:44](Dockerfile#L44) 的 `cp -r /app/data/upload/* /app/repo_upload/` 把所有文件（包括用户上传的）都烤进了镜像。
+
+→ `_sync_repo_files()` 为这些文件创建了 `owner_id=0, protected=True, is_public=True` 的系统权限
+→ **这就是"私有变默认"的根因**
+
+**关键发现 3：数据库中 `test.txt`（用户文件）被标记为 `protected=1`**
+
+```python
+{'id': 8, 'doc_name': 'test.txt', 'owner_id': 1, 'is_public': 1, 'protected': 1}
+```
+
+`test.txt` 不是仓库文件，但 `protected=1`。说明某次部署时 `_sync_repo_files` 在用户上传 `test.txt` 之前运行了，创建了系统权限记录。后来用户上传同名文件时，upload 端点复用了已有记录。
+
+#### Phase 2: Pattern Analysis — 对比分析
+
+| 场景 | 结果 | 原因 |
+|------|------|------|
+| 登录后直接看文件 | ✅ 部分可见 | 前端 token 有效，但后端忽略 token，当匿名处理 |
+| 刷新后 | ❌ 文件消失 | `auth_enabled=False`，匿名用户看不到私有文件 |
+| 重新登录 | ❌ 文件不回来 | 同上，token 被忽略 |
+| 换账号 | ❌ 也没文件 | 新账号没有权限记录 |
+| Docker 重建后私有变默认 | ❌ protected=1 | `repo_upload` 包含用户文件 |
+
+#### Phase 3: Hypothesis — 形成假设
+
+1. 设置 `RAG_AUTH_ENABLED=true` 后，刷新问题会解决
+2. 修复 Dockerfile 和 `_sync_repo_files` 后，私有变默认问题会解决
+3. 移除旧 5 级权限系统残留代码后，测试和逻辑冲突会解决
+
+#### Phase 4: Implementation — 修复
+
+##### Fix 1：Dockerfile — 用 manifest 替代 `cp -r`
+
+**问题：** `cp -r /app/data/upload/* /app/repo_upload/` 把用户文件也拷进了 `repo_upload/`。
+
+**修复：**
+- 新增 `data/upload/.repo_files` 文件，列出 git 追踪的 3 个仓库文件
+- Dockerfile 改为只拷贝 manifest 中列出的文件
+
+```dockerfile
+# 之前
+RUN mkdir -p /app/repo_upload && cp -r /app/data/upload/* /app/repo_upload/ 2>/dev/null || true
+
+# 之后
+RUN mkdir -p /app/repo_upload && \
+    if [ -f /app/data/upload/.repo_files ]; then \
+      while IFS= read -r fname; do \
+        [ -f "/app/data/upload/$fname" ] && cp "/app/data/upload/$fname" "/app/repo_upload/"; \
+      done < /app/data/upload/.repo_files; \
+    fi
+```
+
+##### Fix 2：`_sync_repo_files` — 只处理 manifest 里的文件
+
+**问题：** 遍历 `repo_upload/` 所有文件，为没有权限记录的文件创建系统权限。
+
+**修复：** 读取 `.repo_files` manifest，只处理仓库文件。
+
+```python
+# 之前
+for fpath in repo_upload.iterdir():
+    if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
+        ...
+
+# 之后
+manifest_path = repo_upload / ".repo_files"
+repo_file_names = set()
+if manifest_path.is_file():
+    for line in manifest_path.read_text(encoding="utf-8").splitlines():
+        name = line.strip()
+        if name:
+            repo_file_names.add(name)
+else:
+    # 无 manifest 时回退
+    for fpath in repo_upload.iterdir():
+        if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
+            repo_file_names.add(fpath.name)
+```
+
+##### Fix 3：前端 — `fetchUser()` 从未被调用
+
+**问题：** `auth.ts` 的 `login()` 和 `register()` 只存 token，不调 `fetchUser()`。页面刷新后 `authStore.user` 永远是 `null`。
+
+**修复：**
+- `auth.ts`：login/register 后 `await fetchUser()`
+- `MainLayout.vue`：`onMounted` 调 `fetchUser()`（处理页面刷新）
+- `FileModeView.vue`：watcher 监听 `authStore.user` 变化 → 重新加载文件
+- `files.ts`：失败时 `_loaded = false`（允许重试）+ 错误日志
+
+##### Fix 4：彻底移除旧 5 级权限系统
+
+**问题：** 旧的 `permission_level` 字段、方法、端点、测试大量残留，与新简化模型冲突。`test_high_level_user_can_view_low_level_doc` 测试失败。
+
+**修复（12 个文件）：**
+
+| 文件 | 改动 |
+|------|------|
+| `rag/api.py` | 移除 `UpdatePermissionRequest`、`permission_level` 端点逻辑 |
+| `rag/user_db.py` | 移除 `set_user_permission_level`、`update_document_permission_level`；`get_user_by_id/username` 不返回 `permission_level` |
+| `rag/permissions.py` | `check_doc_permission` 添加共享文档检查 |
+| `tests/test_permissions.py` | 全部重写为简化模型（owner/is_public/protected） |
+| `tests/test_permissions_api.py` | 全部重写 |
+| `tests/test_user_db.py` | 移除旧 `permission_level` 测试 |
+
+##### Fix 5：SPA fallback 中间件不拦截 API 请求
+
+**问题：** `/files` 既是 Vue 路由又是 API 端点。SPA 中间件把浏览器的 API 请求也拦截了，返回 HTML。
+
+**调试过程：**
+1. curl 测试 API → 返回 JSON ✅
+2. 浏览器 Network 查看 `/files` 响应 → 返回 HTML ❌
+3. 用 `fetch('/files', {headers: {Authorization: '...'}})` 浏览器直接调 → 返回 HTML ❌
+4. 容器内 httpx 测试 → 返回 JSON ✅
+5. 结论：浏览器 HTTP 缓存了页面导航的 HTML 响应，后续 AJAX 请求命中了同一个缓存
+
+**根因：** 浏览器缓存 key 不包含 `Authorization` header。页面导航 `GET /files`（无 auth）返回 HTML 被缓存，后续 AJAX `GET /files`（有 auth）命中了同一个缓存。
+
+**修复（两层防护）：**
+
+1. SPA 中间件检查 `Authorization` header，有 auth 的请求不走 SPA fallback
+2. 所有响应加 `Vary: Authorization`，告诉浏览器按 auth header 区分缓存
+3. SPA 响应额外加 `Cache-Control: no-store`
+
+```python
+# 之前
+if request.method == "GET" and "text/html" in accept:
+    if path in _VUE_ROUTES:
+        return FileResponse(index, media_type="text/html")
+
+# 之后
+has_auth = "authorization" in {k.lower() for k in request.headers}
+if request.method == "GET" and "text/html" in accept and not has_auth:
+    if path in _VUE_ROUTES:
+        resp = FileResponse(index, media_type="text/html")
+        resp.headers["Vary"] = "Authorization"
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+response = await call_next(request)
+response.headers["Vary"] = "Authorization"
+return response
+```
+
+##### Fix 6：`get_accessible_doc_names` 包含共享文档
+
+**问题：** `get_accessible_doc_names` 只查 `owner_id` 和 `is_public`，不包含被共享的文档。
+
+**修复：** SQL 添加共享文档子查询。
+
+```python
+# 之前
+"WHERE dp.kb_id = ? AND (dp.owner_id = ? OR dp.is_public = 1)"
+
+# 之后
+"WHERE dp.kb_id = ? AND (dp.owner_id = ? OR dp.is_public = 1 "
+"OR dp.id IN (SELECT doc_id FROM document_shares WHERE user_id = ?))"
+```
+
+### 调试技巧总结
+
+| 技巧 | 用途 |
+|------|------|
+| `docker exec ragv3 env \| grep auth` | 检查环境变量 |
+| `docker exec ragv3 python3 -c "..."` | 直接查数据库 |
+| `curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/files` | 测试 API |
+| 浏览器 F12 → Network → 看请求的 Response | 区分 API 返回 vs 缓存 |
+| 浏览器控制台 `fetch('/files', {headers: ...})` | 测试浏览器端请求 |
+| `docker exec ragv3 python3 -c "import httpx; ..."` | 容器内部测试 |
+| `navigator.serviceWorker.getRegistrations()` | 检查 Service Worker |
+| Pinia store 访问 `pinia._s.get('files')` | 检查前端状态 |
+
+### 根因总结
+
+| # | 根因 | 症状 | 修复 |
+|---|------|------|------|
+| 1 | `auth_enabled` 未设置 | 刷新后文件消失 | `.env` 添加 `RAG_AUTH_ENABLED=true` |
+| 2 | Dockerfile `cp -r` 拷贝用户文件 | 私有变默认 | 用 `.repo_files` manifest |
+| 3 | `_sync_repo_files` 无文件过滤 | 私有变默认 | 只处理 manifest 里的文件 |
+| 4 | `fetchUser()` 从未被调用 | 用户信息不加载 | 登录后调 fetchUser + 页面刷新时调 |
+| 5 | SPA 缓存混淆 API 和页面请求 | fetch 返回 HTML | `Vary: Authorization` + `no-store` |
+| 6 | 旧 5 级权限系统残留 | 测试失败、逻辑冲突 | 全面清理 |
+| 7 | `get_accessible_doc_names` 不含共享 | 共享文档不可见 | SQL 添加共享子查询 |
+
+### 测试结果
+
+495 个测试全过。
+
+### 部署命令
+
+```bash
+# 服务器
+echo "RAG_AUTH_ENABLED=true" >> ~/RAG/.env
+cd ~/RAG && git pull && docker compose build --no-cache rag-app && docker compose up -d
+```
+
+### 教训
+
+1. **环境变量必须在部署文档中明确列出** — `auth_enabled` 默认 False 导致整个鉴权系统失效
+2. **Dockerfile 的 `COPY` 和 `cp` 必须精确** — `cp -r` 会把运行时生成的文件也拷进去
+3. **浏览器 HTTP 缓存不区分 Authorization header** — 必须用 `Vary: Authorization` 显式声明
+4. **旧代码必须彻底清理** — 残留的 `permission_level` 导致新旧逻辑冲突
+5. **系统性调试比猜测修复快** — 先收集证据，再形成假设，最后修复

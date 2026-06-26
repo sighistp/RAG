@@ -176,8 +176,13 @@ async def spa_fallback_middleware(request, call_next):
         if path in _VUE_ROUTES or any(path.startswith(p) for p in _VUE_ROUTE_PREFIXES):
             index = STATIC_DIR / "index.html"
             if index.exists():
-                return FileResponse(index, media_type="text/html")
-    return await call_next(request)
+                resp = FileResponse(index, media_type="text/html")
+                resp.headers["Vary"] = "Authorization"
+                resp.headers["Cache-Control"] = "no-store"
+                return resp
+    response = await call_next(request)
+    response.headers["Vary"] = "Authorization"
+    return response
 
 
 # 数据目录
