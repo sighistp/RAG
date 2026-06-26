@@ -90,14 +90,15 @@ def auto_index_on_startup():
                         is_public=True, protected=True
                     )
                     logger.info("创建受保护权限: %s (owner=system)", fpath.name)
-                elif not existing.get("protected"):
+                elif not existing.get("protected") or not existing.get("is_public"):
+                    # 修复：protected 或 is_public 未正确设置的记录
                     with user_db._lock:
                         user_db._conn.execute(
                             "UPDATE document_permissions SET protected = 1, is_public = 1 WHERE id = ?",
                             (existing["id"],)
                         )
                         user_db._conn.commit()
-                    logger.info("更新为受保护: %s", fpath.name)
+                    logger.info("更新为受保护+公开: %s", fpath.name)
 
     if not changed and not deleted:
         logger.info("索引无需更新（%d 文件）", len(current_hashes))
