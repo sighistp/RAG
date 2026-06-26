@@ -26,7 +26,10 @@ export const useFilesStore = defineStore('files', () => {
     if (_loaded && !force) return
     loading.value = true
     try {
-      const res = await api.get(`${API}/files`)
+      const auth = useAuthStore()
+      const res = await api.get(`${API}/files`, {
+        headers: auth.getAuthHeaders()
+      })
       files.value = Array.isArray(res.data?.files) ? res.data.files : []
       _loaded = true
     } catch {
