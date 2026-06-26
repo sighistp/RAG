@@ -3811,3 +3811,42 @@ cd ~/RAG && git pull && docker compose build --no-cache rag-app && docker compos
 3. **浏览器 HTTP 缓存不区分 Authorization header** — 必须用 `Vary: Authorization` 显式声明
 4. **旧代码必须彻底清理** — 残留的 `permission_level` 导致新旧逻辑冲突
 5. **系统性调试比猜测修复快** — 先收集证据，再形成假设，最后修复
+
+---
+
+## 切换共享/私有修复 + 数据库清理（2026-06-26）
+
+### Bug 1：切换共享/私有按钮不生效
+
+**问题：** 用户点击 ⋯ 切换共享/私有，后端已切换但前端无响应。
+
+**根因：** 前端调的是 `/api/files/{filename}/visibility`，但后端路由是 `/files/{filename}/visibility`（没有 `/api/` 前缀）。请求返回 404，被 SPA fallback 拦截返回 HTML。
+
+**修复：** `FileModeView.vue` 中 `toggleVisibility()` 的 URL 从 `/api/files/` 改为 `/files/`。
+
+### Bug 2：所有文件没有操作按钮
+
+**问题：** 文件列表中所有文件都没有 ⋯ 按钮（切换共享/私有、删除）。
+
+**根因：** 数据库中所有文件都被标记为 `protected=True`。模板中 `v-if="!file.protected"` 导致所有文件的按钮被隐藏。
+
+**原因分析：** 之前 `_sync_repo_files` 把用户文件也烤进了 `repo_upload/`，并为它们创建了 `protected=True` 的系统权限。用户上传同名文件时，upload 端点复用了已有记录。
+
+**修复：** 手动清理数据库：
+
+```sql
+-- 仓库文件（git 追踪的 3 个）保持 protected=1, owner_id=0
+-- 用户文件 → protected=0, owner_id=1（lyh）
+```
+
+清理结果：
+- 仓库文件（压测.md + 2 个巨型测试文档）：`protected=1, is_public=1, owner_id=0`
+- 用户文件（test.txt, 智能语音复习资料.docx 等）：`protected=0, owner_id=1`
+
+### 部署构建说明
+
+| 改动类型 | 命令 | 原因 |
+|---------|------|------|
+| 只改后端 | `git pull && docker compose up -d --build` | 走缓存，快 |
+| 改了前端 | `git pull && docker compose build --no-cache rag-app && docker compose up -d` | 前端构建层被缓存，必须 `--no-cache` |
+| 优化 | `docker compose build --no-cache-filter rag-app` | 只清除前端构建层，后端依赖走缓存 |
