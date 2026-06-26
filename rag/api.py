@@ -90,8 +90,8 @@ def auto_index_on_startup():
                         is_public=True, protected=True
                     )
                     logger.info("创建受保护权限: %s (owner=system)", fpath.name)
-                elif not existing.get("protected") or not existing.get("is_public"):
-                    # 修复：protected 或 is_public 未正确设置的记录
+                elif existing.get("owner_id") == SYSTEM_OWNER_ID and (not existing.get("protected") or not existing.get("is_public")):
+                    # 只修复系统所有者(仓库文件)的记录，不修改用户上传的文件
                     with user_db._lock:
                         user_db._conn.execute(
                             "UPDATE document_permissions SET protected = 1, is_public = 1 WHERE id = ?",
