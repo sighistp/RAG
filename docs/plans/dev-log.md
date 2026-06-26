@@ -3482,8 +3482,47 @@ frontend/
 
 ---
 
+## GitHub Actions 自动部署配置完成（2026-06-26）
+
+### 问题排查与修复
+
+| 问题 | 根因 | 修复 |
+|------|------|------|
+| git pull 失败 | 国内访问 GitHub 不稳定 | 使用 HTTP/1.1 降级或 zip 下载 |
+| SSH pull 失败 | 服务器未配置 SSH 密钥 | 生成 ed25519 密钥并添加到 GitHub |
+| 仓库文件不同步 | `.dockerignore` 排除了 `data/` 目录 | 改为排除数据库文件但保留 `data/upload/` |
+| repo_upload 为空 | Docker 构建时 `data/` 被排除 | `.dockerignore` 修复后自动解决 |
+| PAT token 无 workflow 权限 | Fine-grained token 权限不足 | 改用 Classic token，勾选全部权限 |
+
+### GitHub Actions 自动部署
+
+- 推送 workflow 文件到 GitHub
+- 配置 3 个 Secrets：DEPLOY_HOST、DEPLOY_USER、DEPLOY_KEY
+- 服务器 SSH 密钥已配置（ed25519）
+- 以后 `git push` 自动部署，无需手动操作
+
+### 部署流程（最终版）
+
+```
+开发者改代码 → git push → GitHub Actions 自动触发
+  → SSH 到服务器 → git pull → docker compose up -d --build
+  → 部署完成
+```
+
+### 服务器信息
+
+| 项目 | 值 |
+|------|-----|
+| IP | 39.105.89.99 |
+| 端口 | 8000 |
+| 系统 | Ubuntu 22.04 LTS |
+| Docker | 29.6.0 |
+| 访问地址 | http://39.105.89.99:8000 |
+
+---
+
 ## 下一步计划
 
-- GitHub Actions 自动部署配置（需要更新 PAT token 权限）
 - 前端 UI 美化（登录页、文件面板）
 - 评估系统完善（测试数据集扩充）
+- 监控告警（服务器状态、API 调用）
