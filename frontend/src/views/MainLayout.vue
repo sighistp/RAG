@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+
+// Ensure user info is loaded on page refresh
+onMounted(() => {
+  authStore.fetchUser()
+})
 
 const activeMenu = computed(() => {
   if (route.path.startsWith('/files')) return 'files'

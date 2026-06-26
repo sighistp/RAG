@@ -237,7 +237,7 @@ class UserDB:
         """Return user dict or ``None``."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, username, permission_level, is_admin FROM users WHERE id = ?",
+                "SELECT id, username, is_admin FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
         if row is None:
@@ -245,7 +245,6 @@ class UserDB:
         return {
             "id": row["id"],
             "username": row["username"],
-            "permission_level": row["permission_level"],
             "is_admin": bool(row["is_admin"]),
         }
 
@@ -581,14 +580,6 @@ class UserDB:
     # Permission helpers
     # ------------------------------------------------------------------
 
-    def set_user_permission_level(self, user_id: int, level: int) -> None:
-        with self._lock:
-            self._conn.execute(
-                "UPDATE users SET permission_level = ? WHERE id = ?",
-                (level, user_id),
-            )
-            self._conn.commit()
-
     def set_user_admin(self, user_id: int, is_admin: bool) -> None:
         with self._lock:
             self._conn.execute(
@@ -638,14 +629,6 @@ class UserDB:
         d["protected"] = bool(d.get("protected", 0))
         return d
 
-    def update_document_permission_level(self, doc_id: int, level: int) -> None:
-        with self._lock:
-            self._conn.execute(
-                "UPDATE document_permissions SET permission_level = ? WHERE id = ?",
-                (level, doc_id),
-            )
-            self._conn.commit()
-
     def toggle_document_visibility(self, doc_id: int) -> bool:
         """切换文档公开/私有状态，返回新的 is_public 值。"""
         with self._lock:
@@ -670,13 +653,14 @@ class UserDB:
     def get_accessible_doc_names(self, kb_id: str, user_id: int, user_level: int = 1) -> list[str]:
         """返回用户在指定知识库中有权查看的文档名列表。
 
-        规则：owner 或 is_public=1 的文档可见。
+        规则：owner / is_public=1 / 被共享 的文档可见。
         """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT DISTINCT dp.doc_name FROM document_permissions dp "
-                "WHERE dp.kb_id = ? AND (dp.owner_id = ? OR dp.is_public = 1)",
-                (kb_id, user_id),
+                "WHERE dp.kb_id = ? AND (dp.owner_id = ? OR dp.is_public = 1 "
+                "OR dp.id IN (SELECT doc_id FROM document_shares WHERE user_id = ?))",
+                (kb_id, user_id, user_id),
             ).fetchall()
         return [r["doc_name"] for r in rows]
 
@@ -722,7 +706,7 @@ class UserDB:
         """按用户名查询用户。"""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, username, permission_level, is_admin FROM users WHERE username = ?",
+                "SELECT id, username, is_admin FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
         if row is None:
@@ -730,7 +714,6 @@ class UserDB:
         return {
             "id": row["id"],
             "username": row["username"],
-            "permission_level": row["permission_level"],
             "is_admin": bool(row["is_admin"]),
         }
 

@@ -108,19 +108,12 @@ def test_add_feedback(db):
 # -- Permission fields on users table ----------------------------------------
 
 
-def test_user_has_permission_level_default(db):
-    """新建用户默认 permission_level=1, is_admin=False。"""
+def test_user_default_is_not_admin(db):
+    """新建用户默认 is_admin=False，不返回 permission_level。"""
     uid = db.create_user("alice", "s3cret")
     user = db.get_user_by_id(uid)
-    assert user["permission_level"] == 1
     assert user["is_admin"] is False
-
-
-def test_set_user_permission_level(db):
-    uid = db.create_user("alice", "s3cret")
-    db.set_user_permission_level(uid, 3)
-    user = db.get_user_by_id(uid)
-    assert user["permission_level"] == 3
+    assert "permission_level" not in user
 
 
 def test_set_user_admin(db):
@@ -134,20 +127,21 @@ def test_set_user_admin(db):
 
 
 def test_create_document_permission(db):
-    """上传文档时创建权限记录。"""
+    """上传文档时创建权限记录（默认私有）。"""
     uid = db.create_user("alice", "s3cret")
-    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid, 2)
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid)
     assert isinstance(doc_id, int) and doc_id > 0
 
 
 def test_get_document_permission_by_name(db):
     uid = db.create_user("alice", "s3cret")
-    db.create_document_permission("report.pdf", "rag_docs", uid, 2)
+    db.create_document_permission("report.pdf", "rag_docs", uid, is_public=False)
     perm = db.get_document_permission("report.pdf", "rag_docs")
     assert perm is not None
     assert perm["doc_name"] == "report.pdf"
-    assert perm["permission_level"] == 2
     assert perm["owner_id"] == uid
+    assert perm["is_public"] is False
+    assert perm["protected"] is False
 
 
 def test_get_document_permission_nonexistent(db):
@@ -155,17 +149,19 @@ def test_get_document_permission_nonexistent(db):
     assert db.get_document_permission("nope.pdf", "rag_docs") is None
 
 
-def test_update_document_permission_level(db):
+def test_toggle_document_visibility(db):
+    """切换文档公开/私有状态。"""
     uid = db.create_user("alice", "s3cret")
-    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid, 1)
-    db.update_document_permission_level(doc_id, 4)
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid, is_public=False)
+    new_val = db.toggle_document_visibility(doc_id)
+    assert new_val is True
     perm = db.get_document_permission_by_id(doc_id)
-    assert perm["permission_level"] == 4
+    assert perm["is_public"] is True
 
 
 def test_delete_document_permission(db):
     uid = db.create_user("alice", "s3cret")
-    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid, 1)
+    doc_id = db.create_document_permission("report.pdf", "rag_docs", uid)
     db.delete_document_permission(doc_id)
     assert db.get_document_permission_by_id(doc_id) is None
 
@@ -173,10 +169,10 @@ def test_delete_document_permission(db):
 def test_document_permission_unique_per_kb(db):
     """同一知识库内同名文档只能有一条权限记录。"""
     uid = db.create_user("alice", "s3cret")
-    db.create_document_permission("report.pdf", "rag_docs", uid, 1)
+    db.create_document_permission("report.pdf", "rag_docs", uid)
     import sqlite3
     with pytest.raises(sqlite3.IntegrityError):
-        db.create_document_permission("report.pdf", "rag_docs", uid, 2)
+        db.create_document_permission("report.pdf", "rag_docs", uid)
 
 
 # -- Document Shares ---------------------------------------------------------

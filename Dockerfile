@@ -40,8 +40,13 @@ COPY . .
 # 前端静态文件（从 Stage 1 复制）
 COPY --from=frontend-builder /app/static /app/static
 
-# 仓库文件备份到不被 volume 覆盖的位置（用于启动时同步）
-RUN mkdir -p /app/repo_upload && cp -r /app/data/upload/* /app/repo_upload/ 2>/dev/null || true
+# 仓库文件备份到不被 volume 覆盖的位置（仅限 git 追踪的文件，不含用户上传）
+RUN mkdir -p /app/repo_upload && \
+    if [ -f /app/data/upload/.repo_files ]; then \
+      while IFS= read -r fname; do \
+        [ -f "/app/data/upload/$fname" ] && cp "/app/data/upload/$fname" "/app/repo_upload/"; \
+      done < /app/data/upload/.repo_files; \
+    fi
 
 # 数据目录（运行时挂载卷）
 RUN mkdir -p /app/data/upload /app/qdrant_data

@@ -12,27 +12,31 @@ def db(tmp_path):
     udb.close()
 
 
-def test_create_user_with_permission_fields(db):
-    """Verify users have permission_level and is_admin after creation."""
+def test_create_user_has_is_admin(db):
+    """Verify users have is_admin after creation."""
     uid = db.create_user("alice", "s3cret")
     user = db.get_user_by_id(uid)
-    assert "permission_level" in user
     assert "is_admin" in user
+    assert user["is_admin"] is False
+    assert "permission_level" not in user
 
 
 def test_document_permission_crud(db):
     """Full CRUD for document_permissions."""
     uid = db.create_user("alice", "s3cret")
-    doc_id = db.create_document_permission("test.pdf", "kb1", uid, 3)
+    doc_id = db.create_document_permission("test.pdf", "kb1", uid, is_public=False)
     assert doc_id > 0
 
     perm = db.get_document_permission("test.pdf", "kb1")
-    assert perm["permission_level"] == 3
     assert perm["owner_id"] == uid
+    assert perm["is_public"] is False
+    assert perm["protected"] is False
 
-    db.update_document_permission_level(doc_id, 5)
+    # Toggle visibility
+    new_val = db.toggle_document_visibility(doc_id)
+    assert new_val is True
     perm = db.get_document_permission_by_id(doc_id)
-    assert perm["permission_level"] == 5
+    assert perm["is_public"] is True
 
     db.delete_document_permission(doc_id)
     assert db.get_document_permission_by_id(doc_id) is None

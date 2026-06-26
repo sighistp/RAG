@@ -32,8 +32,10 @@ export const useFilesStore = defineStore('files', () => {
       })
       files.value = Array.isArray(res.data?.files) ? res.data.files : []
       _loaded = true
-    } catch {
-      // Error already shown by global interceptor
+    } catch (err: any) {
+      // Don't mark as loaded on failure so next call retries
+      _loaded = false
+      console.error('[files] loadFiles failed:', err?.response?.status, err?.message)
     } finally {
       loading.value = false
     }

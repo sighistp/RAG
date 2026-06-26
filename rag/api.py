@@ -75,30 +75,47 @@ def auto_index_on_startup():
             repo_upload = Path(__file__).resolve().parent.parent / "data" / "upload"
         if not repo_upload.is_dir():
             return
+
+        # 读取 .repo_files manifest，只处理仓库文件（不含用户上传）
+        manifest_path = repo_upload / ".repo_files"
+        repo_file_names = set()
+        if manifest_path.is_file():
+            for line in manifest_path.read_text(encoding="utf-8").splitlines():
+                name = line.strip()
+                if name:
+                    repo_file_names.add(name)
+        else:
+            # 无 manifest 时回退：处理 repo_upload 下所有文件
+            for fpath in repo_upload.iterdir():
+                if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
+                    repo_file_names.add(fpath.name)
+
         if not DATA_DIR.is_dir():
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-        for fpath in repo_upload.iterdir():
-            if fpath.is_file() and fpath.suffix.lower() in SUPPORTED_EXTENSIONS:
-                dest = DATA_DIR / fpath.name
-                if not dest.exists():
-                    shutil.copy2(str(fpath), str(dest))
-                    logger.info("同步仓库文件: %s", fpath.name)
-                existing = user_db.get_document_permission(fpath.name, "rag_docs")
-                if not existing:
-                    user_db.create_document_permission(
-                        fpath.name, "rag_docs", SYSTEM_OWNER_ID,
-                        is_public=True, protected=True
+        for fname in repo_file_names:
+            src = repo_upload / fname
+            if not src.is_file():
+                continue
+            dest = DATA_DIR / fname
+            if not dest.exists():
+                shutil.copy2(str(src), str(dest))
+                logger.info("同步仓库文件: %s", fname)
+            existing = user_db.get_document_permission(fname, "rag_docs")
+            if not existing:
+                user_db.create_document_permission(
+                    fname, "rag_docs", SYSTEM_OWNER_ID,
+                    is_public=True, protected=True
+                )
+                logger.info("创建受保护权限: %s (owner=system)", fname)
+            elif existing.get("owner_id") == SYSTEM_OWNER_ID and (not existing.get("protected") or not existing.get("is_public")):
+                # 只修复系统所有者(仓库文件)的记录，不修改用户上传的文件
+                with user_db._lock:
+                    user_db._conn.execute(
+                        "UPDATE document_permissions SET protected = 1, is_public = 1 WHERE id = ?",
+                        (existing["id"],)
                     )
-                    logger.info("创建受保护权限: %s (owner=system)", fpath.name)
-                elif existing.get("owner_id") == SYSTEM_OWNER_ID and (not existing.get("protected") or not existing.get("is_public")):
-                    # 只修复系统所有者(仓库文件)的记录，不修改用户上传的文件
-                    with user_db._lock:
-                        user_db._conn.execute(
-                            "UPDATE document_permissions SET protected = 1, is_public = 1 WHERE id = ?",
-                            (existing["id"],)
-                        )
-                        user_db._conn.commit()
-                    logger.info("更新为受保护+公开: %s", fpath.name)
+                    user_db._conn.commit()
+                logger.info("更新为受保护+公开: %s", fname)
 
     if not changed and not deleted:
         logger.info("索引无需更新（%d 文件）", len(current_hashes))
@@ -250,17 +267,12 @@ class SuggestCardRequest(BaseModel):
     answer: str = Field(..., max_length=10000, description="回答内容")
 
 
-class UpdatePermissionRequest(BaseModel):
-    permission_level: int = Field(..., ge=1, le=5)
-
-
 class ShareRequest(BaseModel):
     user_id: int
 
 
 class UpdateRoleRequest(BaseModel):
     is_admin: bool | None = None
-    permission_level: int | None = Field(default=None, ge=1, le=5)
 
 
 # Module-level UserDB instance
@@ -1502,15 +1514,19 @@ async def get_document_permissions(doc_id: int, authorization: str = Header(defa
         perm = user_db.get_document_permission_by_id(doc_id)
         if not perm:
             return None
-        # I3: 检查查看权限
-        if not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"] and not user_db.is_document_shared(doc_id, user_dict["id"]) and user_dict.get("permission_level", 1) < perm["permission_level"]:
+        # 检查查看权限：admin / owner / 共享用户 / 公开文档
+        if (not user_dict.get("is_admin")
+                and perm["owner_id"] != user_dict["id"]
+                and not user_db.is_document_shared(doc_id, user_dict["id"])
+                and not perm.get("is_public")):
             raise HTTPException(status_code=403, detail="无权查看该文档权限信息")
         shared_users = user_db.list_shared_users(doc_id)
         owner = user_db.get_user_by_id(perm["owner_id"])
         return {
             "doc_id": doc_id,
             "doc_name": perm["doc_name"],
-            "permission_level": perm["permission_level"],
+            "is_public": perm.get("is_public", False),
+            "protected": perm.get("protected", False),
             "owner": {"id": owner["id"], "username": owner["username"]} if owner else None,
             "shared_with": shared_users,
         }
@@ -1524,22 +1540,22 @@ async def get_document_permissions(doc_id: int, authorization: str = Header(defa
     return result
 
 
-@app.put("/documents/{doc_id}/permission", summary="修改文档权限等级")
-async def update_document_permission(doc_id: int, req: UpdatePermissionRequest, authorization: str = Header(default="")):
-    # C1: 要求认证
+@app.put("/documents/{doc_id}/permission", summary="切换文档公开/私有")
+async def update_document_permission(doc_id: int, authorization: str = Header(default="")):
+    """切换文档的公开/私有状态（仅 owner 或 admin 可操作）。"""
     user_dict = await _require_auth(authorization)
 
-    def _update():
+    def _toggle():
         perm = user_db.get_document_permission_by_id(doc_id)
         if not perm:
             raise HTTPException(status_code=404, detail="文档不存在")
         if not user_dict.get("is_admin") and perm["owner_id"] != user_dict["id"]:
             raise HTTPException(status_code=403, detail="仅文档上传者或管理员可修改权限")
-        user_db.update_document_permission_level(doc_id, req.permission_level)
-        return {"id": doc_id, "permission_level": req.permission_level}
+        new_val = user_db.toggle_document_visibility(doc_id)
+        return {"id": doc_id, "is_public": new_val}
 
     try:
-        return await asyncio.to_thread(_update)
+        return await asyncio.to_thread(_toggle)
     except HTTPException:
         raise
 
@@ -1604,8 +1620,6 @@ async def set_user_role(uid: int, req: UpdateRoleRequest, authorization: str = H
             raise HTTPException(status_code=404, detail="用户不存在")
         if req.is_admin is not None:
             user_db.set_user_admin(uid, req.is_admin)
-        if req.permission_level is not None:
-            user_db.set_user_permission_level(uid, req.permission_level)
         return user_db.get_user_by_id(uid)
 
     try:

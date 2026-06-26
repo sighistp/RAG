@@ -2,6 +2,7 @@
 import { ref, nextTick, watch, onMounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useFilesStore } from '../stores/files'
+import { useAuthStore } from '../stores/auth'
 import { useAnalysis } from '../composables/useAnalysis'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, FolderOpened, Plus } from '@element-plus/icons-vue'
@@ -13,9 +14,17 @@ import { computed } from 'vue'
 
 const chatStore = useChatStore()
 const filesStore = useFilesStore()
+const authStore = useAuthStore()
 const { addToAnalysis, dialogVisible, dialogQuestion, dialogAnswer, handleConfirm } = useAnalysis()
 const messagesContainer = ref<HTMLElement>()
 const dragover = ref(false)
+
+// Reload files when user info loads (handles async fetchUser after page refresh)
+watch(() => authStore.user, (newUser) => {
+  if (newUser) {
+    filesStore.loadFiles(true)
+  }
+})
 
 // File filter
 const fileFilter = ref<'all' | 'default' | 'private' | 'public'>('all')

@@ -50,8 +50,10 @@ def check_doc_permission(
         return doc
 
     if action == "view":
-        # owner 或公开文档 → 可查看
+        # owner / 公开文档 / 被共享 → 可查看
         if doc["owner_id"] == user["id"] or doc.get("is_public"):
+            return doc
+        if db.is_document_shared(doc["id"], user["id"]):
             return doc
         raise HTTPException(status_code=403, detail="无权查看该文档")
 
