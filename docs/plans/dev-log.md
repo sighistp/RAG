@@ -3426,8 +3426,64 @@ frontend/
 
 ---
 
+## Bug 修复 + 权限模型重构 + 受保护文件机制（2026-06-26）
+
+### 权限模型二次重构
+
+将原来的 5 级权限系统简化为公开/私有切换，再进一步优化为三类文件：
+
+| 文件类型 | 来源 | 可删除 | 可见性 |
+|---------|------|--------|--------|
+| 默认文件（受保护） | git 仓库同步 | ❌ | 所有人可见 |
+| 私有文件 | 用户上传 | ✅ 仅 owner | 仅 owner |
+| 共享文件 | 用户切换 | ✅ 仅 owner | 所有人可见 |
+
+### 受保护文件机制
+
+- 启动时 `_sync_repo_files()` 自动同步 git 仓库 `data/upload/` 中的文件到服务器
+- 仓库文件自动标记 `protected=True, is_public=True`
+- `owner_id=0`（系统保留 ID）表示系统所有，不依赖用户是否存在
+- 删除接口拒绝删除 `protected` 文件，返回 403
+- 前端受保护文件不显示删除按钮
+
+### Bug 修复
+
+| Bug | 根因 | 修复 |
+|-----|------|------|
+| 删除一个文件导致全部文件向量丢失 | `index_folder` 先清空整个向量库再重建 | 改为 `delete_doc` 只删目标文件向量 |
+| 上传文件报 UNIQUE constraint failed | 重复上传同名文件时权限记录冲突 | 上传前先检查是否已有记录 |
+| 仓库文件显示为"私有" | `_sync_repo_files` 依赖用户存在，首次启动无用户时跳过 | 用 `owner_id=0` 不依赖用户 |
+| 私有文件对其他用户可见 | `list_files` 未按权限过滤 | 过滤掉非 owner 的私有文件 |
+| 文件刷新后全部消失 | 权限字段未设置导致前端误判 | 无论 `user_dict` 是否存在都设置权限字段 |
+| python-multipart 缺失 | requirements.txt 遗漏 | 添加依赖 |
+| 管理员初始化不执行 | 放在 early return 之后 | 移到 early return 之前 |
+| Docker 容器监听 127.0.0.1 | 本地开发配置 | 根据环境变量切换 0.0.0.0 |
+
+### 前端改动
+
+- 文件面板顶部增加筛选标签：全部/默认/私有/共享
+- 文件操作改用下拉菜单（⋯ 按钮）：切换共享/私有、删除
+- 去掉文件上的私有/公开标签显示
+- 受保护文件不显示操作按钮
+- 点击文件选中问答，不弹窗
+
+### Docker 部署
+
+- 优化 Dockerfile：使用阿里云 apt/pypi 镜像源加速构建
+- 添加 Java（PDF 解析需要）
+- `docker-compose.yml` 挂载 `data/` 和 `qdrant_data/` 实现数据持久化
+- 服务器部署成功：http://39.105.89.99:8000
+
+### GitHub Actions 自动部署
+
+- 写好 `.github/workflows/deploy.yml`（SSH 部署）
+- 需要在 GitHub 仓库设置 3 个 Secrets：DEPLOY_HOST、DEPLOY_USER、DEPLOY_KEY
+- 因 PAT token 缺少 workflow 权限，该文件暂未推送
+
+---
+
 ## 下一步计划
 
-- 修复删除后多用户不同步的问题
-- GitHub Actions 自动部署配置
-- Docker 容器化优化
+- GitHub Actions 自动部署配置（需要更新 PAT token 权限）
+- 前端 UI 美化（登录页、文件面板）
+- 评估系统完善（测试数据集扩充）
