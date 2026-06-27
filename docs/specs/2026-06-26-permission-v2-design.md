@@ -129,15 +129,14 @@ ALTER TABLE document_shares ADD COLUMN permission TEXT DEFAULT 'view';
 
 ```sql
 -- 新增 owner_id 和 scope
-ALTER TABLE kb_metadata ADD COLUMN owner_id INTEGER;
+ALTER TABLE kb_metadata ADD COLUMN owner_id INTEGER DEFAULT 0;  -- 默认系统 ID
 ALTER TABLE kb_metadata ADD COLUMN scope TEXT DEFAULT 'private';
 
--- 旧数据迁移：user_id IS NULL 的 KB 设为 public
-UPDATE kb_metadata SET scope = 'public' WHERE user_id IS NULL;
+-- 旧数据迁移
+UPDATE kb_metadata SET owner_id = 0, scope = 'public' WHERE user_id IS NULL;
+UPDATE kb_metadata SET owner_id = user_id, scope = 'private' WHERE user_id IS NOT NULL;
 
--- user_id 列废弃（用 owner_id 替代），保留不删除以兼容旧代码
--- 旧数据中 user_id 有值的，迁移到 owner_id
-UPDATE kb_metadata SET owner_id = user_id WHERE user_id IS NOT NULL AND owner_id IS NULL;
+-- user_id 列：Phase 1 保留（兼容），Phase 2 废弃（代码不再读取）
 
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_kb_meta_owner ON kb_metadata(owner_id);
@@ -211,6 +210,45 @@ DELETE .../documents/{doc}        # 移除文档 → 仅 owner/admin
 # 文件端点（scope 替代 is_public）
 PUT    /files/{filename}/visibility  # 切换 scope（private/shared/public）
 GET    /files                        # 列出 → 按 scope + shares 过滤
+```
+
+#### CREATE KB 请求体变更
+
+```json
+// 方案 B：创建时可选 scope，默认 private
+{ "name": "技术文档库", "scope": "public" }  // scope 可选
+
+// 后端处理：
+// 1. scope 不传 → 默认 'private'
+// 2. scope 无效 → 400
+// 3. 存入 kb_metadata(kb_id, name, owner_id=current_user, scope)
+```
+
+#### DELETE KB owner 检查逻辑
+
+```python
+# 现在：无 owner 检查
+async def delete_knowledge_base(kb_id: str, user_id: str = Security(verify_api_key)):
+
+# Phase 1 后：加 owner 检查
+async def delete_knowledge_base(kb_id: str, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+    kb = get_kb_metadata(kb_id)
+    if not kb:
+        raise 404
+    if not user_dict["is_admin"] and kb["owner_id"] != user_dict["id"]:
+        raise 403  # 非 owner 且非 admin
+    # 继续删除逻辑
+```
+
+#### KB 列出响应变更
+
+```json
+// 现在
+[{ "kb_id": "kb_xxx", "name": "...", "doc_count": 12 }]
+
+// Phase 1 后
+[{ "kb_id": "kb_xxx", "name": "...", "doc_count": 12, "scope": "public", "is_owner": true }]
 ```
 
 ### 5.3 共享请求体
