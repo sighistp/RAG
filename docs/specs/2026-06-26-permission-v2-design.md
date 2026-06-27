@@ -317,11 +317,18 @@ def migrate_permissions():
         WHERE scope IS NULL
     """)
 
-    # 2. kb_metadata: 加 owner_id + scope
+    # 2. kb_metadata: 旧 KB 迁移
+    # user_id IS NULL → owner_id=0（系统 ID）, scope='public'
     db.execute("""
         UPDATE kb_metadata
-        SET scope = 'public'
+        SET owner_id = 0, scope = 'public'
         WHERE user_id IS NULL AND scope IS NULL
+    """)
+    # user_id 有值 → owner_id=user_id, scope='private'（保守默认）
+    db.execute("""
+        UPDATE kb_metadata
+        SET owner_id = user_id, scope = 'private'
+        WHERE user_id IS NOT NULL AND scope IS NULL
     """)
 
     # 3. document_shares: 加 permission 列（默认 'view'）
@@ -332,25 +339,32 @@ def migrate_permissions():
 
 | 场景 | 处理方式 |
 |------|---------|
-| 旧代码读 is_public | 字段保留，新代码优先读 scope |
-| 旧 KB 无 owner_id | 视为 public，admin 可管理 |
+| 旧代码读 is_public | 字段保留，Phase 1 文件代码继续读 is_public |
+| 旧 KB 无 owner_id | owner_id=0（系统 ID），scope='public'，所有人可见 |
 | 旧 document_shares 无 permission | 默认 'view' |
 | protected 文件 | 强制 scope='public'，不可修改 |
+| Phase 1 文件代码 | 读 is_public，不读 scope（向后兼容） |
+| Phase 2 文件代码 | 切换到读 scope，is_public 废弃 |
 
 ---
 
 ## 八、分阶段实现
 
-### Phase 1：KB owner + 两档（private/public）
+### Phase 1：KB owner + 字段统一 + 两档逻辑
 
-**目标：** 解决 C10（KB 无权限控制），最小改动上线
+**目标：** 解决 C10（KB 无权限控制），字段设计统一，最小改动上线
+
+**决策记录：**
+- scope 字段直接用三档 TEXT（private/shared/public），Phase 1 只处理 private/public
+- 旧 KB owner_id = 0（系统保留 ID），scope = 'public'
+- 字段设计现在统一（KB + 文件都加 scope 列），代码逻辑分阶段切换
 
 **改动：**
 - kb_metadata 加 `owner_id`、`scope`（默认 'private'）
-- 创建 KB 时存 owner_id
+- document_permissions 加 `scope` 列（迁移 is_public 数据，Phase 1 文件代码继续读 is_public）
+- 创建 KB 时存 owner_id + scope
 - 删除/修改 KB 端点加 owner 检查
 - 查询/列出 KB 按 scope 过滤（规则见下）
-- 旧 KB 迁移：user_id IS NULL → scope='public'，user_id 有值 → owner_id=user_id
 - 前端：KB 列表显示 scope 标签
 
 **KB 列出/查询过滤规则（Phase 1）：**
@@ -360,10 +374,22 @@ def migrate_permissions():
 | admin | 所有 KB |
 | scope='public' | 所有人 |
 | scope='private' && owner_id=当前用户 | 仅 owner |
-| scope IS NULL（旧数据） | 所有人（向后兼容） |
+| owner_id=0（旧数据） | 所有人（向后兼容） |
+
+**数据迁移：**
+```sql
+-- kb_metadata
+UPDATE kb_metadata SET owner_id = 0, scope = 'public' WHERE user_id IS NULL;
+UPDATE kb_metadata SET owner_id = user_id, scope = 'private' WHERE user_id IS NOT NULL;
+
+-- document_permissions（加 scope 列，文件代码暂不读）
+UPDATE document_permissions SET scope = 'public' WHERE is_public = 1;
+UPDATE document_permissions SET scope = 'private' WHERE is_public = 0;
+UPDATE document_permissions SET scope = 'public' WHERE protected = 1;
+```
 
 **不改：**
-- 文件权限不动（保持 is_public 两档）
+- 文件权限代码不动（继续读 is_public，Phase 2 切换到 scope）
 - 不加共享机制
 - 不加下载控制
 
