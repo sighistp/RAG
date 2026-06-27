@@ -222,6 +222,52 @@ class UserDB:
                 self._conn.commit()
 
     # ------------------------------------------------------------------
+    # KB Metadata (Phase 1: owner/scope)
+    # ------------------------------------------------------------------
+
+    def create_kb_metadata(self, kb_id: str, name: str, owner_id: int = 0, scope: str = "private") -> None:
+        """创建 KB 元数据（仅新 KB 调用，不覆盖已有数据）。"""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO kb_metadata (kb_id, name, owner_id, scope) VALUES (?, ?, ?, ?)",
+                (kb_id, name, owner_id, scope),
+            )
+            self._conn.commit()
+
+    def get_kb_metadata(self, kb_id: str) -> dict[str, Any] | None:
+        """获取 KB 元数据。不存在返回 None。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT kb_id, name, owner_id, scope, created_at FROM kb_metadata WHERE kb_id = ?",
+                (kb_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def update_kb_scope(self, kb_id: str, scope: str) -> None:
+        """更新 KB 的 scope 字段。"""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE kb_metadata SET scope = ? WHERE kb_id = ?",
+                (scope, kb_id),
+            )
+            self._conn.commit()
+
+    def get_kb_metadata_by_names(self, kb_ids: list[str]) -> dict[str, dict[str, Any] | None]:
+        """批量查询 KB 元数据。返回 {kb_id: meta_dict_or_None}。"""
+        if not kb_ids:
+            return {}
+        with self._lock:
+            placeholders = ",".join("?" for _ in kb_ids)
+            rows = self._conn.execute(
+                f"SELECT kb_id, name, owner_id, scope, created_at FROM kb_metadata WHERE kb_id IN ({placeholders})",
+                kb_ids,
+            ).fetchall()
+        meta_map = {r["kb_id"]: dict(r) for r in rows}
+        return {kid: meta_map.get(kid) for kid in kb_ids}
+
+    # ------------------------------------------------------------------
     # Users
     # ------------------------------------------------------------------
 

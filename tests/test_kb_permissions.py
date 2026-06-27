@@ -45,3 +45,41 @@ def test_document_permissions_has_scope_column(db):
         ).fetchone()
     assert row is not None
     assert row["scope"] == "private"
+
+
+# ── Task 1.2: KB Metadata CRUD ─────────────────────────────────────
+
+
+def test_create_kb_metadata(db):
+    """create_kb_metadata 应写入 owner_id 和 scope。"""
+    db.create_kb_metadata("kb_test_001", "测试知识库", owner_id=1, scope="private")
+    meta = db.get_kb_metadata("kb_test_001")
+    assert meta is not None
+    assert meta["kb_id"] == "kb_test_001"
+    assert meta["name"] == "测试知识库"
+    assert meta["owner_id"] == 1
+    assert meta["scope"] == "private"
+
+
+def test_get_kb_metadata_nonexistent(db):
+    """不存在的 KB 返回 None。"""
+    assert db.get_kb_metadata("kb_nonexistent") is None
+
+
+def test_update_kb_scope(db):
+    """update_kb_scope 应更新 scope 字段。"""
+    db.create_kb_metadata("kb_test_001", "测试知识库", owner_id=1, scope="private")
+    db.update_kb_scope("kb_test_001", "public")
+    meta = db.get_kb_metadata("kb_test_001")
+    assert meta["scope"] == "public"
+
+
+def test_get_kb_metadata_by_names_batch(db):
+    """get_kb_metadata_by_names 应批量查询。"""
+    db.create_kb_metadata("kb_a", "A库", owner_id=1, scope="public")
+    db.create_kb_metadata("kb_b", "B库", owner_id=2, scope="private")
+    result = db.get_kb_metadata_by_names(["kb_a", "kb_b", "kb_c"])
+    assert len(result) == 3
+    assert result["kb_a"]["scope"] == "public"
+    assert result["kb_b"]["scope"] == "private"
+    assert result["kb_c"] is None
