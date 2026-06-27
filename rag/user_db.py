@@ -68,6 +68,8 @@ class UserDB:
                     description TEXT DEFAULT '',
                     overview TEXT DEFAULT '',
                     user_id INTEGER,
+                    owner_id INTEGER DEFAULT 0,
+                    scope TEXT DEFAULT 'private',
                     created_at TEXT DEFAULT (datetime('now'))
                 );
 
@@ -197,6 +199,27 @@ class UserDB:
                     "ALTER TABLE analysis_cards ADD COLUMN summary TEXT NOT NULL DEFAULT ''"
                 )
             self._conn.commit()
+
+            # Phase 1 migration: add owner_id and scope to kb_metadata if missing
+            try:
+                self._conn.execute("SELECT owner_id FROM kb_metadata LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute("ALTER TABLE kb_metadata ADD COLUMN owner_id INTEGER DEFAULT 0")
+                self._conn.execute("ALTER TABLE kb_metadata ADD COLUMN scope TEXT DEFAULT 'private'")
+                # Migrate old data
+                self._conn.execute("UPDATE kb_metadata SET owner_id = 0, scope = 'public' WHERE user_id IS NULL")
+                self._conn.execute("UPDATE kb_metadata SET owner_id = user_id, scope = 'private' WHERE user_id IS NOT NULL")
+                self._conn.commit()
+
+            # Phase 1 migration: add scope to document_permissions if missing
+            try:
+                self._conn.execute("SELECT scope FROM document_permissions LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute("ALTER TABLE document_permissions ADD COLUMN scope TEXT DEFAULT 'private'")
+                self._conn.execute("UPDATE document_permissions SET scope = 'public' WHERE is_public = 1")
+                self._conn.execute("UPDATE document_permissions SET scope = 'private' WHERE is_public = 0")
+                self._conn.execute("UPDATE document_permissions SET scope = 'public' WHERE protected = 1")
+                self._conn.commit()
 
     # ------------------------------------------------------------------
     # Users
