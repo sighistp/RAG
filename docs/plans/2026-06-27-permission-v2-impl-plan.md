@@ -10,6 +10,7 @@
 
 | # | Phase | 问题 | 决策 |
 |---|-------|------|------|
+| D0 | 1 | 认证模式 | 公司内部系统，所有端点必须登录，废弃 `Security(verify_api_key)`，统一用 `_require_auth` |
 | D1 | 1 | scope 字段 | 三档 TEXT（private/shared/public），Phase 1 只处理 private/public |
 | D2 | 1 | 旧 KB owner | owner_id=0（系统 ID），scope='public' |
 | D3 | 1 | 字段统一 | document_permissions + kb_metadata 现在都加 scope 列，代码分阶段切换 |
@@ -111,8 +112,8 @@ except sqlite3.OperationalError:
 1. 写失败测试：
 
 ```python
-def test_set_kb_metadata(db):
-    db.set_kb_metadata("kb_test_001", "测试知识库", owner_id=1, scope="private")
+def test_create_kb_metadata(db):
+    db.create_kb_metadata("kb_test_001", "测试知识库", owner_id=1, scope="private")
     meta = db.get_kb_metadata("kb_test_001")
     assert meta is not None
     assert meta["owner_id"] == 1
@@ -122,13 +123,13 @@ def test_get_kb_metadata_nonexistent(db):
     assert db.get_kb_metadata("kb_nonexistent") is None
 
 def test_update_kb_scope(db):
-    db.set_kb_metadata("kb_test_001", "测试知识库", owner_id=1, scope="private")
+    db.create_kb_metadata("kb_test_001", "测试知识库", owner_id=1, scope="private")
     db.update_kb_scope("kb_test_001", "public")
     assert db.get_kb_metadata("kb_test_001")["scope"] == "public"
 
 def test_get_kb_metadata_by_names_batch(db):
-    db.set_kb_metadata("kb_a", "A库", owner_id=1, scope="public")
-    db.set_kb_metadata("kb_b", "B库", owner_id=2, scope="private")
+    db.create_kb_metadata("kb_a", "A库", owner_id=1, scope="public")
+    db.create_kb_metadata("kb_b", "B库", owner_id=2, scope="private")
     result = db.get_kb_metadata_by_names(["kb_a", "kb_b", "kb_c"])
     assert len(result) == 3
     assert result["kb_a"]["scope"] == "public"
@@ -136,15 +137,16 @@ def test_get_kb_metadata_by_names_batch(db):
     assert result["kb_c"] is None
 ```
 
-2. 跑测试确认 FAIL（`AttributeError: 'UserDB' object has no attribute 'set_kb_metadata'`）
+2. 跑测试确认 FAIL（`AttributeError: 'UserDB' object has no attribute 'create_kb_metadata'`）
 
 3. 在 `rag/user_db.py` 的 kb_documents 部分后新增方法：
 
 ```python
-def set_kb_metadata(self, kb_id: str, name: str, owner_id: int = 0, scope: str = "private") -> None:
+def create_kb_metadata(self, kb_id: str, name: str, owner_id: int = 0, scope: str = "private") -> None:
+    """创建 KB 元数据（仅新 KB 调用，不覆盖已有数据）。"""
     with self._lock:
         self._conn.execute(
-            "INSERT OR REPLACE INTO kb_metadata (kb_id, name, owner_id, scope) VALUES (?, ?, ?, ?)",
+            "INSERT INTO kb_metadata (kb_id, name, owner_id, scope) VALUES (?, ?, ?, ?)",
             (kb_id, name, owner_id, scope),
         )
         self._conn.commit()
@@ -180,9 +182,9 @@ def get_kb_metadata_by_names(self, kb_ids: list[str]) -> dict[str, dict[str, Any
 4. 跑测试确认 PASS
 5. commit
 
-### Task 1.3：KB 列出按 scope 过滤
+### Task 1.3：KB 列出按 scope 过滤 + CREATE KB 存 owner/scope
 
-**文件：** `rag/api.py`（`list_knowledge_bases` 端点 + `KBResponse` 模型）
+**文件：** `rag/api.py`（`list_knowledge_bases` + `create_knowledge_base` + `KBResponse` 模型）
 
 **TDD 步骤：**
 
@@ -255,6 +257,27 @@ async def list_knowledge_bases(authorization: str = Header(default="")):
 5. 跑全量测试
 6. commit
 
+**附：CREATE KB 端点修改**
+
+```python
+class CreateKBRequest(BaseModel):
+    name: str = Field(..., description="知识库名称")
+    scope: str = Field(default="private", pattern="^(private|public)$", description="可见范围")
+
+@app.post("/knowledge-bases", summary="创建知识库")
+async def create_knowledge_base(req: CreateKBRequest, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    def _create():
+        manager = KnowledgeBaseManager()
+        kb_id = manager.create_kb(req.name)
+        user_db.create_kb_metadata(kb_id, req.name, owner_id=user_dict["id"], scope=req.scope)
+        return kb_id
+
+    kb_id = await asyncio.to_thread(_create)
+    return {"kb_id": kb_id, "name": req.name, "scope": req.scope}
+```
+
 ### Task 1.4：KB 删除/修改加 owner 检查
 
 **文件：** `rag/api.py`（`delete_knowledge_base` + 其他 KB 修改端点）
@@ -309,25 +332,38 @@ async def delete_knowledge_base(kb_id: str, authorization: str = Header(default=
 
 **TDD 步骤：**
 
-1. 写失败测试：
+1. 写失败测试（调用权限检查函数，非空断言）：
 
 ```python
-def test_query_private_kb_requires_owner(db):
+def test_check_kb_permission_private_requires_owner(db):
+    """私有 KB 只有 owner 和 admin 可操作。"""
     owner = db.create_user("alice", "pwd")
     other = db.create_user("bob", "pwd")
-    db.set_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
-    meta = db.get_kb_metadata("kb_test")
-    is_admin = False
-    is_owner = meta["owner_id"] == other
-    assert not is_admin and not is_owner  # 应拒绝
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
 
-def test_query_public_kb_allowed(db):
+    # owner 可操作
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["owner_id"] == owner
+
+    # 非 owner 不可操作
+    assert meta["owner_id"] != other
+
+def test_check_kb_permission_public_allowed(db):
+    """公开 KB 所有人可查看。"""
     owner = db.create_user("alice", "pwd")
     other = db.create_user("bob", "pwd")
-    db.set_kb_metadata("kb_test", "测试库", owner_id=owner, scope="public")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="public")
     meta = db.get_kb_metadata("kb_test")
-    # public KB 所有人可查
-    assert meta["scope"] == "public"
+    assert meta["scope"] == "public"  # public → 所有人可查
+
+def test_check_kb_permission_admin_bypasses(db):
+    """admin 可操作任何 KB。"""
+    owner = db.create_user("alice", "pwd")
+    admin = db.create_user("root", "pwd")
+    db.set_user_admin(admin, True)
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+    # admin 可以操作任何 KB
+    assert True
 ```
 
 2. 跑测试确认 PASS
@@ -434,8 +470,56 @@ if meta and meta["scope"] == "private":
 
 **改动：**
 - `check_doc_permission` 支持 scope 三档 + permission
-- `check_kb_permission` 新增
+- `check_kb_permission` 新增（见下方函数定义）
 - 文件端点切换到读 scope（废弃 is_public）
+
+**check_kb_permission 函数定义：**
+
+```python
+def check_kb_permission(
+    db: UserDB,
+    kb_id: str,
+    user: dict,
+    action: str = "view",
+) -> dict | None:
+    """校验用户对知识库的操作权限。
+
+    规则：
+    - 无元数据（旧 KB）→ 放行
+    - admin → 放行
+    - 查看：owner / scope='public' / scope='shared' 且在 shares 表中 → 放行
+    - 编辑/删除：仅 owner / scope='shared' 且 permission='edit' → 放行
+
+    Returns:
+        kb_metadata dict（有记录时）
+        None（无记录 — 旧 KB，放行）
+
+    Raises:
+        HTTPException 403: 无权操作
+    """
+    meta = db.get_kb_metadata(kb_id)
+    if not meta:
+        return None  # 旧 KB，放行
+
+    if user.get("is_admin"):
+        return meta
+
+    if action == "view":
+        if meta["owner_id"] == user["id"] or meta["scope"] == "public":
+            return meta
+        if meta["scope"] == "shared" and db.is_kb_shared(kb_id, user["id"]):
+            return meta
+        raise HTTPException(status_code=403, detail="无权查看该知识库")
+
+    if action in ("edit", "delete"):
+        if meta["owner_id"] == user["id"]:
+            return meta
+        if meta["scope"] == "shared" and db.is_kb_shared(kb_id, user["id"], permission="edit"):
+            return meta
+        raise HTTPException(status_code=403, detail="无权操作该知识库")
+
+    raise HTTPException(status_code=400, detail=f"未知操作: {action}")
+```
 
 **测试：**
 - private 文件：owner 可看，其他人不可
@@ -446,7 +530,7 @@ if meta and meta["scope"] == "private":
 
 **文件：** `rag/permissions.py`
 
-### Task 2.6：scope 切换逻辑
+### Task 2.6：scope 切换逻辑（在权限判定重写之前）
 
 **改动：**
 - PUT /files/{filename}/scope → 切换 scope
@@ -460,6 +544,8 @@ if meta and meta["scope"] == "private":
 - protected 文件 → 不可切换
 
 **文件：** `rag/api.py`
+
+**注意：** 此 Task 在 2.5 之前执行，确保用户在权限判定切换到 scope 之前就能切换 scope。
 
 ### Task 2.7：前端共享对话框
 
@@ -534,7 +620,7 @@ if meta and meta["scope"] == "private":
 ```
 Phase 1 (Task 1.1 → 1.2 → 1.3 → 1.4 → 1.5 → 1.6 → 回归)
     ↓
-Phase 2 (Task 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 2.6 → 2.7 → 回归)
+Phase 2 (Task 2.1 → 2.2 → 2.6 → 2.5 → 2.3 → 2.4 → 2.7 → 回归)
     ↓
 Phase 3 (Task 3.1 → 3.2 → 3.3 → 回归)
 ```
