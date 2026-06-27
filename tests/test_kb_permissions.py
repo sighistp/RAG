@@ -224,3 +224,38 @@ def test_delete_old_kb_requires_admin(db):
     # admin
     is_admin = True
     assert is_admin  # 应放行
+
+
+# ── Task 1.5: KB 查询按 scope 过滤 ─────────────────────────────────
+
+
+def test_query_private_kb_requires_owner(db):
+    """私有 KB 只有 owner 和 admin 可查询。"""
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    meta = db.get_kb_metadata("kb_test")
+    # owner 可查询
+    assert meta["owner_id"] == owner
+    # 非 owner 不可查询
+    assert meta["owner_id"] != other
+
+
+def test_query_public_kb_allowed(db):
+    """公开 KB 所有人可查询。"""
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="public")
+
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["scope"] == "public"  # public → 所有人可查
+
+
+def test_query_old_kb_allowed(db):
+    """旧 KB（owner_id=0）所有人可查询。"""
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_old", "旧库", owner_id=0, scope="public")
+
+    meta = db.get_kb_metadata("kb_old")
+    assert meta["owner_id"] == 0  # 旧 KB → 所有人可查

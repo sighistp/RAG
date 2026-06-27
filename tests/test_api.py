@@ -80,6 +80,7 @@ def test_query_knowledge_base(mock_kb_manager_cls):
     response = client.post(
         "/knowledge-bases/kb_abc12345/query",
         json={"question": "what is RAG?", "top_k": 3},
+        headers=_auth_headers(),
     )
 
     assert response.status_code == 200

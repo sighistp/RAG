@@ -1264,7 +1264,15 @@ class QueryKBRequest(BaseModel):
 
 
 @app.post("/knowledge-bases/{kb_id}/query", summary="查询知识库", description="对指定知识库进行语义检索")
-async def query_knowledge_base(kb_id: str, req: QueryKBRequest, user_id: str = Security(verify_api_key)):
+async def query_knowledge_base(kb_id: str, req: QueryKBRequest, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    # Scope 检查：private KB 只有 owner/admin 可查询
+    meta = user_db.get_kb_metadata(kb_id)
+    if meta and meta["scope"] == "private":
+        if not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
+            raise HTTPException(status_code=403, detail="私有知识库仅所有者可查询")
+
     manager = KnowledgeBaseManager()
     try:
         chunks = manager.search(kb_id, req.question, top_k=req.top_k)

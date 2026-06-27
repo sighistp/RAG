@@ -13,6 +13,8 @@ interface KnowledgeBase {
   kb_id: string
   name: string
   doc_count: number
+  scope: string
+  is_owner: boolean
 }
 
 const knowledgeBases = ref<KnowledgeBase[]>([])
@@ -21,6 +23,7 @@ const loading = ref(false)
 // Create dialog
 const showCreateDialog = ref(false)
 const newKBName = ref('')
+const newKBScope = ref('private')
 const creating = ref(false)
 
 onMounted(async () => {
@@ -49,7 +52,7 @@ async function createKB() {
   if (!name) return ElMessage.warning('请输入知识库名称')
   creating.value = true
   try {
-    await api.post('/knowledge-bases', { name }, { headers: authStore.getAuthHeaders() })
+    await api.post('/knowledge-bases', { name, scope: newKBScope.value }, { headers: authStore.getAuthHeaders() })
     ElMessage.success('知识库创建成功')
     showCreateDialog.value = false
     await loadKBs()
@@ -122,7 +125,12 @@ async function selectKB(kb: KnowledgeBase) {
             <el-icon><Collection /></el-icon>
           </div>
           <div class="kb-card-info">
-            <div class="kb-name">{{ kb.name }}</div>
+            <div class="kb-name">
+              {{ kb.name }}
+              <span :class="['scope-tag', kb.scope]">
+                {{ kb.scope === 'private' ? '私有' : '公开' }}
+              </span>
+            </div>
             <div class="kb-meta">{{ kb.doc_count }} 个文档</div>
           </div>
         </div>
@@ -172,6 +180,11 @@ async function selectKB(kb: KnowledgeBase) {
           maxlength="100"
           @keyup.enter="createKB"
         />
+        <label class="create-label" style="margin-top: 16px;">可见范围</label>
+        <el-radio-group v-model="newKBScope">
+          <el-radio value="private">私有（仅自己可见）</el-radio>
+          <el-radio value="public">公开（所有人可见）</el-radio>
+        </el-radio-group>
       </div>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
@@ -412,6 +425,27 @@ async function selectKB(kb: KnowledgeBase) {
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   color: var(--color-foreground);
+}
+
+/* ── Scope tags ── */
+.scope-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  font-weight: var(--font-medium);
+  vertical-align: middle;
+}
+
+.scope-tag.private {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.scope-tag.public {
+  background: #d1fae5;
+  color: #065f46;
 }
 
 @keyframes shimmer {
