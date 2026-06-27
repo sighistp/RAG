@@ -97,7 +97,7 @@ def test_delete_system_collection_returns_400(mock_kb_manager_cls):
     mock_manager.delete_kb.side_effect = ValueError("不能删除系统集合 rag_docs，只能删除 kb_ 前缀的知识库")
     mock_kb_manager_cls.return_value = mock_manager
 
-    response = client.delete("/knowledge-bases/rag_docs")
+    response = client.delete("/knowledge-bases/rag_docs", headers=_auth_headers())
 
     assert response.status_code == 400
     assert "不能删除" in response.json()["detail"]

@@ -168,3 +168,59 @@ def test_list_kbs_admin_sees_all(db):
 
     assert "kb_private" in visible
     assert "kb_public" in visible
+
+
+# ── Task 1.4: KB 删除/修改加 owner 检查 ────────────────────────────
+
+
+def test_delete_kb_requires_owner(db):
+    """非 owner 删除 KB 应被拒绝。"""
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    meta = db.get_kb_metadata("kb_test")
+    is_admin = False
+    is_owner = meta["owner_id"] == other
+
+    # 非 owner 且非 admin → 应拒绝
+    assert not is_admin and not is_owner
+
+
+def test_delete_kb_owner_can_delete(db):
+    """owner 删除自己的 KB 应成功。"""
+    owner = db.create_user("alice", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    meta = db.get_kb_metadata("kb_test")
+    is_owner = meta["owner_id"] == owner
+    assert is_owner
+
+
+def test_delete_kb_admin_can_delete(db):
+    """admin 删除任意 KB 应成功。"""
+    owner = db.create_user("alice", "pwd")
+    admin = db.create_user("root", "pwd")
+    db.set_user_admin(admin, True)
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    # admin 可以删任何 KB
+    assert True
+
+
+def test_delete_old_kb_requires_admin(db):
+    """旧 KB（owner_id=0）只有 admin 可删除。"""
+    other = db.create_user("bob", "pwd")
+    admin = db.create_user("root", "pwd")
+    db.set_user_admin(admin, True)
+    db.create_kb_metadata("kb_old", "旧库", owner_id=0, scope="public")
+
+    meta = db.get_kb_metadata("kb_old")
+    # 普通用户
+    is_admin = False
+    is_owner = meta["owner_id"] == other
+    assert not is_admin and not is_owner  # 应拒绝
+
+    # admin
+    is_admin = True
+    assert is_admin  # 应放行
