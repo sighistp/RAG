@@ -1042,30 +1042,58 @@ class BatchImportRequest(BaseModel):
 
 class CreateKBRequest(BaseModel):
     name: str = Field(..., description="知识库名称")
+    scope: str = Field(default="private", pattern="^(private|public)$", description="可见范围：private 或 public")
 
 
 class KBResponse(BaseModel):
     kb_id: str
     name: str
     doc_count: int
+    scope: str = "public"
+    is_owner: bool = False
 
 
 @app.get("/knowledge-bases", summary="列出知识库", description="获取所有知识库列表")
-async def list_knowledge_bases(user_id: str = Security(verify_api_key)):
+async def list_knowledge_bases(authorization: str = Header(default="")):
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
+
     def _list():
         manager = KnowledgeBaseManager()
-        return manager.list_kbs()
-    kbs = await asyncio.to_thread(_list)
-    return [KBResponse(kb_id=kb.kb_id, name=kb.name, doc_count=kb.doc_count) for kb in kbs]
+        kbs = manager.list_kbs()
+        kb_ids = [kb.kb_id for kb in kbs]
+        meta_map = user_db.get_kb_metadata_by_names(kb_ids)
+        result = []
+        for kb in kbs:
+            meta = meta_map.get(kb.kb_id)
+            scope = meta["scope"] if meta else "public"
+            owner_id = meta["owner_id"] if meta else 0
+            is_admin = user_dict and user_dict.get("is_admin", False)
+            is_owner = user_dict and owner_id == user_dict["id"]
+            if not is_admin and scope == "private" and not is_owner:
+                continue
+            result.append(KBResponse(
+                kb_id=kb.kb_id, name=kb.name, doc_count=kb.doc_count,
+                scope=scope, is_owner=is_owner,
+            ))
+        return result
+    return await asyncio.to_thread(_list)
 
 
 @app.post("/knowledge-bases", summary="创建知识库", description="创建一个新的知识库")
-async def create_knowledge_base(req: CreateKBRequest, user_id: str = Security(verify_api_key)):
+async def create_knowledge_base(req: CreateKBRequest, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
     def _create():
         manager = KnowledgeBaseManager()
-        return manager.create_kb(req.name)
+        kb_id = manager.create_kb(req.name)
+        user_db.create_kb_metadata(kb_id, req.name, owner_id=user_dict["id"], scope=req.scope)
+        return kb_id
+
     kb_id = await asyncio.to_thread(_create)
-    return {"kb_id": kb_id, "name": req.name}
+    return {"kb_id": kb_id, "name": req.name, "scope": req.scope}
 
 
 @app.delete("/knowledge-bases/{kb_id}", summary="删除知识库", description="删除指定知识库及其所有文档")

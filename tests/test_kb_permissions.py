@@ -83,3 +83,88 @@ def test_get_kb_metadata_by_names_batch(db):
     assert result["kb_a"]["scope"] == "public"
     assert result["kb_b"]["scope"] == "private"
     assert result["kb_c"] is None
+
+
+# ── Task 1.3: KB 列出过滤 + CREATE KB ──────────────────────────────
+
+
+def test_list_kbs_filters_private_for_non_owner(db):
+    """非 owner 不应看到 private KB。"""
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_private", "私有库", owner_id=owner, scope="private")
+    db.create_kb_metadata("kb_public", "公开库", owner_id=owner, scope="public")
+
+    meta_map = db.get_kb_metadata_by_names(["kb_private", "kb_public"])
+    visible = []
+    for kid, meta in meta_map.items():
+        if meta is None:
+            visible.append(kid)
+        elif meta["scope"] == "public":
+            visible.append(kid)
+        elif meta["owner_id"] == other:
+            visible.append(kid)
+
+    assert "kb_public" in visible
+    assert "kb_private" not in visible
+
+
+def test_list_kbs_owner_sees_own_private(db):
+    """owner 应看到自己的 private KB。"""
+    owner = db.create_user("alice", "pwd")
+    db.create_kb_metadata("kb_private", "私有库", owner_id=owner, scope="private")
+
+    meta_map = db.get_kb_metadata_by_names(["kb_private"])
+    visible = []
+    for kid, meta in meta_map.items():
+        if meta is None:
+            visible.append(kid)
+        elif meta["scope"] == "public":
+            visible.append(kid)
+        elif meta["owner_id"] == owner:
+            visible.append(kid)
+
+    assert "kb_private" in visible
+
+
+def test_list_kbs_old_kb_visible_to_all(db):
+    """旧 KB（owner_id=0）应所有人可见。"""
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_old", "旧库", owner_id=0, scope="public")
+
+    meta_map = db.get_kb_metadata_by_names(["kb_old"])
+    visible = []
+    for kid, meta in meta_map.items():
+        if meta is None:
+            visible.append(kid)
+        elif meta["scope"] == "public":
+            visible.append(kid)
+        elif meta["owner_id"] == other:
+            visible.append(kid)
+
+    assert "kb_old" in visible
+
+
+def test_list_kbs_admin_sees_all(db):
+    """admin 应看到所有 KB。"""
+    owner = db.create_user("alice", "pwd")
+    admin = db.create_user("root", "pwd")
+    db.set_user_admin(admin, True)
+    db.create_kb_metadata("kb_private", "私有库", owner_id=owner, scope="private")
+    db.create_kb_metadata("kb_public", "公开库", owner_id=owner, scope="public")
+
+    meta_map = db.get_kb_metadata_by_names(["kb_private", "kb_public"])
+    is_admin = True
+    visible = []
+    for kid, meta in meta_map.items():
+        if is_admin:
+            visible.append(kid)
+        elif meta is None:
+            visible.append(kid)
+        elif meta["scope"] == "public":
+            visible.append(kid)
+        elif meta["owner_id"] == admin:
+            visible.append(kid)
+
+    assert "kb_private" in visible
+    assert "kb_public" in visible

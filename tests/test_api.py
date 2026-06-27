@@ -5,6 +5,19 @@ from rag.api import app
 client = TestClient(app)
 
 
+def _auth_headers():
+    """创建测试用户并返回 auth headers。"""
+    from rag.api import user_db
+    from rag.auth import create_token
+    try:
+        uid = user_db.create_user("_test_admin", "test123")
+    except ValueError:
+        uid = user_db.get_user_by_username("_test_admin")["id"]
+    user_db.set_user_admin(uid, True)
+    token = create_token({"user_id": uid, "username": "_test_admin"})
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
@@ -227,16 +240,17 @@ def test_get_kb_detail():
     from fastapi.testclient import TestClient
     from rag.api import app
     client = TestClient(app)
+    headers = _auth_headers()
     # 先创建一个知识库
-    res = client.post("/knowledge-bases", json={"name": "test_kb_detail"})
+    res = client.post("/knowledge-bases", json={"name": "test_kb_detail"}, headers=headers)
     kb_id = res.json()["kb_id"]
     # 获取详情
-    response = client.get(f"/knowledge-bases/{kb_id}")
+    response = client.get(f"/knowledge-bases/{kb_id}", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert "name" in data
     # 清理
-    client.delete(f"/knowledge-bases/{kb_id}")
+    client.delete(f"/knowledge-bases/{kb_id}", headers=headers)
 
 
 def test_update_kb_overview():
@@ -244,14 +258,15 @@ def test_update_kb_overview():
     from fastapi.testclient import TestClient
     from rag.api import app
     client = TestClient(app)
-    res = client.post("/knowledge-bases", json={"name": "test_overview"})
+    headers = _auth_headers()
+    res = client.post("/knowledge-bases", json={"name": "test_overview"}, headers=headers)
     kb_id = res.json()["kb_id"]
-    response = client.put(f"/knowledge-bases/{kb_id}/overview", json={"overview": "这是概述"})
+    response = client.put(f"/knowledge-bases/{kb_id}/overview", json={"overview": "这是概述"}, headers=headers)
     assert response.status_code == 200
     # 验证更新
-    detail = client.get(f"/knowledge-bases/{kb_id}")
+    detail = client.get(f"/knowledge-bases/{kb_id}", headers=headers)
     assert detail.json().get("overview") == "这是概述"
-    client.delete(f"/knowledge-bases/{kb_id}")
+    client.delete(f"/knowledge-bases/{kb_id}", headers=headers)
 
 
 def test_update_doc_toc():
@@ -259,11 +274,9 @@ def test_update_doc_toc():
     from fastapi.testclient import TestClient
     from rag.api import app
     client = TestClient(app)
-    res = client.post("/knowledge-bases", json={"name": "test_toc"})
+    headers = _auth_headers()
+    res = client.post("/knowledge-bases", json={"name": "test_toc"}, headers=headers)
     kb_id = res.json()["kb_id"]
-    # 先添加一个文档（需要有文件存在）
-    # 这里测试端点存在即可
-    response = client.put(f"/knowledge-bases/{kb_id}/documents/test.txt/toc", json={"toc": {"title": "test", "sections": []}})
-    # 可能返回 404（文档不存在），但端点不应该不存在
+    response = client.put(f"/knowledge-bases/{kb_id}/documents/test.txt/toc", json={"toc": {"title": "test", "sections": []}}, headers=headers)
     assert response.status_code != 404 or response.status_code == 404
-    client.delete(f"/knowledge-bases/{kb_id}")
+    client.delete(f"/knowledge-bases/{kb_id}", headers=headers)
