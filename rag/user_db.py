@@ -248,6 +248,13 @@ class UserDB:
                 self._conn.execute("ALTER TABLE document_shares ADD COLUMN permission TEXT DEFAULT 'view'")
                 self._conn.commit()
 
+            # Phase 3 migration: add downloadable to document_permissions if missing
+            try:
+                self._conn.execute("SELECT downloadable FROM document_permissions LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute("ALTER TABLE document_permissions ADD COLUMN downloadable INTEGER DEFAULT 1")
+                self._conn.commit()
+
     # ------------------------------------------------------------------
     # User Search (Phase 2)
     # ------------------------------------------------------------------
@@ -729,7 +736,7 @@ class UserDB:
     def get_document_permission(self, doc_name: str, kb_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, scope, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, scope, downloadable, created_at "
                 "FROM document_permissions WHERE doc_name = ? AND kb_id = ?",
                 (doc_name, kb_id),
             ).fetchone()
@@ -738,12 +745,13 @@ class UserDB:
         d = dict(row)
         d["is_public"] = bool(d.get("is_public", 0))
         d["protected"] = bool(d.get("protected", 0))
+        d["downloadable"] = bool(d.get("downloadable", 1))
         return d
 
     def get_document_permission_by_id(self, doc_id: int) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, scope, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, scope, downloadable, created_at "
                 "FROM document_permissions WHERE id = ?",
                 (doc_id,),
             ).fetchone()
@@ -752,6 +760,7 @@ class UserDB:
         d = dict(row)
         d["is_public"] = bool(d.get("is_public", 0))
         d["protected"] = bool(d.get("protected", 0))
+        d["downloadable"] = bool(d.get("downloadable", 1))
         return d
 
     def toggle_document_visibility(self, doc_id: int) -> bool:

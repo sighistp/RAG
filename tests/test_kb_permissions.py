@@ -773,3 +773,27 @@ def test_unshare_kb_removes_record(db):
 
     db.unshare_kb("kb_test", viewer)
     assert not db.is_kb_shared("kb_test", viewer)
+
+
+# ── Phase 3: 下载控制 ───────────────────────────────────────────────
+
+
+def test_document_permissions_has_downloadable_column(db):
+    """document_permissions 表应有 downloadable 列。"""
+    uid = db.create_user("alice", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", uid, scope="private")
+    with db._lock:
+        row = db._conn.execute(
+            "SELECT downloadable FROM document_permissions WHERE id = ?",
+            (doc_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["downloadable"] == 1  # 默认可下载
+
+
+def test_create_document_permission_default_downloadable(db):
+    """新建文档权限默认可下载。"""
+    uid = db.create_user("alice", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", uid, scope="private")
+    perm = db.get_document_permission_by_id(doc_id)
+    assert perm["downloadable"] is True
