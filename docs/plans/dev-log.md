@@ -4062,3 +4062,54 @@ d3a5c1f feat(Task 2.7): 前端共享对话框 — ShareDialog + 用户搜索 + s
 ### 下一步
 
 Phase 3：下载控制（downloadable 字段 + 下载端点 + 前端控制）
+
+---
+
+## 权限 v2 Phase 3：下载控制（2026-06-28）✅
+
+### 目标
+支持"可预览不可下载"企业级需求。
+
+### 实现内容
+
+| Task | 内容 | 测试 |
+|------|------|------|
+| 3.1 | document_permissions 加 downloadable 列（默认 true） | 2 |
+| 3.2 | 下载端点 — GET /files/{filename}/download + 权限检查 + downloadable 控制 | 2 |
+| 3.3 | 前端下载按钮 + downloadable=false 时灰色禁用 + tooltip | 手动 |
+
+### 关键改动
+
+**后端：**
+- `rag/user_db.py` — document_permissions 加 downloadable 列 + 迁移脚本 + SELECT 包含 downloadable
+- `rag/api.py` — 新增 `GET /files/{filename}/download` 端点
+
+**前端：**
+- `frontend/src/stores/files.ts` — FileInfo 接口加 downloadable 字段
+- `frontend/src/views/FileModeView.vue` — 文件列表加下载按钮 + downloadable=false 时灰色禁用 + tooltip
+
+### 下载权限规则
+
+| 条件 | 可下载 |
+|------|--------|
+| admin | ✅ 所有文件 |
+| owner | ✅ 自己的文件 |
+| downloadable=true + 有查看权限 | ✅ |
+| downloadable=false + 非 owner | ❌ |
+| 无查看权限 | ❌ |
+
+### 测试结果
+
+549 个测试全过。
+
+### 提交记录
+
+```
+7fdd9f2 feat(Task 3.1): document_permissions 加 downloadable 列
+10d1bbb feat(Task 3.2): 下载端点 — GET /files/{filename}/download
+b9fc2f8 feat(Task 3.3): 前端下载按钮 + downloadable=false 时灰色禁用
+```
+
+### 下一步
+
+权限 v2 全部完成。可选：更新开发日志总结、部署验证、或开始新功能。
