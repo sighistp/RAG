@@ -1286,12 +1286,14 @@ async def query_knowledge_base(kb_id: str, req: QueryKBRequest, authorization: s
 async def get_knowledge_base_detail(
     kb_id: str,
     authorization: str = Header(default=""),
-    user_id: str = Security(verify_api_key),
 ):
-    """获取知识库详情，包括元数据、文档列表、概述、目录。
+    """获取知识库详情，包括元数据、文档列表、概述、目录。"""
+    # 认证（可选，未登录时只能看 public KB）
+    user_dict = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "")
+        user_dict = await asyncio.to_thread(_get_current_user, token)
 
-    知识库默认共享，所有用户可查看全部文档。
-    """
     def _get():
         import sqlite3
         from config import settings as _settings
@@ -1309,12 +1311,20 @@ async def get_knowledge_base_detail(
         try:
             meta = conn.execute("SELECT * FROM kb_metadata WHERE kb_id = ?", (kb_id,)).fetchone()
 
+            # Scope 检查
+            scope = meta["scope"] if meta else "public"
+            owner_id = meta["owner_id"] if meta else 0
+            is_admin = user_dict and user_dict.get("is_admin", False)
+            is_owner = user_dict and owner_id == user_dict["id"]
+
+            if scope == "private" and not is_admin and not is_owner:
+                return "forbidden"
+
             docs = conn.execute(
                 "SELECT * FROM kb_documents WHERE kb_id = ? ORDER BY added_at DESC",
                 (kb_id,),
             ).fetchall()
 
-            # 知识库默认共享，返回全部文档
             doc_list = [dict(d) for d in docs]
 
             return {
@@ -1323,12 +1333,16 @@ async def get_knowledge_base_detail(
                 "description": meta["description"] if meta else "",
                 "overview": meta["overview"] if meta else "",
                 "doc_count": kb.doc_count,
+                "scope": scope,
+                "is_owner": is_owner,
                 "documents": doc_list,
             }
         finally:
             conn.close()
 
     result = await asyncio.to_thread(_get)
+    if result == "forbidden":
+        raise HTTPException(status_code=403, detail="私有知识库仅所有者可查看")
     if not result:
         raise HTTPException(status_code=404, detail="知识库不存在")
     return result
@@ -1458,8 +1472,14 @@ async def update_doc_summary(kb_id: str, doc_name: str, req: KBSummaryRequest, a
 
 
 @app.post("/knowledge-bases/{kb_id}/toc/generate", summary="LLM 生成知识库目录")
-async def generate_kb_toc(kb_id: str, user_id: str = Security(verify_api_key)):
+async def generate_kb_toc(kb_id: str, authorization: str = Header(default="")):
     """对知识库中所有文档调用 LLM 生成目录结构，并保存到 kb_documents.toc。"""
+    user_dict = await _require_auth(authorization)
+
+    # KB owner 检查
+    meta = user_db.get_kb_metadata(kb_id)
+    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
+        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
     def _generate():
         import sqlite3
         import json as _json
@@ -1522,8 +1542,14 @@ async def generate_kb_toc(kb_id: str, user_id: str = Security(verify_api_key)):
 
 
 @app.post("/knowledge-bases/{kb_id}/overview/generate", summary="LLM 生成知识库概述")
-async def generate_kb_overview(kb_id: str, user_id: str = Security(verify_api_key)):
+async def generate_kb_overview(kb_id: str, authorization: str = Header(default="")):
     """对知识库中所有文档内容调用 LLM 生成概述，并保存到 kb_metadata.overview。"""
+    user_dict = await _require_auth(authorization)
+
+    # KB owner 检查
+    meta = user_db.get_kb_metadata(kb_id)
+    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
+        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
     def _generate():
         import sqlite3
 

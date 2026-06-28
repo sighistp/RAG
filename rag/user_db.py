@@ -216,9 +216,14 @@ class UserDB:
                 self._conn.execute("SELECT scope FROM document_permissions LIMIT 1")
             except sqlite3.OperationalError:
                 self._conn.execute("ALTER TABLE document_permissions ADD COLUMN scope TEXT DEFAULT 'private'")
-                self._conn.execute("UPDATE document_permissions SET scope = 'public' WHERE is_public = 1")
-                self._conn.execute("UPDATE document_permissions SET scope = 'private' WHERE is_public = 0")
-                self._conn.execute("UPDATE document_permissions SET scope = 'public' WHERE protected = 1")
+                # 用 CASE 一次性迁移，优先级：protected > is_public > 默认 private
+                self._conn.execute("""
+                    UPDATE document_permissions SET scope = CASE
+                        WHEN protected = 1 THEN 'public'
+                        WHEN is_public = 1 THEN 'public'
+                        ELSE 'private'
+                    END
+                """)
                 self._conn.commit()
 
     # ------------------------------------------------------------------
@@ -228,11 +233,14 @@ class UserDB:
     def create_kb_metadata(self, kb_id: str, name: str, owner_id: int = 0, scope: str = "private") -> None:
         """创建 KB 元数据（仅新 KB 调用，不覆盖已有数据）。"""
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO kb_metadata (kb_id, name, owner_id, scope) VALUES (?, ?, ?, ?)",
-                (kb_id, name, owner_id, scope),
-            )
-            self._conn.commit()
+            try:
+                self._conn.execute(
+                    "INSERT INTO kb_metadata (kb_id, name, owner_id, scope) VALUES (?, ?, ?, ?)",
+                    (kb_id, name, owner_id, scope),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError:
+                pass  # 已存在，忽略（Qdrant KB 已创建但 metadata 重复插入的情况）
 
     def get_kb_metadata(self, kb_id: str) -> dict[str, Any] | None:
         """获取 KB 元数据。不存在返回 None。"""
@@ -246,7 +254,9 @@ class UserDB:
         return dict(row)
 
     def update_kb_scope(self, kb_id: str, scope: str) -> None:
-        """更新 KB 的 scope 字段。"""
+        """更新 KB 的 scope 字段。scope 必须是 'private' 或 'public'。"""
+        if scope not in ("private", "public"):
+            raise ValueError(f"无效的 scope: {scope}，必须是 'private' 或 'public'")
         with self._lock:
             self._conn.execute(
                 "UPDATE kb_metadata SET scope = ? WHERE kb_id = ?",

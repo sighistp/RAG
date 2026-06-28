@@ -259,3 +259,95 @@ def test_query_old_kb_allowed(db):
 
     meta = db.get_kb_metadata("kb_old")
     assert meta["owner_id"] == 0  # 旧 KB → 所有人可查
+
+
+# ── API 层权限测试 ─────────────────────────────────────────────────
+
+
+def test_api_delete_kb_non_owner_returns_403():
+    """非 owner 删除 KB 应返回 403。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app, user_db
+    from rag.auth import create_token
+
+    client = TestClient(app)
+
+    # 创建 owner 和 other 用户
+    try:
+        owner_id = user_db.create_user("_perm_owner", "pwd")
+    except ValueError:
+        owner_id = user_db.get_user_by_username("_perm_owner")["id"]
+    try:
+        other_id = user_db.create_user("_perm_other", "pwd")
+    except ValueError:
+        other_id = user_db.get_user_by_username("_perm_other")["id"]
+
+    owner_token = create_token({"user_id": owner_id, "username": "_perm_owner"})
+    other_token = create_token({"user_id": other_id, "username": "_perm_other"})
+
+    # owner 创建 KB
+    res = client.post("/knowledge-bases", json={"name": "perm_test", "scope": "private"},
+                      headers={"Authorization": f"Bearer {owner_token}"})
+    assert res.status_code == 200
+    kb_id = res.json()["kb_id"]
+
+    # other 尝试删除 → 403
+    res = client.delete(f"/knowledge-bases/{kb_id}",
+                        headers={"Authorization": f"Bearer {other_token}"})
+    assert res.status_code == 403
+
+    # owner 删除 → 200
+    res = client.delete(f"/knowledge-bases/{kb_id}",
+                        headers={"Authorization": f"Bearer {owner_token}"})
+    assert res.status_code == 200
+
+
+def test_api_query_private_kb_non_owner_returns_403():
+    """非 owner 查询私有 KB 应返回 403。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app, user_db
+    from rag.auth import create_token
+
+    client = TestClient(app)
+
+    try:
+        owner_id = user_db.create_user("_perm_owner2", "pwd")
+    except ValueError:
+        owner_id = user_db.get_user_by_username("_perm_owner2")["id"]
+    try:
+        other_id = user_db.create_user("_perm_other2", "pwd")
+    except ValueError:
+        other_id = user_db.get_user_by_username("_perm_other2")["id"]
+
+    owner_token = create_token({"user_id": owner_id, "username": "_perm_owner2"})
+    other_token = create_token({"user_id": other_id, "username": "_perm_other2"})
+
+    # owner 创建私有 KB
+    res = client.post("/knowledge-bases", json={"name": "priv_test", "scope": "private"},
+                      headers={"Authorization": f"Bearer {owner_token}"})
+    assert res.status_code == 200
+    kb_id = res.json()["kb_id"]
+
+    # other 查询 → 403
+    res = client.post(f"/knowledge-bases/{kb_id}/query",
+                      json={"question": "test"},
+                      headers={"Authorization": f"Bearer {other_token}"})
+    assert res.status_code == 403
+
+    # 清理
+    client.delete(f"/knowledge-bases/{kb_id}",
+                  headers={"Authorization": f"Bearer {owner_token}"})
+
+
+def test_api_no_auth_returns_401():
+    """未登录访问 KB 端点应返回 401。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app
+
+    client = TestClient(app)
+
+    res = client.post("/knowledge-bases", json={"name": "no_auth_test"})
+    assert res.status_code == 401
+
+    res = client.delete("/knowledge-bases/kb_nonexistent")
+    assert res.status_code == 401
