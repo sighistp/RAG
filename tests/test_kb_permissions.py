@@ -797,3 +797,34 @@ def test_create_document_permission_default_downloadable(db):
     doc_id = db.create_document_permission("test.pdf", "rag_docs", uid, scope="private")
     perm = db.get_document_permission_by_id(doc_id)
     assert perm["downloadable"] is True
+
+
+# ── Task 3.2: 下载端点 ──────────────────────────────────────────────
+
+
+def test_download_requires_auth():
+    """下载文件需要认证。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app
+
+    client = TestClient(app)
+    res = client.get("/files/test.txt/download")
+    assert res.status_code == 401
+
+
+def test_download_file_not_found():
+    """下载不存在的文件应返回 404。"""
+    from fastapi.testclient import TestClient
+    from rag.api import app, user_db
+    from rag.auth import create_token
+
+    client = TestClient(app)
+    try:
+        uid = user_db.create_user("_dl_test", "pwd")
+    except ValueError:
+        uid = user_db.get_user_by_username("_dl_test")["id"]
+    token = create_token({"user_id": uid, "username": "_dl_test"})
+
+    res = client.get("/files/nonexistent.txt/download",
+                     headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 404

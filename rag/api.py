@@ -751,6 +751,42 @@ async def toggle_file_visibility(filename: str, authorization: str = Header(defa
         raise
 
 
+@app.get("/files/{filename}/download", summary="下载文件")
+async def download_file(filename: str, authorization: str = Header(default="")):
+    """下载文件。检查权限 + downloadable 字段。"""
+    user_dict = await _require_auth(authorization)
+
+    safe_name = Path(filename).name
+    file_path = DATA_DIR / safe_name
+
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"文件 {safe_name} 不存在")
+
+    # 权限检查
+    perm = user_db.get_document_permission(safe_name, "rag_docs")
+    if perm:
+        # admin 可下载所有文件
+        if not user_dict.get("is_admin"):
+            scope = perm.get("scope", "private")
+            is_owner = perm["owner_id"] == user_dict["id"]
+
+            # 检查可见权限
+            if scope == "private" and not is_owner:
+                raise HTTPException(status_code=403, detail="无权下载该文件")
+            if scope == "shared" and not is_owner and not user_db.is_document_shared(perm["id"], user_dict["id"]):
+                raise HTTPException(status_code=403, detail="无权下载该文件")
+
+            # 检查 downloadable（owner 总是可下载）
+            if not perm.get("downloadable", True) and not is_owner:
+                raise HTTPException(status_code=403, detail="该文件不允许下载")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=safe_name,
+        media_type="application/octet-stream",
+    )
+
+
 @app.post("/files/{filename}/tags", summary="为文档添加标签", description="为指定文档的所有分块添加标签")
 async def add_tags_to_file(filename: str, tags: list[str], authorization: str = Header(default="")):
     from qdrant_client.models import FieldCondition, Filter, MatchValue, PointIdsList, UpdateOperation
