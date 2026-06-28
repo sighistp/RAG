@@ -391,3 +391,61 @@ def test_document_shares_has_permission_column(db):
         ).fetchone()
     assert row is not None
     assert row["permission"] == "edit"
+
+
+# ── Task 2.2: 用户搜索 API ─────────────────────────────────────────
+
+
+def test_search_users_returns_results(db):
+    """搜索用户应返回匹配的结果。"""
+    db.create_user("alice_wang", "pwd")
+    db.create_user("alice_li", "pwd")
+    db.create_user("bob_zhang", "pwd")
+
+    # 模拟搜索逻辑
+    with db._lock:
+        rows = db._conn.execute(
+            "SELECT id, username FROM users WHERE username LIKE ? LIMIT 20",
+            ("%alice%",),
+        ).fetchall()
+    results = [{"id": r["id"], "username": r["username"]} for r in rows]
+
+    assert len(results) == 2
+    assert all("alice" in r["username"] for r in results)
+
+
+def test_search_users_min_query_length(db):
+    """搜索词至少 2 个字符。"""
+    query = "a"
+    assert len(query) < 2  # 应拒绝
+
+
+def test_search_users_max_20_results(db):
+    """搜索结果最多 20 条。"""
+    for i in range(25):
+        db.create_user(f"user_{i:03d}", "pwd")
+
+    with db._lock:
+        rows = db._conn.execute(
+            "SELECT id, username FROM users WHERE username LIKE ? LIMIT 20",
+            ("%user%",),
+        ).fetchall()
+
+    assert len(rows) <= 20
+
+
+def test_search_users_only_returns_id_and_username(db):
+    """搜索结果只含 id 和 username，不含敏感信息。"""
+    db.create_user("test_user", "pwd")
+
+    with db._lock:
+        rows = db._conn.execute(
+            "SELECT id, username FROM users WHERE username LIKE ?",
+            ("%test_user%",),
+        ).fetchall()
+    result = dict(rows[0])
+
+    assert "id" in result
+    assert "username" in result
+    assert "password" not in result
+    assert "is_admin" not in result

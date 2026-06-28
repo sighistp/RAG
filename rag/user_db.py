@@ -249,6 +249,19 @@ class UserDB:
                 self._conn.commit()
 
     # ------------------------------------------------------------------
+    # User Search (Phase 2)
+    # ------------------------------------------------------------------
+
+    def search_users(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        """按用户名搜索用户。返回 [{id, username}]，最多 limit 条。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, username FROM users WHERE username LIKE ? LIMIT ?",
+                (f"%{query}%", limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
     # KB Metadata (Phase 1: owner/scope)
     # ------------------------------------------------------------------
 

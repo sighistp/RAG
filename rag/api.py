@@ -389,6 +389,17 @@ def _get_current_user(token: str) -> dict | None:
     return user
 
 
+@app.get("/users", summary="搜索用户", description="按用户名搜索用户，用于共享功能")
+async def search_users(q: str = Query(..., min_length=2, description="搜索词，至少 2 个字符"), authorization: str = Header(default="")):
+    await _require_auth(authorization)
+
+    def _search():
+        rows = user_db.search_users(q, limit=20)
+        return [{"id": r["id"], "username": r["username"]} for r in rows]
+
+    return await asyncio.to_thread(_search)
+
+
 @app.post("/conversations", summary="新建对话")
 async def create_conversation(req: CreateConversationRequest = CreateConversationRequest(), authorization: str = Header(default="")):
     if not authorization:
