@@ -109,6 +109,30 @@ async function handleDelete(name: string) {
   }
 }
 
+async function downloadFile(name: string) {
+  try {
+    const auth = useAuthStore()
+    const response = await fetch(`/files/${encodeURIComponent(name)}/download`, {
+      headers: auth.getAuthHeaders()
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || '下载失败')
+    }
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  } catch (e: any) {
+    ElMessage.error(e.message || '下载失败')
+  }
+}
+
 onMounted(async () => {
   await chatStore.loadConversations('file')
   // Auto-select the most recent conversation if exists
@@ -259,6 +283,18 @@ function askSuggested(q: string) {
             <div class="file-item-size">{{ file.size_human }}</div>
           </div>
           <div class="file-item-actions">
+            <el-tooltip
+              :content="file.downloadable === false ? '该文件不允许下载' : '下载文件'"
+              placement="top"
+            >
+              <button
+                class="file-item-download"
+                :disabled="file.downloadable === false && !file.is_owner"
+                @click.stop="downloadFile(file.name)"
+              >
+                ⬇
+              </button>
+            </el-tooltip>
             <el-dropdown v-if="!file.protected" trigger="click" @command="(cmd: string) => handleFileAction(cmd, file.name)" @click.stop>
               <button class="file-item-more" @click.stop>⋯</button>
               <template #dropdown>
@@ -672,6 +708,32 @@ function askSuggested(q: string) {
 .file-item-more:hover {
   background: var(--color-muted);
   color: var(--color-foreground);
+}
+
+.file-item-download {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--color-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.file-item-download:hover:not(:disabled) {
+  background: var(--color-muted);
+  color: var(--color-accent);
+}
+
+.file-item-download:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .empty-files {

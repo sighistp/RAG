@@ -15,6 +15,7 @@ interface FileInfo {
   owner_id?: number
   is_owner?: boolean
   in_kb?: boolean
+  downloadable?: boolean
 }
 
 export const useFilesStore = defineStore('files', () => {
