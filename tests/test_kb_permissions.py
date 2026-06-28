@@ -351,3 +351,43 @@ def test_api_no_auth_returns_401():
 
     res = client.delete("/knowledge-bases/kb_nonexistent")
     assert res.status_code == 401
+
+
+# ── Phase 2: shared 档 + 共享机制 ──────────────────────────────────
+
+
+def test_kb_shares_table_exists(db):
+    """kb_shares 表应存在。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    with db._lock:
+        db._conn.execute(
+            "INSERT INTO kb_shares (kb_id, user_id, permission, granted_by) VALUES (?, ?, ?, ?)",
+            ("kb_test", viewer, "view", owner),
+        )
+        db._conn.commit()
+        row = db._conn.execute(
+            "SELECT kb_id, user_id, permission, granted_by FROM kb_shares WHERE kb_id = ?",
+            ("kb_test",),
+        ).fetchone()
+    assert row is not None
+    assert row["permission"] == "view"
+    assert row["user_id"] == viewer
+
+
+def test_document_shares_has_permission_column(db):
+    """document_shares 表应有 permission 列。"""
+    uid = db.create_user("alice", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", uid, is_public=False)
+    with db._lock:
+        db._conn.execute(
+            "INSERT INTO document_shares (doc_id, user_id, granted_by, permission) VALUES (?, ?, ?, ?)",
+            (doc_id, uid, uid, "edit"),
+        )
+        db._conn.commit()
+        row = db._conn.execute(
+            "SELECT permission FROM document_shares WHERE doc_id = ?",
+            (doc_id,),
+        ).fetchone()
+    assert row is not None
+    assert row["permission"] == "edit"

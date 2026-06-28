@@ -141,6 +141,21 @@ class UserDB:
 
                 CREATE INDEX IF NOT EXISTS idx_doc_shares_user ON document_shares(user_id);
                 CREATE INDEX IF NOT EXISTS idx_doc_shares_doc ON document_shares(doc_id);
+
+                CREATE TABLE IF NOT EXISTS kb_shares (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kb_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    permission TEXT DEFAULT 'view',
+                    granted_by INTEGER NOT NULL,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(kb_id, user_id),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_kb_shares_user ON kb_shares(user_id);
+                CREATE INDEX IF NOT EXISTS idx_kb_shares_kb ON kb_shares(kb_id);
                 """
             )
             # Add permission_level column to users if it doesn't exist (idempotent)
@@ -224,6 +239,13 @@ class UserDB:
                         ELSE 'private'
                     END
                 """)
+                self._conn.commit()
+
+            # Phase 2 migration: add permission to document_shares if missing
+            try:
+                self._conn.execute("SELECT permission FROM document_shares LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute("ALTER TABLE document_shares ADD COLUMN permission TEXT DEFAULT 'view'")
                 self._conn.commit()
 
     # ------------------------------------------------------------------
