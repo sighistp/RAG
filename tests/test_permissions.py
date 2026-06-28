@@ -56,10 +56,10 @@ def test_private_doc_only_visible_to_owner(db):
 
 
 def test_shared_user_can_view(db):
-    """被共享的用户可以查看私有文档。"""
+    """被共享的用户可以查看 shared 文档。"""
     owner = _make_user(db, "alice")
     viewer = _make_user(db, "bob")
-    doc_id = db.create_document_permission("secret.pdf", "rag_docs", owner["id"], is_public=False)
+    doc_id = db.create_document_permission("secret.pdf", "rag_docs", owner["id"], scope="shared")
     db.share_document(doc_id, viewer["id"], owner["id"])
     result = check_doc_permission(db, "secret.pdf", "rag_docs", viewer, action="view")
     assert result["doc_name"] == "secret.pdf"

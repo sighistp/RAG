@@ -552,3 +552,153 @@ def test_protected_file_scope_cannot_change(db):
         ).fetchone()
     # DB 层允许修改，但 API 层应阻止
     assert row["protected"] == 1
+
+
+# ── Task 2.5: 权限判定重写为三档 ────────────────────────────────────
+
+
+def test_check_doc_permission_scope_private_only_owner(db):
+    """scope=private 时只有 owner 可查看。"""
+    from rag.permissions import check_doc_permission
+    import pytest
+    from fastapi import HTTPException
+
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_document_permission("test.pdf", "rag_docs", owner, scope="private")
+
+    # owner 可查看
+    result = check_doc_permission(db, "test.pdf", "rag_docs", {"id": owner, "is_admin": False}, "view")
+    assert result is not None
+
+    # 非 owner 不可查看
+    with pytest.raises(HTTPException) as exc_info:
+        check_doc_permission(db, "test.pdf", "rag_docs", {"id": other, "is_admin": False}, "view")
+    assert exc_info.value.status_code == 403
+
+
+def test_check_doc_permission_scope_public_anyone(db):
+    """scope=public 时任何人可查看。"""
+    from rag.permissions import check_doc_permission
+
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_document_permission("test.pdf", "rag_docs", owner, scope="public")
+
+    # 非 owner 也可查看
+    result = check_doc_permission(db, "test.pdf", "rag_docs", {"id": other, "is_admin": False}, "view")
+    assert result is not None
+
+
+def test_check_doc_permission_scope_shared_view(db):
+    """scope=shared + permission=view 时共享用户可查看但不可编辑。"""
+    from rag.permissions import check_doc_permission
+    import pytest
+    from fastapi import HTTPException
+
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", owner, scope="shared")
+
+    # 添加共享记录
+    with db._lock:
+        db._conn.execute(
+            "INSERT INTO document_shares (doc_id, user_id, granted_by, permission) VALUES (?, ?, ?, ?)",
+            (doc_id, viewer, owner, "view"),
+        )
+        db._conn.commit()
+
+    # 共享用户可查看
+    result = check_doc_permission(db, "test.pdf", "rag_docs", {"id": viewer, "is_admin": False}, "view")
+    assert result is not None
+
+    # 共享用户不可编辑
+    with pytest.raises(HTTPException) as exc_info:
+        check_doc_permission(db, "test.pdf", "rag_docs", {"id": viewer, "is_admin": False}, "edit")
+    assert exc_info.value.status_code == 403
+
+
+def test_check_doc_permission_scope_shared_edit(db):
+    """scope=shared + permission=edit 时共享用户可查看和编辑。"""
+    from rag.permissions import check_doc_permission
+
+    owner = db.create_user("alice", "pwd")
+    editor = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", owner, scope="shared")
+
+    # 添加共享记录
+    with db._lock:
+        db._conn.execute(
+            "INSERT INTO document_shares (doc_id, user_id, granted_by, permission) VALUES (?, ?, ?, ?)",
+            (doc_id, editor, owner, "edit"),
+        )
+        db._conn.commit()
+
+    # 共享用户可查看
+    result = check_doc_permission(db, "test.pdf", "rag_docs", {"id": editor, "is_admin": False}, "view")
+    assert result is not None
+
+    # 共享用户可编辑
+    result = check_doc_permission(db, "test.pdf", "rag_docs", {"id": editor, "is_admin": False}, "edit")
+    assert result is not None
+
+
+def test_check_doc_permission_admin_bypasses_scope(db):
+    """admin 可绕过所有 scope 限制。"""
+    from rag.permissions import check_doc_permission
+
+    owner = db.create_user("alice", "pwd")
+    admin = db.create_user("root", "pwd")
+    db.set_user_admin(admin, True)
+    db.create_document_permission("test.pdf", "rag_docs", owner, scope="private")
+
+    # admin 可查看私有文件
+    result = check_doc_permission(db, "test.pdf", "rag_docs", {"id": admin, "is_admin": True}, "view")
+    assert result is not None
+
+
+def test_check_kb_permission_scope_private_only_owner(db):
+    """KB scope=private 时只有 owner 可查看。"""
+    from rag.permissions import check_kb_permission
+    import pytest
+    from fastapi import HTTPException
+
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    # owner 可查看
+    result = check_kb_permission(db, "kb_test", {"id": owner, "is_admin": False}, "view")
+    assert result is not None
+
+    # 非 owner 不可查看
+    with pytest.raises(HTTPException) as exc_info:
+        check_kb_permission(db, "kb_test", {"id": other, "is_admin": False}, "view")
+    assert exc_info.value.status_code == 403
+
+
+def test_check_kb_permission_scope_public_anyone(db):
+    """KB scope=public 时任何人可查看。"""
+    from rag.permissions import check_kb_permission
+
+    owner = db.create_user("alice", "pwd")
+    other = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="public")
+
+    # 非 owner 也可查看
+    result = check_kb_permission(db, "kb_test", {"id": other, "is_admin": False}, "view")
+    assert result is not None
+
+
+def test_check_kb_permission_admin_bypasses(db):
+    """admin 可绕过所有 KB scope 限制。"""
+    from rag.permissions import check_kb_permission
+
+    owner = db.create_user("alice", "pwd")
+    admin = db.create_user("root", "pwd")
+    db.set_user_admin(admin, True)
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    # admin 可查看私有 KB
+    result = check_kb_permission(db, "kb_test", {"id": admin, "is_admin": True}, "view")
+    assert result is not None

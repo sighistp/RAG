@@ -714,11 +714,14 @@ class UserDB:
     # Document Permissions
     # ------------------------------------------------------------------
 
-    def create_document_permission(self, doc_name: str, kb_id: str, owner_id: int, permission_level: int = 1, is_public: bool = False, protected: bool = False) -> int:
+    def create_document_permission(self, doc_name: str, kb_id: str, owner_id: int, permission_level: int = 1, is_public: bool = False, protected: bool = False, scope: str = None) -> int:
+        """创建文档权限记录。scope 不传时根据 is_public 自动推断。"""
+        if scope is None:
+            scope = "public" if is_public else "private"
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO document_permissions (doc_name, kb_id, owner_id, permission_level, is_public, protected) VALUES (?, ?, ?, ?, ?, ?)",
-                (doc_name, kb_id, owner_id, permission_level, int(is_public), int(protected)),
+                "INSERT INTO document_permissions (doc_name, kb_id, owner_id, permission_level, is_public, protected, scope) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (doc_name, kb_id, owner_id, permission_level, int(is_public), int(protected), scope),
             )
             self._conn.commit()
             return cur.lastrowid
@@ -726,7 +729,7 @@ class UserDB:
     def get_document_permission(self, doc_name: str, kb_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, scope, created_at "
                 "FROM document_permissions WHERE doc_name = ? AND kb_id = ?",
                 (doc_name, kb_id),
             ).fetchone()
@@ -740,7 +743,7 @@ class UserDB:
     def get_document_permission_by_id(self, doc_id: int) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, created_at "
+                "SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, scope, created_at "
                 "FROM document_permissions WHERE id = ?",
                 (doc_id,),
             ).fetchone()
@@ -793,7 +796,7 @@ class UserDB:
         with self._lock:
             placeholders = ",".join("?" for _ in doc_names)
             rows = self._conn.execute(
-                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, created_at "
+                f"SELECT id, doc_name, kb_id, owner_id, permission_level, is_public, protected, scope, created_at "
                 f"FROM document_permissions WHERE doc_name IN ({placeholders}) AND kb_id = ?",
                 (*doc_names, kb_id),
             ).fetchall()
@@ -860,12 +863,34 @@ class UserDB:
             )
             self._conn.commit()
 
-    def is_document_shared(self, doc_id: int, user_id: int) -> bool:
+    def is_document_shared(self, doc_id: int, user_id: int, permission: str = None) -> bool:
+        """检查文档是否共享给指定用户。permission=None 表示任意权限，'view' 或 'edit' 表示特定权限。"""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT 1 FROM document_shares WHERE doc_id = ? AND user_id = ?",
-                (doc_id, user_id),
-            ).fetchone()
+            if permission:
+                row = self._conn.execute(
+                    "SELECT 1 FROM document_shares WHERE doc_id = ? AND user_id = ? AND permission = ?",
+                    (doc_id, user_id, permission),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT 1 FROM document_shares WHERE doc_id = ? AND user_id = ?",
+                    (doc_id, user_id),
+                ).fetchone()
+        return row is not None
+
+    def is_kb_shared(self, kb_id: str, user_id: int, permission: str = None) -> bool:
+        """检查知识库是否共享给指定用户。permission=None 表示任意权限，'view' 或 'edit' 表示特定权限。"""
+        with self._lock:
+            if permission:
+                row = self._conn.execute(
+                    "SELECT 1 FROM kb_shares WHERE kb_id = ? AND user_id = ? AND permission = ?",
+                    (kb_id, user_id, permission),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT 1 FROM kb_shares WHERE kb_id = ? AND user_id = ?",
+                    (kb_id, user_id),
+                ).fetchone()
         return row is not None
 
     def list_shared_users(self, doc_id: int) -> list[dict[str, Any]]:
