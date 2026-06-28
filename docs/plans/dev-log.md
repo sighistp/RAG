@@ -3910,6 +3910,46 @@ cd ~/RAG && git pull && docker compose build --no-cache rag-app && docker compos
 - ✅ 旧 KB 所有人可见
 - ✅ 前端 scope 标签显示正确
 
+### 代码审查（Subagent Review）
+
+**审查结果：** 3 Critical + 6 Important + 5 Minor
+
+**Strengths：**
+1. 迁移模式干净（try/except SELECT LIMIT 1 检测列是否存在）
+2. `_require_auth` 统一做得好，消除了双认证混乱
+3. Owner 检查逻辑一致（`if meta and not is_admin and owner_id != user_id`）
+4. LIST 端点允许未登录用户看 public KB
+5. 前端 scope 选择器干净
+
+**Critical 修复：**
+
+| # | 问题 | 修复 |
+|---|------|------|
+| C1 | `GET /knowledge-bases/{kb_id}` 详情端点无 scope 检查，私有 KB 数据完全暴露 | 加 scope 检查 + 返回 scope/is_owner |
+| C2 | `toc/generate` 和 `overview/generate` 端点无 owner 检查，仍用 `Security(verify_api_key)` | 改用 `_require_auth` + owner 检查 |
+| C3 | 详情端点不返回 scope/is_owner 字段 | 响应中加入 scope 和 is_owner |
+
+**Important 修复：**
+
+| # | 问题 | 修复 |
+|---|------|------|
+| I1 | 迁移逻辑 UPDATE 顺序有歧义（protected 和 is_public 优先级） | 改用 CASE 表达式一次性迁移 |
+| I2 | `remove_document_from_kb` 丢失了文档级权限检查 | 确认为 Phase 1 简化，Phase 2 恢复 |
+| I3 | `create_kb_metadata` 重复插入会抛 IntegrityError | 捕获 IntegrityError，静默忽略 |
+| I4 | `update_kb_scope` 无 scope 值校验 | 加 `if scope not in ("private", "public")` 检查 |
+| I5 | 无 API 层权限负向测试 | 新增 3 个测试（403/401） |
+| I6 | `kb_metadata.user_id` 列仍在但未使用 | 保留不删除，Phase 2 废弃 |
+
+**Minor（未修复）：**
+
+| # | 问题 |
+|---|------|
+| M1 | `is_owner` 比较可能类型不一致（int vs str） |
+| M2 | scope-tag CSS 硬编码颜色值 |
+| M3 | `get_kb_metadata_by_names` 方法名误导（应为 by_ids） |
+| M4 | 无 `update_kb_owner` 方法 |
+| M5 | `list_knowledge_bases` 手动解析 token 而非用 `_require_auth` |
+
 ### 提交记录
 
 ```
