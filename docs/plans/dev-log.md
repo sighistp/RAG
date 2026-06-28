@@ -3964,3 +3964,101 @@ c805992 fix: 代码审查修复 — C1+C2+I1+I3+I4+I5
 ### 下一步
 
 Phase 2：shared 档 + 共享机制（kb_shares 表 + 用户搜索 + 共享对话框）
+
+---
+
+## 权限 v2 Phase 2：shared 档 + 共享机制（2026-06-28）✅
+
+### 目标
+支持"部门/项目组内共享"场景。
+
+### 实现内容
+
+| Task | 内容 | 测试 |
+|------|------|------|
+| 2.1 | kb_shares 表 + document_shares 加 permission 列 | 2 |
+| 2.2 | 用户搜索 API — GET /users?q=xxx | 4 |
+| 2.5 | 权限判定重写为三档 — check_doc_permission 支持 scope + 新增 check_kb_permission | 8 |
+| 2.6 | scope 切换逻辑 — PUT /knowledge-bases/{kb_id}/scope + 切换时清除 shares | 5 |
+| 2.3+2.4 | 文件/KB 共享 API — share/unshare/list 端点 + DB 方法 | 6 |
+| 2.7 | 前端共享对话框 — ShareDialog 组件 + 用户搜索 + scope 切换 + KB 共享按钮 | 手动 |
+| 代码审查 | get_accessible_doc_names 使用 scope 替代 is_public | — |
+
+### 关键改动
+
+**后端：**
+- `rag/user_db.py` — 新增 `share_kb`、`unshare_kb`、`list_kb_shared_users`、`search_users`、`is_kb_shared` 方法 + `is_document_shared` 支持 permission 参数
+- `rag/api.py` — 共享管理端点（POST/DELETE/GET）+ scope 切换端点 + 用户搜索端点
+- `rag/permissions.py` — `check_doc_permission` 和 `check_kb_permission` 支持三档 scope（private/shared/public）
+
+**前端：**
+- `frontend/src/components/ShareDialog.vue` — 共享对话框（用户搜索 + 权限选择 + 共享列表）
+- `frontend/src/views/KBModeView.vue` — KB 卡片加共享按钮
+
+### 三档权限模型
+
+| scope | 含义 | 查看 | 编辑 |
+|-------|------|------|------|
+| private | 仅 owner | owner | owner |
+| shared | owner + 指定用户 | owner + 共享用户 | owner + edit 权限用户 |
+| public | 所有人 | 所有人 | owner |
+
+### 权限判定规则
+
+```
+1. admin → 放行
+2. protected 文件 → public 放行
+3. scope='public' → 放行
+4. owner → 放行
+5. scope='shared' && 在 shares 表中 → 放行（view/edit 按 permission）
+6. 其他 → 拒绝
+```
+
+### 决策记录
+
+| # | 决策 |
+|---|------|
+| D8 | 用户搜索所有登录用户可用，q≥2 字符，最多 20 条，只返回 id+username |
+| D9 | scope 切换时清除 shares（shared→private 或 shared→public） |
+| D10 | 共享对话框含用户搜索 + 权限选择（view/edit） |
+| D11 | 文件级共享暂不实现，KB 级共享已够用 |
+
+### 测试结果
+
+545 个测试全过。
+
+### 手动验证通过
+
+- ✅ 创建 shared KB → 共享给其他用户 → 其他用户能看到
+- ✅ 共享时选 view → 共享用户只能查看不能编辑
+- ✅ 共享时选 edit → 共享用户可以编辑
+- ✅ scope 切换 shared→private → 共享记录被清除
+- ✅ 用户搜索 → 输入 2 个字符触发搜索
+
+### 代码审查
+
+| 级别 | 问题 | 状态 |
+|------|------|------|
+| ✅ | 所有共享端点用 `_require_auth` | 正确 |
+| ✅ | 所有共享端点有 owner 检查 | 正确 |
+| ✅ | 目标用户存在性检查 | 正确 |
+| ✅ | 重复共享处理（409） | 正确 |
+| ✅ | 三档权限逻辑正确 | 正确 |
+| ⚠️ | `get_accessible_doc_names` 用旧 `is_public` | 已修复 |
+| ⚠️ | 文件共享端点未实现 | 确认不需要，KB 级共享够用 |
+
+### 提交记录
+
+```
+66807d9 feat(Task 2.1): kb_shares 表 + document_shares 加 permission 列
+760808b feat(Task 2.2): 用户搜索 API — GET /users?q=xxx
+598c783 feat(Task 2.6): scope 切换逻辑 — PUT /knowledge-bases/{kb_id}/scope
+837449d feat(Task 2.5): 权限判定重写为三档 — check_doc_permission + check_kb_permission
+a9956c4 feat(Task 2.3+2.4): 文件/KB 共享 API — share/unshare/list 端点
+d3a5c1f feat(Task 2.7): 前端共享对话框 — ShareDialog + 用户搜索 + scope 切换
+59a3ecb fix: get_accessible_doc_names 使用 scope='public' 替代 is_public=1
+```
+
+### 下一步
+
+Phase 3：下载控制（downloadable 字段 + 下载端点 + 前端控制）
