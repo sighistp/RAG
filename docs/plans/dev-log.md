@@ -3850,3 +3850,77 @@ cd ~/RAG && git pull && docker compose build --no-cache rag-app && docker compos
 | 只改后端 | `git pull && docker compose up -d --build` | 走缓存，快 |
 | 改了前端 | `git pull && docker compose build --no-cache rag-app && docker compose up -d` | 前端构建层被缓存，必须 `--no-cache` |
 | 优化 | `docker compose build --no-cache-filter rag-app` | 只清除前端构建层，后端依赖走缓存 |
+
+---
+
+## 权限 v2 Phase 1：KB Owner + Scope（2026-06-27）✅
+
+### 目标
+解决 C10（KB 无权限控制），实现 KB 所有权和 scope 访问控制。
+
+### 实现内容
+
+| Task | 内容 | 测试 |
+|------|------|------|
+| 1.1 | kb_metadata 加 owner_id/scope 列 + document_permissions 加 scope 列 + 迁移脚本 | 2 |
+| 1.2 | UserDB 新增 KB metadata CRUD 方法（create/get/update_scope/get_by_names） | 4 |
+| 1.3 | KB 列出按 scope 过滤 + CREATE KB 存 owner/scope + 统一 _require_auth | 4 |
+| 1.4 | 所有 KB 修改端点加 owner/admin 权限检查 | 4 |
+| 1.5 | KB 查询按 scope 过滤 | 3 |
+| 1.6 | 前端 KB scope 标签 + 创建时可选 scope | 手动 |
+| 代码审查 | C1 KB详情scope检查 + C2 generate端点owner检查 + I1-I5 修复 | 3 |
+
+### 关键改动
+
+**后端：**
+- `rag/user_db.py` — 新增 `create_kb_metadata`、`get_kb_metadata`、`update_kb_scope`、`get_kb_metadata_by_names` 方法 + 迁移脚本
+- `rag/api.py` — KB 端点统一 `_require_auth` + owner 检查 + scope 过滤
+
+**前端：**
+- `frontend/src/views/KBModeView.vue` — KB 卡片显示 scope 标签（私有/公开）+ 创建对话框加 scope 选择器
+
+### 权限规则
+
+| 操作 | private | public | admin |
+|------|---------|--------|-------|
+| 查看/列出 | owner | 所有人 | ✅ |
+| 查询 | owner | 所有人 | ✅ |
+| 修改/删除 | owner | owner | ✅ |
+| 旧 KB（owner_id=0） | 所有人 | 所有人 | ✅ |
+
+### 决策记录
+
+| # | 决策 |
+|---|------|
+| D0 | 公司内部系统，所有端点必须登录，废弃 Security(verify_api_key) |
+| D1 | scope 字段直接用三档 TEXT（private/shared/public），Phase 1 只处理 private/public |
+| D2 | 旧 KB owner_id=0（系统 ID），scope='public' |
+| D3 | 字段设计现在统一，代码逻辑分阶段切换 |
+
+### 测试结果
+
+520 个测试全过（原 517 + 新 3 个 API 层权限测试）。
+
+### 手动验证通过
+
+- ✅ 创建私有 KB → 只有 owner 可见
+- ✅ 创建公开 KB → 所有人可见
+- ✅ 非 owner 删除他人 KB → 403
+- ✅ admin 可操作任何 KB
+- ✅ 旧 KB 所有人可见
+- ✅ 前端 scope 标签显示正确
+
+### 提交记录
+
+```
+bde8e2f feat(Task 1.1): kb_metadata 加 owner_id/scope 列 + 迁移脚本
+6ff07b1 feat(Task 1.2): UserDB 新增 KB metadata CRUD 方法
+c583ab4 feat(Task 1.3): KB 列出按 scope 过滤 + CREATE KB 存 owner/scope
+6afd50d feat(Task 1.4): 所有 KB 修改端点加 owner/admin 权限检查
+11deff0 feat(Task 1.5+1.6): KB 查询 scope 过滤 + 前端 KB scope 标签
+c805992 fix: 代码审查修复 — C1+C2+I1+I3+I4+I5
+```
+
+### 下一步
+
+Phase 2：shared 档 + 共享机制（kb_shares 表 + 用户搜索 + 共享对话框）
