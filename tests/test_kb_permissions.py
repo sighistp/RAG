@@ -702,3 +702,74 @@ def test_check_kb_permission_admin_bypasses(db):
     # admin 可查看私有 KB
     result = check_kb_permission(db, "kb_test", {"id": admin, "is_admin": True}, "view")
     assert result is not None
+
+
+# ── Task 2.3 + 2.4: 文件/KB 共享 API ────────────────────────────────
+
+
+def test_share_document_creates_record(db):
+    """共享文档应创建 document_shares 记录。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", owner, scope="shared")
+
+    db.share_document(doc_id, viewer, owner)
+    assert db.is_document_shared(doc_id, viewer)
+
+
+def test_share_document_with_permission(db):
+    """共享文档时可指定 permission（view/edit）。"""
+    owner = db.create_user("alice", "pwd")
+    editor = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", owner, scope="shared")
+
+    db.share_document(doc_id, editor, owner, permission="edit")
+    assert db.is_document_shared(doc_id, editor, permission="edit")
+    assert not db.is_document_shared(doc_id, editor, permission="view")
+
+
+def test_unshare_document_removes_record(db):
+    """取消共享应删除 document_shares 记录。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    doc_id = db.create_document_permission("test.pdf", "rag_docs", owner, scope="shared")
+
+    db.share_document(doc_id, viewer, owner)
+    assert db.is_document_shared(doc_id, viewer)
+
+    db.unshare_document(doc_id, viewer)
+    assert not db.is_document_shared(doc_id, viewer)
+
+
+def test_share_kb_creates_record(db):
+    """共享知识库应创建 kb_shares 记录。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="shared")
+
+    db.share_kb("kb_test", viewer, owner)
+    assert db.is_kb_shared("kb_test", viewer)
+
+
+def test_share_kb_with_permission(db):
+    """共享知识库时可指定 permission（view/edit）。"""
+    owner = db.create_user("alice", "pwd")
+    editor = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="shared")
+
+    db.share_kb("kb_test", editor, owner, permission="edit")
+    assert db.is_kb_shared("kb_test", editor, permission="edit")
+    assert not db.is_kb_shared("kb_test", editor, permission="view")
+
+
+def test_unshare_kb_removes_record(db):
+    """取消共享应删除 kb_shares 记录。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="shared")
+
+    db.share_kb("kb_test", viewer, owner)
+    assert db.is_kb_shared("kb_test", viewer)
+
+    db.unshare_kb("kb_test", viewer)
+    assert not db.is_kb_shared("kb_test", viewer)

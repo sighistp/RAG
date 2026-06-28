@@ -846,11 +846,11 @@ class UserDB:
     # Document Shares
     # ------------------------------------------------------------------
 
-    def share_document(self, doc_id: int, user_id: int, granted_by: int) -> int:
+    def share_document(self, doc_id: int, user_id: int, granted_by: int, permission: str = "view") -> int:
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO document_shares (doc_id, user_id, granted_by) VALUES (?, ?, ?)",
-                (doc_id, user_id, granted_by),
+                "INSERT INTO document_shares (doc_id, user_id, granted_by, permission) VALUES (?, ?, ?, ?)",
+                (doc_id, user_id, granted_by, permission),
             )
             self._conn.commit()
             return cur.lastrowid
@@ -914,6 +914,37 @@ class UserDB:
                 (user_id, *doc_ids),
             ).fetchall()
         return {r["doc_id"] for r in rows}
+
+    # ------------------------------------------------------------------
+    # KB Shares (Phase 2)
+    # ------------------------------------------------------------------
+
+    def share_kb(self, kb_id: str, user_id: int, granted_by: int, permission: str = "view") -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO kb_shares (kb_id, user_id, permission, granted_by) VALUES (?, ?, ?, ?)",
+                (kb_id, user_id, permission, granted_by),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
+    def unshare_kb(self, kb_id: str, user_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM kb_shares WHERE kb_id = ? AND user_id = ?",
+                (kb_id, user_id),
+            )
+            self._conn.commit()
+
+    def list_kb_shared_users(self, kb_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT u.id, u.username, ks.permission, ks.granted_by, ks.created_at AS granted_at "
+                "FROM kb_shares ks JOIN users u ON ks.user_id = u.id "
+                "WHERE ks.kb_id = ? ORDER BY ks.created_at",
+                (kb_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
     # Cleanup

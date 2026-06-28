@@ -1297,6 +1297,11 @@ class QueryKBRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, description="返回相关文档数量")
 
 
+class ShareRequest(BaseModel):
+    user_id: int = Field(..., description="被共享用户 ID")
+    permission: str = Field(default="view", pattern="^(view|edit)$", description="权限：view 或 edit")
+
+
 @app.post("/knowledge-bases/{kb_id}/query", summary="查询知识库", description="对指定知识库进行语义检索")
 async def query_knowledge_base(kb_id: str, req: QueryKBRequest, authorization: str = Header(default="")):
     user_dict = await _require_auth(authorization)
@@ -1642,6 +1647,65 @@ async def generate_kb_overview(kb_id: str, authorization: str = Header(default="
     if error:
         raise HTTPException(status_code=500, detail=f"概述生成失败: {error}")
     return {"kb_id": kb_id, "overview": result}
+
+
+# ── 共享管理端点（Phase 2）────────────────────────────────────────────
+
+
+@app.post("/knowledge-bases/{kb_id}/share", summary="共享知识库给指定用户")
+async def share_knowledge_base(kb_id: str, req: ShareRequest, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    # Owner 检查
+    meta = user_db.get_kb_metadata(kb_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
+        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可共享")
+
+    # 检查目标用户是否存在
+    target = user_db.get_user_by_id(req.user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"用户 ID {req.user_id} 不存在")
+
+    try:
+        share_id = await asyncio.to_thread(user_db.share_kb, kb_id, req.user_id, user_dict["id"], req.permission)
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(status_code=409, detail="该用户已被共享")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"kb_id": kb_id, "user_id": req.user_id, "permission": req.permission}
+
+
+@app.delete("/knowledge-bases/{kb_id}/share/{user_id}", summary="取消知识库共享", status_code=204)
+async def unshare_knowledge_base(kb_id: str, user_id: int, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    # Owner 检查
+    meta = user_db.get_kb_metadata(kb_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
+        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+
+    await asyncio.to_thread(user_db.unshare_kb, kb_id, user_id)
+    return None
+
+
+@app.get("/knowledge-bases/{kb_id}/shares", summary="查看知识库共享列表")
+async def list_kb_shares(kb_id: str, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    # Owner 检查
+    meta = user_db.get_kb_metadata(kb_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
+        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可查看")
+
+    shares = await asyncio.to_thread(user_db.list_kb_shared_users, kb_id)
+    return shares
 
 
 # ── 权限管理端点 ──────────────────────────────────────────────────────
