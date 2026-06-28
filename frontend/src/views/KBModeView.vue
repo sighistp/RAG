@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router'
 import api from '../utils/api'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Collection, Delete } from '@element-plus/icons-vue'
+import { Plus, Collection, Delete, Share } from '@element-plus/icons-vue'
+import ShareDialog from '../components/ShareDialog.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -25,6 +26,11 @@ const showCreateDialog = ref(false)
 const newKBName = ref('')
 const newKBScope = ref('private')
 const creating = ref(false)
+
+// Share dialog
+const showShareDialog = ref(false)
+const shareTargetId = ref('')
+const shareTargetName = ref('')
 
 onMounted(async () => {
   await loadKBs()
@@ -78,6 +84,12 @@ async function deleteKB(kb: KnowledgeBase) {
       ElMessage.error('删除失败')
     }
   }
+}
+
+function openShareDialog(kb: KnowledgeBase) {
+  shareTargetId.value = kb.kb_id
+  shareTargetName.value = kb.name
+  showShareDialog.value = true
 }
 
 async function selectKB(kb: KnowledgeBase) {
@@ -139,14 +151,25 @@ async function selectKB(kb: KnowledgeBase) {
             <span class="kb-stat-value">{{ kb.doc_count }}</span>
             <span class="kb-stat-label">文档</span>
           </div>
-          <el-button
-            type="danger"
-            text
-            size="small"
-            @click.stop="deleteKB(kb)"
-          >
-            <el-icon><Delete /></el-icon>
-          </el-button>
+          <div class="kb-card-actions">
+            <el-button
+              v-if="kb.is_owner"
+              type="primary"
+              text
+              size="small"
+              @click.stop="openShareDialog(kb)"
+            >
+              <el-icon><Share /></el-icon>
+            </el-button>
+            <el-button
+              type="danger"
+              text
+              size="small"
+              @click.stop="deleteKB(kb)"
+            >
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </div>
         </div>
       </div>
     </div>
@@ -193,6 +216,14 @@ async function selectKB(kb: KnowledgeBase) {
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- Share dialog -->
+    <ShareDialog
+      v-model:visible="showShareDialog"
+      :item-id="shareTargetId"
+      :item-name="shareTargetName"
+      item-type="kb"
+    />
   </div>
 </template>
 
@@ -321,6 +352,12 @@ async function selectKB(kb: KnowledgeBase) {
   color: var(--color-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.kb-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* ── Skeleton ── */
