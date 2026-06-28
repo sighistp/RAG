@@ -778,12 +778,12 @@ class UserDB:
     def get_accessible_doc_names(self, kb_id: str, user_id: int, user_level: int = 1) -> list[str]:
         """返回用户在指定知识库中有权查看的文档名列表。
 
-        规则：owner / is_public=1 / 被共享 的文档可见。
+        规则：owner / scope='public' / 被共享 的文档可见。
         """
         with self._lock:
             rows = self._conn.execute(
                 "SELECT DISTINCT dp.doc_name FROM document_permissions dp "
-                "WHERE dp.kb_id = ? AND (dp.owner_id = ? OR dp.is_public = 1 "
+                "WHERE dp.kb_id = ? AND (dp.owner_id = ? OR dp.scope = 'public' "
                 "OR dp.id IN (SELECT doc_id FROM document_shares WHERE user_id = ?))",
                 (kb_id, user_id, user_id),
             ).fetchall()
