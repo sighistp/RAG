@@ -289,13 +289,21 @@ class UserDB:
         return dict(row)
 
     def update_kb_scope(self, kb_id: str, scope: str) -> None:
-        """更新 KB 的 scope 字段。scope 必须是 'private' 或 'public'。"""
+        """更新 KB 的 scope 字段。scope 必须是 'private' 或 'public'。
+
+        切换到 private 或 public 时，清除该 KB 的所有 shares（shared 模式才需要 shares）。
+        """
         if scope not in ("private", "public"):
             raise ValueError(f"无效的 scope: {scope}，必须是 'private' 或 'public'")
         with self._lock:
             self._conn.execute(
                 "UPDATE kb_metadata SET scope = ? WHERE kb_id = ?",
                 (scope, kb_id),
+            )
+            # 切换到非 shared 模式时清除 shares
+            self._conn.execute(
+                "DELETE FROM kb_shares WHERE kb_id = ?",
+                (kb_id,),
             )
             self._conn.commit()
 

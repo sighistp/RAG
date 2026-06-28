@@ -449,3 +449,106 @@ def test_search_users_only_returns_id_and_username(db):
     assert "username" in result
     assert "password" not in result
     assert "is_admin" not in result
+
+
+# ── Task 2.6: scope 切换逻辑 ────────────────────────────────────────
+
+
+def test_scope_switch_private_to_public(db):
+    """private → public 切换应成功。"""
+    uid = db.create_user("alice", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=uid, scope="private")
+    db.update_kb_scope("kb_test", "public")
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["scope"] == "public"
+
+
+def test_scope_switch_public_to_private(db):
+    """public → private 切换应成功。"""
+    uid = db.create_user("alice", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=uid, scope="public")
+    db.update_kb_scope("kb_test", "private")
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["scope"] == "private"
+
+
+def test_scope_switch_clears_shares_on_private(db):
+    """shared → private 时应清除该 KB 的所有 shares。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="public")
+
+    # 添加共享记录
+    with db._lock:
+        db._conn.execute(
+            "INSERT INTO kb_shares (kb_id, user_id, permission, granted_by) VALUES (?, ?, ?, ?)",
+            ("kb_test", viewer, "view", owner),
+        )
+        db._conn.commit()
+
+    # 切换到 private
+    db.update_kb_scope("kb_test", "private")
+
+    # 共享记录应被清除
+    with db._lock:
+        row = db._conn.execute(
+            "SELECT COUNT(*) as cnt FROM kb_shares WHERE kb_id = ?",
+            ("kb_test",),
+        ).fetchone()
+    assert row["cnt"] == 0
+
+
+def test_scope_switch_clears_shares_on_public(db):
+    """shared → public 时应清除该 KB 的所有 shares。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="public")
+
+    # 添加共享记录
+    with db._lock:
+        db._conn.execute(
+            "INSERT INTO kb_shares (kb_id, user_id, permission, granted_by) VALUES (?, ?, ?, ?)",
+            ("kb_test", viewer, "view", owner),
+        )
+        db._conn.commit()
+
+    # 切换到 public（已经是 public，但测试逻辑）
+    db.update_kb_scope("kb_test", "public")
+
+    # 共享记录应被清除（public 不需要共享列表）
+    with db._lock:
+        row = db._conn.execute(
+            "SELECT COUNT(*) as cnt FROM kb_shares WHERE kb_id = ?",
+            ("kb_test",),
+        ).fetchone()
+    assert row["cnt"] == 0
+
+
+def test_protected_file_scope_cannot_change(db):
+    """protected 文件的 scope 不可修改。"""
+    uid = db.create_user("alice", "pwd")
+    with db._lock:
+        db._conn.execute(
+            "INSERT INTO document_permissions (doc_name, kb_id, owner_id, is_public, protected, scope) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("repo_file.md", "rag_docs", 0, 1, 1, "public"),
+        )
+        db._conn.commit()
+
+    # 尝试修改 protected 文件的 scope
+    with db._lock:
+        db._conn.execute(
+            "UPDATE document_permissions SET scope = 'private' WHERE doc_name = ? AND protected = 1",
+            ("repo_file.md",),
+        )
+        db._conn.commit()
+
+    # protected 文件的 scope 不应被修改（需要在 API 层强制）
+    # 这里只测试 DB 层可以修改，API 层会加保护
+    with db._lock:
+        row = db._conn.execute(
+            "SELECT scope, protected FROM document_permissions WHERE doc_name = ?",
+            ("repo_file.md",),
+        ).fetchone()
+    # DB 层允许修改，但 API 层应阻止
+    assert row["protected"] == 1

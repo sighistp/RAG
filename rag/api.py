@@ -1107,6 +1107,29 @@ async def create_knowledge_base(req: CreateKBRequest, authorization: str = Heade
     return {"kb_id": kb_id, "name": req.name, "scope": req.scope}
 
 
+class KBScopeRequest(BaseModel):
+    scope: str = Field(..., pattern="^(private|public)$", description="新的可见范围")
+
+
+@app.put("/knowledge-bases/{kb_id}/scope", summary="切换知识库可见范围")
+async def update_kb_scope(kb_id: str, req: KBScopeRequest, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    # Owner 检查
+    meta = user_db.get_kb_metadata(kb_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
+        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+
+    try:
+        await asyncio.to_thread(user_db.update_kb_scope, kb_id, req.scope)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"kb_id": kb_id, "scope": req.scope}
+
+
 @app.delete("/knowledge-bases/{kb_id}", summary="删除知识库", description="删除指定知识库及其所有文档")
 async def delete_knowledge_base(kb_id: str, authorization: str = Header(default="")):
     user_dict = await _require_auth(authorization)
