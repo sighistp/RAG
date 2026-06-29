@@ -389,6 +389,25 @@ def _get_current_user(token: str) -> dict | None:
     return user
 
 
+def _check_kb_edit_permission(kb_id: str, user_dict: dict) -> None:
+    """检查用户是否有 KB 编辑权限（owner / admin / 共享 edit）。
+
+    Raises:
+        HTTPException 403: 无编辑权限
+        HTTPException 404: KB 不存在
+    """
+    meta = user_db.get_kb_metadata(kb_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+    if user_dict.get("is_admin"):
+        return
+    if meta["owner_id"] == user_dict["id"]:
+        return
+    if user_db.is_kb_shared(kb_id, user_dict["id"], permission="edit"):
+        return
+    raise HTTPException(status_code=403, detail="仅知识库所有者、管理员或共享编辑者可操作")
+
+
 @app.get("/users", summary="搜索用户", description="按用户名搜索用户，用于共享功能")
 async def search_users(q: str = Query(..., min_length=2, description="搜索词，至少 2 个字符"), authorization: str = Header(default="")):
     await _require_auth(authorization)
@@ -1209,11 +1228,7 @@ async def add_document_to_kb(
     authorization: str = Header(default=""),
 ):
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
 
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
@@ -1286,11 +1301,7 @@ async def add_document_to_kb(
 @app.delete("/knowledge-bases/{kb_id}/documents/{doc_name}", summary="删除文档", description="从知识库中删除指定文档")
 async def remove_document_from_kb(kb_id: str, doc_name: str, authorization: str = Header(default="")):
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
 
     manager = KnowledgeBaseManager()
     try:
@@ -1432,11 +1443,7 @@ async def get_knowledge_base_detail(
 @app.put("/knowledge-bases/{kb_id}/overview", summary="更新知识库概述")
 async def update_kb_overview(kb_id: str, req: KBOverviewRequest, authorization: str = Header(default="")):
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
 
     def _update():
         import sqlite3
@@ -1461,11 +1468,7 @@ async def update_kb_overview(kb_id: str, req: KBOverviewRequest, authorization: 
 @app.put("/knowledge-bases/{kb_id}/name", summary="重命名知识库")
 async def rename_knowledge_base(kb_id: str, req: KBRenameRequest, authorization: str = Header(default="")):
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
 
     def _update():
         import sqlite3
@@ -1489,11 +1492,7 @@ async def rename_knowledge_base(kb_id: str, req: KBRenameRequest, authorization:
 @app.put("/knowledge-bases/{kb_id}/documents/{doc_name}/toc", summary="更新文档目录")
 async def update_doc_toc(kb_id: str, doc_name: str, req: KBTocRequest, authorization: str = Header(default="")):
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
 
     import json
     def _update():
@@ -1523,11 +1522,7 @@ async def update_doc_toc(kb_id: str, doc_name: str, req: KBTocRequest, authoriza
 @app.put("/knowledge-bases/{kb_id}/documents/{doc_name}/summary", summary="更新文档概述")
 async def update_doc_summary(kb_id: str, doc_name: str, req: KBSummaryRequest, authorization: str = Header(default="")):
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
 
     def _update():
         import sqlite3
@@ -1556,11 +1551,7 @@ async def update_doc_summary(kb_id: str, doc_name: str, req: KBSummaryRequest, a
 async def generate_kb_toc(kb_id: str, authorization: str = Header(default="")):
     """对知识库中所有文档调用 LLM 生成目录结构，并保存到 kb_documents.toc。"""
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
     def _generate():
         import sqlite3
         import json as _json
@@ -1626,11 +1617,7 @@ async def generate_kb_toc(kb_id: str, authorization: str = Header(default="")):
 async def generate_kb_overview(kb_id: str, authorization: str = Header(default="")):
     """对知识库中所有文档内容调用 LLM 生成概述，并保存到 kb_metadata.overview。"""
     user_dict = await _require_auth(authorization)
-
-    # KB owner 检查
-    meta = user_db.get_kb_metadata(kb_id)
-    if meta and not user_dict.get("is_admin") and meta["owner_id"] != user_dict["id"]:
-        raise HTTPException(status_code=403, detail="仅知识库所有者或管理员可操作")
+    _check_kb_edit_permission(kb_id, user_dict)
     def _generate():
         import sqlite3
 
