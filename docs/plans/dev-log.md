@@ -3767,6 +3767,97 @@ return response
 "OR dp.id IN (SELECT doc_id FROM document_shares WHERE user_id = ?))"
 ```
 
+### 浏览器端排查流程（关键步骤）
+
+**第 1 步：检查 API 是否正常（curl 测试）**
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"hxq","password":"426855"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+curl -s -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/json, text/plain, */*" \
+  http://localhost:8000/files | head -200
+```
+
+**结果：** 返回正确 JSON 文件列表。✅ 后端没问题。
+
+**第 2 步：浏览器 F12 → Network 检查**
+
+刷新页面后查看 `/files` 请求：
+- 请求头：`Authorization: Bearer eyJ...` ✅ 存在
+- 请求头：`Accept: application/json, text/plain, */*` ✅ 正确
+- 响应：**HTML 页面** ❌ 不是 JSON！
+
+**第 3 步：浏览器控制台直接测试 fetch**
+
+```javascript
+fetch('/files', {
+  headers: {
+    'Authorization': 'Bearer ' + localStorage.getItem('rag_token'),
+    'Accept': 'application/json'
+  }
+}).then(r => {
+  console.log('Status:', r.status)
+  console.log('Content-Type:', r.headers.get('content-type'))
+  return r.text()
+}).then(t => console.log('Response:', t.substring(0, 200)))
+```
+
+**结果：** `Content-Type: text/html`，返回 HTML 页面。❌
+
+**第 4 步：检查 Service Worker**
+
+```javascript
+navigator.serviceWorker.getRegistrations().then(r => console.log('SW:', r.length, r))
+```
+
+**结果：** `Uncaught TypeError: Cannot read properties of undefined` — 没有 Service Worker。
+
+**第 5 步：检查 Pinia store 状态**
+
+```javascript
+const pinia = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia
+const fs = pinia._s.get('files')
+console.log('files count:', fs.files.length)  // 0
+console.log('loading:', fs.loading)            // false
+```
+
+**结果：** files 为空，loading 为 false。说明 `loadFiles()` 要么没调用，要么静默失败了。
+
+**第 6 步：手动调用 loadFiles**
+
+```javascript
+fs.loadFiles(true).then(() => console.log('after loadFiles:', fs.files.length))
+```
+
+**结果：** `after loadFiles: 8` — 文件出现了！✅
+
+**结论：** `loadFiles()` 本身能工作，但在页面刷新时没被正确调用或调用时机不对。
+
+**第 7 步：容器内部对比测试**
+
+```bash
+docker exec ragv3 python3 -c "
+import httpx
+r = httpx.get('http://127.0.0.1:8000/files',
+    headers={'Authorization': 'Bearer test123', 'Accept': '*/*'})
+print('Status:', r.status_code)
+print('Content-Type:', r.headers.get('content-type'))
+"
+```
+
+**结果：** `Status: 403, Content-Type: application/json` — 返回 JSON（虽然是 403 因为 token 假的，但格式正确）。
+
+**关键发现：** 从容器内部请求返回 JSON，从浏览器请求返回 HTML。问题在浏览器到容器之间。
+
+**第 8 步：确认是 SPA 中间件 + 浏览器缓存问题**
+
+浏览器的页面导航请求 `GET /files`（Accept: text/html）被 SPA 中间件拦截返回 HTML，这个响应被浏览器缓存。后续的 AJAX 请求 `GET /files`（Accept: application/json + Authorization）命中了同一个缓存，返回了 HTML。
+
+**根因：** 浏览器 HTTP 缓存 key 不包含 `Authorization` header，导致页面导航的 HTML 响应和 API 的 JSON 响应被混淆。
+
 ### 调试技巧总结
 
 | 技巧 | 用途 |
