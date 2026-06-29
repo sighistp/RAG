@@ -276,6 +276,42 @@ class UserDB:
         return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
+    # Password Management (Phase 1a)
+    # ------------------------------------------------------------------
+
+    def change_password(self, user_id: int, old_password: str, new_password: str) -> None:
+        """修改密码。验证旧密码、新密码强度、新旧密码不同。"""
+        import time
+        from rag.auth import verify_password, hash_password
+
+        # 验证密码强度
+        if len(new_password) < 8:
+            raise ValueError("密码至少 8 位")
+        if not any(c.isupper() for c in new_password):
+            raise ValueError("密码需含大写字母")
+        if not any(c.islower() for c in new_password):
+            raise ValueError("密码需含小写字母")
+        if not any(c.isdigit() for c in new_password):
+            raise ValueError("密码需含数字")
+        if old_password == new_password:
+            raise ValueError("新密码不能与旧密码相同")
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, password FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError("用户不存在")
+            if not verify_password(old_password, row["password"]):
+                raise ValueError("旧密码错误")
+            new_hashed = hash_password(new_password)
+            self._conn.execute(
+                "UPDATE users SET password = ?, password_changed_at = ? WHERE id = ?",
+                (new_hashed, time.time(), user_id),
+            )
+            self._conn.commit()
+
+    # ------------------------------------------------------------------
     # KB Metadata (Phase 1: owner/scope)
     # ------------------------------------------------------------------
 
@@ -373,7 +409,7 @@ class UserDB:
         """Return user dict or ``None``."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id, username, is_admin FROM users WHERE id = ?",
+                "SELECT id, username, is_admin, password_changed_at FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
         if row is None:
@@ -382,6 +418,7 @@ class UserDB:
             "id": row["id"],
             "username": row["username"],
             "is_admin": bool(row["is_admin"]),
+            "password_changed_at": row["password_changed_at"],
         }
 
     # ------------------------------------------------------------------

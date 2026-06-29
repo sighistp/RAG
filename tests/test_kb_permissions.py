@@ -367,6 +367,77 @@ def test_user_has_password_changed_at(db):
     assert row["password_changed_at"] is None  # 默认 NULL
 
 
+# ── Task 2: 修改密码 ───────────────────────────────────────────────
+
+
+def test_change_password_success(db):
+    """修改密码成功。"""
+    uid = db.create_user("alice", "OldPass1")
+    db.change_password(uid, "OldPass1", "NewPass1")
+    user = db.authenticate("alice", "NewPass1")
+    assert user is not None
+
+
+def test_change_password_hash_format(db):
+    """修改密码后 hash 格式应为 salt_hex$hash_hex。"""
+    uid = db.create_user("alice", "OldPass1")
+    db.change_password(uid, "OldPass1", "NewPass1")
+    # 直接查数据库验证格式
+    with db._lock:
+        row = db._conn.execute("SELECT password FROM users WHERE id = ?", (uid,)).fetchone()
+    assert "$" in row["password"]
+
+
+def test_change_password_wrong_old(db):
+    """旧密码错误应失败。"""
+    uid = db.create_user("alice", "OldPass1")
+    with pytest.raises(ValueError, match="旧密码错误"):
+        db.change_password(uid, "WrongPass", "NewPass1")
+
+
+def test_change_password_too_weak(db):
+    """新密码太弱应失败。"""
+    uid = db.create_user("alice", "OldPass1")
+    with pytest.raises(ValueError, match="密码至少 8 位"):
+        db.change_password(uid, "OldPass1", "123")
+
+
+def test_change_password_missing_uppercase(db):
+    """新密码缺大写字母应失败。"""
+    uid = db.create_user("alice", "OldPass1")
+    with pytest.raises(ValueError, match="大写字母"):
+        db.change_password(uid, "OldPass1", "newpass123")
+
+
+def test_change_password_missing_lowercase(db):
+    """新密码缺小写字母应失败。"""
+    uid = db.create_user("alice", "OldPass1")
+    with pytest.raises(ValueError, match="小写字母"):
+        db.change_password(uid, "OldPass1", "NEWPASS123")
+
+
+def test_change_password_missing_digit(db):
+    """新密码缺数字应失败。"""
+    uid = db.create_user("alice", "OldPass1")
+    with pytest.raises(ValueError, match="数字"):
+        db.change_password(uid, "OldPass1", "NewPassword")
+
+
+def test_change_password_same_as_old(db):
+    """新密码与旧密码相同应失败。"""
+    uid = db.create_user("alice", "OldPass1")
+    with pytest.raises(ValueError, match="不能与旧密码相同"):
+        db.change_password(uid, "OldPass1", "OldPass1")
+
+
+def test_change_password_updates_password_changed_at(db):
+    """修改密码后 password_changed_at 应更新。"""
+    uid = db.create_user("alice", "OldPass1")
+    db.change_password(uid, "OldPass1", "NewPass1")
+    user = db.get_user_by_id(uid)
+    assert user["password_changed_at"] is not None
+
+
 # ── Phase 2: shared 档 + 共享机制 ──────────────────────────────────
 
 
