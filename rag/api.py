@@ -510,6 +510,39 @@ async def delete_conversation(cid: int, authorization: str = Header(default=""))
     return {"status": "deleted"}
 
 
+class GenerateTitleRequest(BaseModel):
+    question: str = Field(..., description="用户的第一条问题")
+
+
+@app.post("/conversations/{cid}/generate-title", summary="生成对话标题")
+async def generate_conversation_title(cid: int, req: GenerateTitleRequest, authorization: str = Header(default="")):
+    """用 LLM 生成对话标题，更新 conversations.title。"""
+    user_dict = await _require_auth(authorization)
+
+    def _generate():
+        from rag.generator import generate
+        prompt = f"请用一句话概括以下问题，作为对话标题，不超过20个字，不要加引号：\n{req.question}"
+        try:
+            title = generate([{"role": "user", "content": prompt}], temperature=0.3)
+            title = title.strip().replace('"', '').replace("'", "").replace("。", "")
+            if len(title) > 30:
+                title = title[:30]
+        except Exception:
+            title = req.question[:20]
+
+        # 更新数据库
+        with user_db._lock:
+            user_db._conn.execute(
+                "UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?",
+                (title, cid, user_dict["id"]),
+            )
+            user_db._conn.commit()
+        return title
+
+    title = await asyncio.to_thread(_generate)
+    return {"title": title}
+
+
 @app.get("/conversations/{cid}/messages", summary="获取对话消息")
 async def get_conversation_messages(cid: int, authorization: str = Header(default="")):
     if not authorization:
@@ -627,11 +660,11 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
                 if not user_dict and not f["is_public"] and not f["protected"]:
                     continue
             else:
-                # 旧文档无权限记录，视为公开
+                # 无权限记录，视为受保护（仓库文件）
                 f["is_public"] = True
-                f["protected"] = False
-                f["owner_id"] = None
-                f["is_owner"] = True
+                f["protected"] = True
+                f["owner_id"] = 0
+                f["is_owner"] = False
             filtered_files.append(f)
         files = filtered_files
 

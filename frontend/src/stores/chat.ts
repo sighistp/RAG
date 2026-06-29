@@ -231,13 +231,25 @@ export const useChatStore = defineStore('chat', () => {
 
       assistantMsg.sources = sources
 
-      // Update conversation title locally (first user message becomes the title)
-      // Avoids full conversation reload which causes UI delay
+      // Generate conversation title from first user message
       const currentConv = conversations.value.find(c => c.id === currentConvId.value)
-      if (currentConv && !currentConv.title) {
-        const firstUserMsg = messages.value.find(m => m.role === 'user')
-        if (firstUserMsg) {
-          currentConv.title = firstUserMsg.content.slice(0, 50)
+      if (currentConv && (!currentConv.title || currentConv.title === '新对话')) {
+        try {
+          const titleRes = await fetch(`${API}/conversations/${currentConvId.value}/generate-title`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...auth.getAuthHeaders()
+            },
+            body: JSON.stringify({ question })
+          })
+          if (titleRes.ok) {
+            const titleData = await titleRes.json()
+            currentConv.title = titleData.title
+          }
+        } catch {
+          // Fallback: use first 20 chars
+          currentConv.title = question.slice(0, 20)
         }
       }
 

@@ -46,6 +46,8 @@ async function handleFileAction(command: string, fileName: string) {
     await handleDelete(fileName)
   } else if (command === 'public' || command === 'private') {
     await toggleVisibility(fileName)
+  } else if (command === 'download') {
+    await downloadFile(fileName)
   }
 }
 
@@ -290,26 +292,15 @@ function askSuggested(q: string) {
             <div class="file-item-size">{{ file.size_human }}</div>
           </div>
           <div class="file-item-actions">
-            <el-tooltip
-              :content="file.downloadable === false ? '该文件不允许下载' : '下载文件'"
-              placement="top"
-            >
-              <button
-                class="file-item-download"
-                :disabled="file.downloadable === false && !file.is_owner"
-                @click.stop="downloadFile(file.name)"
-              >
-                ⬇
-              </button>
-            </el-tooltip>
-            <el-dropdown v-if="!file.protected" trigger="click" @command="(cmd: string) => handleFileAction(cmd, file.name)" @click.stop>
+            <el-dropdown trigger="click" @command="(cmd: string) => handleFileAction(cmd, file.name)" @click.stop>
               <button class="file-item-more" @click.stop>⋯</button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item :command="file.is_public ? 'private' : 'public'">
+                  <el-dropdown-item command="download">下载</el-dropdown-item>
+                  <el-dropdown-item v-if="!file.protected" :command="file.is_public ? 'private' : 'public'">
                     {{ file.is_public ? '切换为私有' : '切换为共享' }}
                   </el-dropdown-item>
-                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                  <el-dropdown-item v-if="!file.protected" command="delete" divided>删除</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
