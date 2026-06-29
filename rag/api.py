@@ -393,11 +393,17 @@ def _get_current_user(token: str) -> dict | None:
     注意：此函数在 asyncio.to_thread 中调用，不能抛出 HTTPException
     （否则会被包装成 500 错误）。调用方必须检查返回值并抛出 HTTPException。
     """
+    # 先解码 token（不检查 password_changed_at）
     payload = decode_token(token)
     if not payload:
         return None
+    # 查出用户信息
     user = user_db.get_user_by_id(payload["user_id"])
     if not user:
+        return None
+    # 再用 password_changed_at 校验 token 是否因改密而失效
+    password_changed_at = user.get("password_changed_at")
+    if password_changed_at and payload.get("iat", 0) < password_changed_at:
         return None
     return user
 
@@ -544,12 +550,7 @@ async def generate_conversation_title(cid: int, req: GenerateTitleRequest, autho
             title = req.question[:20]
 
         # 更新数据库
-        with user_db._lock:
-            user_db._conn.execute(
-                "UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?",
-                (title, cid, user_dict["id"]),
-            )
-            user_db._conn.commit()
+        user_db.update_conversation_title(cid, user_dict["id"], title)
         return title
 
     title = await asyncio.to_thread(_generate)
@@ -658,6 +659,7 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
         perm_map = await asyncio.to_thread(
             user_db.get_document_permissions_by_names, filenames, "rag_docs"
         )
+        repo_files = _get_repo_file_names()  # 只读一次
         filtered_files = []
         for f in files:
             perm = perm_map.get(f["name"])
@@ -674,7 +676,6 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
                     continue
             else:
                 # 无权限记录：检查是否为仓库文件
-                repo_files = _get_repo_file_names()
                 if f["name"] in repo_files:
                     f["is_public"] = True
                     f["protected"] = True

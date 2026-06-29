@@ -9,6 +9,18 @@ import threading
 from typing import Any
 
 
+def _validate_password_strength(password: str) -> None:
+    """验证密码强度。不符合要求时抛出 ValueError。"""
+    if len(password) < 8:
+        raise ValueError("密码至少 8 位")
+    if not any(c.isupper() for c in password):
+        raise ValueError("密码需含大写字母")
+    if not any(c.islower() for c in password):
+        raise ValueError("密码需含小写字母")
+    if not any(c.isdigit() for c in password):
+        raise ValueError("密码需含数字")
+
+
 class UserDB:
     """Thread-safe SQLite database for users, conversations, messages, and feedback."""
 
@@ -284,15 +296,7 @@ class UserDB:
         import time
         from rag.auth import verify_password, hash_password
 
-        # 验证密码强度
-        if len(new_password) < 8:
-            raise ValueError("密码至少 8 位")
-        if not any(c.isupper() for c in new_password):
-            raise ValueError("密码需含大写字母")
-        if not any(c.islower() for c in new_password):
-            raise ValueError("密码需含小写字母")
-        if not any(c.isdigit() for c in new_password):
-            raise ValueError("密码需含数字")
+        _validate_password_strength(new_password)
         if old_password == new_password:
             raise ValueError("新密码不能与旧密码相同")
 
@@ -316,15 +320,7 @@ class UserDB:
         import time
         from rag.auth import hash_password
 
-        # 验证密码强度
-        if len(new_password) < 8:
-            raise ValueError("密码至少 8 位")
-        if not any(c.isupper() for c in new_password):
-            raise ValueError("密码需含大写字母")
-        if not any(c.islower() for c in new_password):
-            raise ValueError("密码需含小写字母")
-        if not any(c.isdigit() for c in new_password):
-            raise ValueError("密码需含数字")
+        _validate_password_strength(new_password)
 
         with self._lock:
             row = self._conn.execute(
@@ -497,6 +493,17 @@ class UserDB:
             cur = self._conn.execute(
                 "DELETE FROM conversations WHERE id = ? AND user_id = ?",
                 (conversation_id, uid),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def update_conversation_title(self, conversation_id: int, user_id: int | str, title: str) -> bool:
+        """更新对话标题（仅 owner 可操作）。返回是否成功。"""
+        uid = int(user_id)
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?",
+                (title, conversation_id, uid),
             )
             self._conn.commit()
             return cur.rowcount > 0
