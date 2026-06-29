@@ -137,8 +137,10 @@ class RAGUser(HttpUser):
     @task(2)
     def query_adversarial(self):
         """对抗性查询（注入/XSS/边界）。"""
-        question = random.choice(QUERIES[20:])
-        self._do_query(question, "query_adversarial")
+        adversarial = [q for q in QUERIES if any(kw in q for kw in ["SELECT", "script", "忽略", "密码", "指令"])]
+        if adversarial:
+            question = random.choice(adversarial)
+            self._do_query(question, "query_adversarial")
 
     def _do_query(self, question, tag):
         """执行查询并记录指标。"""
