@@ -4113,3 +4113,61 @@ b9fc2f8 feat(Task 3.3): 前端下载按钮 + downloadable=false 时灰色禁用
 ### 下一步
 
 权限 v2 全部完成。可选：更新开发日志总结、部署验证、或开始新功能。
+
+---
+
+## 权限 v2 后续修复（2026-06-28）
+
+### Bug 1：共享检查依赖 scope 值
+
+**问题：** 用户创建私有 KB 后共享给他人，被共享用户看不到。因为 `check_kb_permission` 要求 `scope == "shared"` 才检查共享列表，但 scope 是 "private"。
+
+**修复：** `rag/permissions.py` — 共享检查不再依赖 scope 值，只要在共享列表里就放行。
+
+```python
+# 修复前
+if scope == "shared" and db.is_kb_shared(kb_id, user["id"]):
+    return meta
+
+# 修复后
+if db.is_kb_shared(kb_id, user["id"]):
+    return meta
+```
+
+### Bug 2：共享时 scope 不自动切换
+
+**问题：** 共享 KB 给用户后，scope 仍然是 "private"，前端标签显示"私有"。
+
+**修复：** `rag/user_db.py` — `share_kb()` 自动将 scope 改为 "shared"，`unshare_kb()` 在最后一个共享用户被移除后自动改回 "private"。
+
+### Bug 3：KB 编辑端点不支持共享 edit 权限
+
+**问题：** 共享 edit 权限的用户无法添加文档、生成概述等。
+
+**修复：** 新增 `_check_kb_edit_permission()` 辅助函数，统一检查 owner / admin / 共享 edit 权限。所有 KB 编辑端点（8 个）改用此函数。
+
+### 新增：KB 列表显示共享用户
+
+**改动：**
+- `KBResponse` 模型新增 `shared_users` 字段
+- `GET /knowledge-bases` 端点返回共享用户列表（仅 owner/admin 可见）
+- 前端 KB 卡片显示"共享给 xxx、xxx"
+
+### 新增：shared 标签样式
+
+**改动：** `KBModeView.vue` — scope 标签支持三档显示：
+- 私有 → 黄色标签
+- 共享 → 蓝色标签
+- 公开 → 绿色标签
+
+### 测试结果
+
+552 个测试全过。
+
+### 提交记录
+
+```
+f1dc0f8 fix: 共享检查不依赖 scope 值 — 只要在共享列表里就放行
+81476d0 feat: 共享时自动切换 scope + KB 列表显示共享用户 + shared 标签样式
+d3dad5c fix: KB 编辑端点支持共享 edit 权限 — _check_kb_edit_permission 统一检查
+```
