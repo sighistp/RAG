@@ -192,6 +192,19 @@ SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf", ".docx", ".xlsx", ".csv"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
+def _get_repo_file_names() -> set[str]:
+    """读取 .repo_files manifest，返回仓库文件名集合。"""
+    manifest = DATA_DIR / ".repo_files"
+    if not manifest.is_file():
+        return set()
+    names = set()
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        name = line.strip()
+        if name:
+            names.add(name)
+    return names
+
+
 class QueryRequest(BaseModel):
     question: str = Field(..., description="用户提问")
     top_k: int = Field(default=5, ge=1, description="返回相关文档数量")
@@ -660,11 +673,19 @@ async def list_files(user_id: str = Security(verify_api_key), authorization: str
                 if not user_dict and not f["is_public"] and not f["protected"]:
                     continue
             else:
-                # 无权限记录，视为受保护（仓库文件）
-                f["is_public"] = True
-                f["protected"] = True
-                f["owner_id"] = 0
-                f["is_owner"] = False
+                # 无权限记录：检查是否为仓库文件
+                repo_files = _get_repo_file_names()
+                if f["name"] in repo_files:
+                    f["is_public"] = True
+                    f["protected"] = True
+                    f["owner_id"] = 0
+                    f["is_owner"] = False
+                else:
+                    # 用户文件无权限记录，视为公开（向后兼容）
+                    f["is_public"] = True
+                    f["protected"] = False
+                    f["owner_id"] = None
+                    f["is_owner"] = True
             filtered_files.append(f)
         files = filtered_files
 
