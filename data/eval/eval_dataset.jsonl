@@ -1,0 +1,55 @@
+{"question": "RAG 技术解决了原生大模型的哪三大致命缺陷？", "expected_keywords": ["知识时效性滞后", "生成内容幻觉", "私有领域知识缺失"]}
+{"question": "完整标准 RAG 工程链路包含多少个精细化步骤？", "expected_keywords": ["十大", "10"]}
+{"question": "文本切片的六种常见策略是什么？", "expected_keywords": ["固定长度切片", "递归字符分割", "语义智能切片", "层级结构化切片", "问答对切片", "分块重叠切片"]}
+{"question": "递归字符分割切片的重叠长度一般设置为多少？", "expected_keywords": ["10%", "20%", "单块长度"]}
+{"question": "工业级常用嵌入模型的维度有哪些？", "expected_keywords": ["768", "1024", "1536", "2048", "4096"]}
+{"question": "RAG 系统中向量相似度计算的主流算法有哪些？", "expected_keywords": ["余弦相似度", "欧氏距离", "曼哈顿距离", "点积相似度"]}
+{"question": "为什么余弦相似度是 RAG 系统的绝对主流？", "expected_keywords": ["夹角", "文本长度", "语义方向一致性"]}
+{"question": "RAG 分为哪三代技术架构？", "expected_keywords": ["Naive RAG", "Advanced RAG", "Intelligent RAG", "基础", "进阶", "智能"]}
+{"question": "大模型幻觉问题的详细成因可分为哪六大类？", "expected_keywords": ["预训练数据偏差", "上下文窗口溢出", "语义模糊推理", "概率采样随机性", "知识边界模糊", "长文本信息稀释"]}
+{"question": "宇宙的年龄约为多少亿年？", "expected_keywords": ["138.2", "138"]}
+{"question": "暗能量占据宇宙总质能的百分比是多少？", "expected_keywords": ["68.3%"]}
+{"question": "银河系的直径约为多少光年？", "expected_keywords": ["10万", "18万"]}
+{"question": "银河系中心的超大质量黑洞叫什么名字？", "expected_keywords": ["人马座A"]}
+{"question": "太阳系八大行星按距离太阳由近及远的顺序是什么？", "expected_keywords": ["水星", "金星", "地球", "火星", "木星", "土星", "天王星", "海王星"]}
+{"question": "哪颗行星是太阳系表面温度最高的？", "expected_keywords": ["金星", "462"]}
+{"question": "火星最高的火山叫什么？高度是多少？", "expected_keywords": ["奥林匹斯山", "21公里"]}
+{"question": "木星的大红斑是什么？", "expected_keywords": ["气旋风暴", "巨型"]}
+{"question": "土星为什么能漂浮在水面上？", "expected_keywords": ["密度低", "小于水"]}
+{"question": "月球的自转周期和公转周期是多少？", "expected_keywords": ["27.32"]}
+{"question": "日食发生在农历的哪一天？", "expected_keywords": ["初一", "朔日"]}
+{"question": "地球的结构由外到内分为哪三个圈层？", "expected_keywords": ["地壳", "地幔", "地核"]}
+{"question": "地球的六大板块分别是什么？", "expected_keywords": ["亚欧板块", "非洲板块", "印度洋板块", "太平洋板块", "美洲板块", "南极洲板块"]}
+{"question": "对流层的温度随高度如何变化？", "expected_keywords": ["降低", "0.6℃", "100米"]}
+{"question": "我国国土总面积约为多少万平方公里？", "expected_keywords": ["960"]}
+{"question": "长江全长多少公里？", "expected_keywords": ["6300"]}
+{"question": "黄河是世界什么量最大的河流？", "expected_keywords": ["含沙量"]}
+{"question": "细胞是生物体什么的基本单位？", "expected_keywords": ["结构", "功能"]}
+{"question": "原核细胞和真核细胞的主要区别是什么？", "expected_keywords": ["细胞核", "核膜", "核仁"]}
+{"question": "植物细胞特有而动物细胞没有的三个结构是什么？", "expected_keywords": ["细胞壁", "叶绿体", "液泡"]}
+{"question": "被子植物占现存植物总数的百分比是多少？", "expected_keywords": ["90%"]}
+{"question": "生态系统能量流动的传递效率是多少？", "expected_keywords": ["10%", "20%"]}
+{"question": "光的直线传播对应哪些现象？", "expected_keywords": ["小孔成像", "影子", "日食月食"]}
+{"question": "凸透镜成像规律是什么？", "expected_keywords": ["物远像近像变小", "物近像远像变大"]}
+{"question": "水的标准密度是多少？", "expected_keywords": ["1.0×10³", "1000"]}
+{"question": "标准大气压数值是多少？", "expected_keywords": ["1.013×10⁵", "101325"]}
+{"question": "四大基本化学反应类型是什么？", "expected_keywords": ["化合反应", "分解反应", "置换反应", "复分解反应"]}
+{"question": "质量守恒定律的核心是什么？", "expected_keywords": ["原子种类", "数目", "质量", "不变"]}
+{"question": "中国上古历史的禅让制被谁打破？", "expected_keywords": ["启", "夏朝"]}
+{"question": "秦朝统一了哪些东西？", "expected_keywords": ["文字", "货币", "度量衡", "车轨"]}
+{"question": "汉武帝的三大政策是什么？", "expected_keywords": ["罢黜百家独尊儒术", "推恩令", "张骞出使西域"]}
+{"question": "宋朝的三大技术发明是什么？", "expected_keywords": ["活字印刷", "指南针", "火药"]}
+{"question": "儒家思想的创始人是谁？", "expected_keywords": ["孔子"]}
+{"question": "程朱理学的核心思想是什么？", "expected_keywords": ["格物致知", "存天理灭人欲"]}
+{"question": "人体八大系统中，消化系统的主要吸收场所是哪里？", "expected_keywords": ["小肠"]}
+{"question": "人体七大营养素中，哪种营养素占体重 60% 以上？", "expected_keywords": ["水"]}
+{"question": "23 点到凌晨 3 点是什么时段？", "expected_keywords": ["深度修复", "黄金时段", "肝脏解毒"]}
+{"question": "建筑的五大构件是什么？", "expected_keywords": ["梁", "板", "柱", "墙", "基础"]}
+{"question": "齿轮传动的特点是什么？", "expected_keywords": ["精度最高", "传动稳定", "承载力大"]}
+{"question": "家用交流电的电压和频率是多少？", "expected_keywords": ["220V", "50Hz"]}
+{"question": "光伏发电利用什么效应？", "expected_keywords": ["光生伏特"]}
+{"question": "RAG 系统的核心测试维度包含多少大项？", "expected_keywords": ["十二", "12"]}
+{"question": "语义智能切片的优缺点是什么？", "expected_keywords": ["精度最高", "算力消耗", "处理速度慢"]}
+{"question": "宇宙物质分为哪三类？", "expected_keywords": ["普通物质", "暗物质", "暗能量"]}
+{"question": "太阳系中哪颗行星是唯一逆向自转的？", "expected_keywords": ["金星"]}
+{"question": "地球大气层分为哪五层？", "expected_keywords": ["对流层", "平流层", "中间层", "热层", "散逸层"]}
