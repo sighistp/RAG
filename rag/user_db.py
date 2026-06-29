@@ -311,6 +311,34 @@ class UserDB:
             )
             self._conn.commit()
 
+    def reset_password(self, user_id: int, new_password: str) -> None:
+        """重置密码（不验证旧密码）。仅 admin 调用。"""
+        import time
+        from rag.auth import hash_password
+
+        # 验证密码强度
+        if len(new_password) < 8:
+            raise ValueError("密码至少 8 位")
+        if not any(c.isupper() for c in new_password):
+            raise ValueError("密码需含大写字母")
+        if not any(c.islower() for c in new_password):
+            raise ValueError("密码需含小写字母")
+        if not any(c.isdigit() for c in new_password):
+            raise ValueError("密码需含数字")
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError("用户不存在")
+            new_hashed = hash_password(new_password)
+            self._conn.execute(
+                "UPDATE users SET password = ?, password_changed_at = ? WHERE id = ?",
+                (new_hashed, time.time(), user_id),
+            )
+            self._conn.commit()
+
     # ------------------------------------------------------------------
     # KB Metadata (Phase 1: owner/scope)
     # ------------------------------------------------------------------

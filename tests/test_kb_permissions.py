@@ -459,6 +459,29 @@ def test_decode_token_with_password_changed_at():
     assert decode_token(token, password_changed_at=iat + 100) is None
 
 
+# ── Task 4: admin 重置密码 ─────────────────────────────────────────
+
+
+def test_admin_reset_password(db):
+    """admin 重置密码成功。"""
+    uid = db.create_user("alice", "OldPass1")
+    db.reset_password(uid, "NewPass1")
+    user = db.authenticate("alice", "NewPass1")
+    assert user is not None
+
+
+def test_reset_password_invalidates_old_token(db):
+    """重置密码后旧 token 应失效。"""
+    uid = db.create_user("alice", "OldPass1")
+    from rag.auth import create_token
+    token = create_token({"user_id": uid, "username": "alice"})
+    # 重置密码
+    db.reset_password(uid, "NewPass1")
+    # 检查 password_changed_at 已更新
+    user = db.get_user_by_id(uid)
+    assert user["password_changed_at"] is not None
+
+
 # ── Phase 2: shared 档 + 共享机制 ──────────────────────────────────
 
 
