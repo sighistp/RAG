@@ -38,6 +38,11 @@ const router = createRouter({
           path: 'analysis',
           name: 'analysis',
           component: () => import('../views/AnalysisModeView.vue')
+        },
+        {
+          path: 'settings/password',
+          name: 'change-password',
+          component: () => import('../views/ChangePasswordView.vue')
         }
       ]
     }

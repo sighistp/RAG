@@ -67,7 +67,8 @@ function handleMenuSelect(index: string) {
           </button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="authStore.logout(); router.push('/login')">退出登录</el-dropdown-item>
+              <el-dropdown-item @click="router.push('/settings/password')">修改密码</el-dropdown-item>
+              <el-dropdown-item divided @click="authStore.logout(); router.push('/login')">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
