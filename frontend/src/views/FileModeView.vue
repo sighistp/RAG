@@ -9,6 +9,7 @@ import { Upload, FolderOpened, Plus } from '@element-plus/icons-vue'
 import MessageBubble from '../components/MessageBubble.vue'
 import ChatInput from '../components/ChatInput.vue'
 import AddToAnalysisDialog from '../components/AddToAnalysisDialog.vue'
+import ConversationSearch from '../components/ConversationSearch.vue'
 
 import { computed } from 'vue'
 
@@ -133,6 +134,10 @@ async function downloadFile(name: string) {
   }
 }
 
+async function onSearchSelect(conversationId: number) {
+  await chatStore.selectConversation(conversationId)
+}
+
 onMounted(async () => {
   await chatStore.loadConversations('file')
   // Auto-select the most recent conversation if exists
@@ -196,6 +201,8 @@ function askSuggested(q: string) {
           新建
         </button>
       </div>
+
+      <ConversationSearch @select="onSearchSelect" />
 
       <div class="conv-list">
         <div
