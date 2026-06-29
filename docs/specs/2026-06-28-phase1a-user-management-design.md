@@ -151,10 +151,77 @@ ALTER TABLE users ADD COLUMN password_changed_at REAL DEFAULT NULL;
 
 ---
 
-## 八、风险与应对
+## 八、设计审查补充（2026-06-28）
+
+### 8.1 password_changed_at NULL 行为
+
+**决策：NULL 跳过检查（写法 A）。**
+
+```python
+# 验证 token 时：
+if password_changed_at and token.iat < password_changed_at:
+    raise HTTPException(401, detail="密码已修改，请重新登录")
+```
+
+**理由：** 迁移后现有用户 token 不受影响，无需重新登录。只有主动改过密码的用户才受保护。
+
+### 8.2 对话搜索 SQL 查询优化
+
+**决策：加索引。**
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON chat_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
+```
+
+**理由：** LEFT JOIN + LIKE 全表扫描，对话多时慢。索引可加速 JOIN 和 WHERE 过滤。
+
+### 8.3 匹配片段生成
+
+**决策：后端返回原始片段，前端做高亮。**
+
+- 后端：返回匹配消息的前 100 字符（原始文本，无 HTML）
+- 前端：用正则替换关键词为 `<mark>` 标签
+
+**理由：** 后端不需要处理 HTML 转义，职责清晰。
+
+### 8.4 密码强度验证
+
+**决策：两层都做。**
+
+- 前端：实时提示密码强度（用户体验）
+- 后端：强制验证（安全兜底，防绕过前端直接调 API）
+
+**验证规则：** 8+ 位，含大写字母、小写字母、数字。
+
+### 8.5 admin 重置密码确认
+
+**决策：加确认步骤。**
+
+流程：点击"重置密码" → `ElMessageBox.confirm("确定要重置用户 X 的密码吗？")` → 输入新密码 → 提交。
+
+**理由：** 防止 admin 手滑误操作。
+
+### 8.6 修改密码后前端处理
+
+**决策：必须调 `logout()` 清 token。**
+
+```typescript
+// 修改密码成功后
+authStore.logout()  // 清除 localStorage token + Pinia user
+ElMessage.success('密码已修改，请重新登录')
+router.push('/login')
+```
+
+**理由：** 不能只是跳转，必须清 token，否则旧 token 仍有效。
+
+---
+
+## 九、风险与应对
 
 | 风险 | 影响 | 应对 |
 |------|------|------|
-| 对话搜索性能 | 数据量大时慢 | Phase 1 先用 LIKE，后续加 FTS5 |
+| 对话搜索性能 | 数据量大时慢 | Phase 1 先用 LIKE + 索引，后续加 FTS5 |
 | 密码强度验证 | 用户可能觉得太严格 | 提供密码强度指示条 |
 | admin 重置密码滥用 | 安全风险 | 记录操作日志（Phase 4） |
+| password_changed_at 迁移 | 现有用户受影响 | NULL 跳过检查，不踢用户 |
