@@ -255,6 +255,13 @@ class UserDB:
                 self._conn.execute("ALTER TABLE document_permissions ADD COLUMN downloadable INTEGER DEFAULT 1")
                 self._conn.commit()
 
+            # Phase 1a migration: add password_changed_at to users if missing
+            try:
+                self._conn.execute("SELECT password_changed_at FROM users LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute("ALTER TABLE users ADD COLUMN password_changed_at REAL DEFAULT NULL")
+                self._conn.commit()
+
     # ------------------------------------------------------------------
     # User Search (Phase 2)
     # ------------------------------------------------------------------

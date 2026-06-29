@@ -353,6 +353,20 @@ def test_api_no_auth_returns_401():
     assert res.status_code == 401
 
 
+# ── Phase 1a: 用户管理 ─────────────────────────────────────────────
+
+
+def test_user_has_password_changed_at(db):
+    """users 表应有 password_changed_at 字段，默认 NULL。"""
+    uid = db.create_user("alice", "pwd")
+    with db._lock:
+        row = db._conn.execute(
+            "SELECT password_changed_at FROM users WHERE id = ?", (uid,)
+        ).fetchone()
+    assert row is not None
+    assert row["password_changed_at"] is None  # 默认 NULL
+
+
 # ── Phase 2: shared 档 + 共享机制 ──────────────────────────────────
 
 
