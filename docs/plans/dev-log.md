@@ -4327,3 +4327,73 @@ e2e605d feat(Task 6): 修改密码页面
 
 Phase 1b：对话置顶 + 创建者显示
 Phase 2：文件管理（文件搜索 + 文档预览 + 批量操作 + 文件重命名 + 导出对话）
+
+---
+
+## Phase 1a 补充修复 + 文件权限清理（2026-06-29）
+
+### Bug 1：对话标题永远是"新对话"
+
+**问题：** 所有对话默认标题是"新对话"，用户无法区分。
+
+**修复：** 第一条消息发送后，调 LLM 生成标题（不超过 20 字）。
+- 后端：`POST /conversations/{cid}/generate-title` 端点
+- 前端：`chat.ts` 第一条消息后调用此端点，更新对话标题
+
+### Bug 2：下载按钮位置不直观
+
+**问题：** 下载按钮（⬇）单独显示在文件列表中，与其他操作分离。
+
+**修复：** 下载按钮移入 `⋯` 下拉菜单，与"切换共享/私有"和"删除"并列。
+
+### Bug 3：repo_files manifest 文件名不匹配
+
+**问题：** `.repo_files` 里的文件名是旧的长中文名（`【数万字巨型】...`），但实际文件已改名为 `压测.docx/md/pdf`。`_sync_repo_files` 认不出仓库文件。
+
+**修复：** 更新 `.repo_files` 内容为正确的文件名。
+
+### Bug 4：Dockerfile 未拷贝 .repo_files
+
+**问题：** Dockerfile 只拷贝 manifest 中列出的文件到 `repo_upload/`，但不拷贝 `.repo_files` 本身。导致 `_sync_repo_files` 无法读取 manifest，回退到遍历所有文件。
+
+**修复：** Dockerfile 增加 `cp /app/data/upload/.repo_files /app/repo_upload/.repo_files`。
+
+### Bug 5：用户文件显示为"默认"（protected）
+
+**问题：** 没有权限记录的文件被统一当作"受保护"（仓库文件）处理。但用户上传的文件没有权限记录时，应该显示为"公开"而非"默认"。
+
+**修复：** `/files` 端点区分仓库文件和用户文件：
+- 仓库文件（在 `.repo_files` 中）→ `protected=True`，显示为"默认"
+- 用户文件（不在 `.repo_files` 中）→ `protected=False`，显示为"公开"
+
+### Bug 6：数据库脏数据
+
+**问题：** 旧的权限记录残留（旧文件名、重复记录、错误的 protected 标记）。
+
+**修复：** 全量清理：
+```bash
+rm -rf ~/RAG/qdrant_data/*
+rm -f ~/RAG/data/bm25_index.db
+rm -f ~/RAG/data/index_state.json
+# 清理权限表
+DELETE FROM document_permissions
+DELETE FROM document_shares
+DELETE FROM kb_shares
+DELETE FROM kb_metadata
+DELETE FROM kb_documents
+```
+
+### 提交记录
+
+```
+e83d130 fix: 文件默认为受保护 + 下载按钮移入下拉菜单 + LLM 生成对话标题 + 修复 repo_files manifest
+fe34b0b fix: Dockerfile 拷贝 .repo_files 到 repo_upload
+d81702e fix: 无权限记录的文件区分仓库文件和用户文件
+```
+
+### 教训
+
+1. **Dockerfile 的 `cp` 必须精确** — `cp -r` 会把所有文件拷进去，包括用户上传的
+2. **manifest 文件本身也要拷贝** — 只拷贝 manifest 中列出的文件不够，manifest 本身也要拷到目标目录
+3. **无权限记录 ≠ 仓库文件** — 必须用 manifest 区分，不能一刀切
+4. **数据库清理要彻底** — 残留的旧记录会导致显示异常
