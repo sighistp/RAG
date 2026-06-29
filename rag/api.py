@@ -419,6 +419,59 @@ async def search_users(q: str = Query(..., min_length=2, description="搜索词�
     return await asyncio.to_thread(_search)
 
 
+# ── Phase 1a: 用户管理端点 ──────────────────────────────────────────
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., description="旧密码")
+    new_password: str = Field(..., description="新密码")
+    confirm_password: str = Field(..., description="确认新密码")
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., description="新密码")
+
+
+@app.put("/users/me/password", summary="修改密码")
+async def change_password(req: ChangePasswordRequest, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    if req.new_password != req.confirm_password:
+        raise HTTPException(status_code=400, detail="新密码与确认密码不匹配")
+
+    try:
+        await asyncio.to_thread(user_db.change_password, user_dict["id"], req.old_password, req.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"message": "密码已修改，请重新登录"}
+
+
+@app.put("/users/{uid}/reset-password", summary="管理员重置密码")
+async def reset_password(uid: int, req: ResetPasswordRequest, authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+    if not user_dict.get("is_admin"):
+        raise HTTPException(status_code=403, detail="仅管理员可重置密码")
+
+    try:
+        await asyncio.to_thread(user_db.reset_password, uid, req.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"message": "密码已重置"}
+
+
+@app.get("/conversations/search", summary="搜索对话")
+async def search_conversations(q: str = Query(..., min_length=1, description="搜索词"), page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), authorization: str = Header(default="")):
+    user_dict = await _require_auth(authorization)
+
+    def _search():
+        results = user_db.search_conversations(user_dict["id"], q, page=page, size=size)
+        return {"results": results, "page": page, "size": size}
+
+    return await asyncio.to_thread(_search)
+
+
 @app.post("/conversations", summary="新建对话")
 async def create_conversation(req: CreateConversationRequest = CreateConversationRequest(), authorization: str = Header(default="")):
     if not authorization:
