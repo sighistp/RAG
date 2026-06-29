@@ -482,6 +482,44 @@ def test_reset_password_invalidates_old_token(db):
     assert user["password_changed_at"] is not None
 
 
+# ── Task 5: 对话搜索 ───────────────────────────────────────────────
+
+
+def test_search_conversations_by_title(db):
+    """搜索对话标题应返回匹配结果。"""
+    uid = db.create_user("alice", "pwd")
+    cid = db.create_conversation(uid, title="RAG 技术讨论")
+    results = db.search_conversations(uid, "RAG")
+    assert len(results) >= 1
+    assert any(r["title"] == "RAG 技术讨论" for r in results)
+
+
+def test_search_conversations_by_content(db):
+    """搜索消息内容应返回匹配结果。"""
+    uid = db.create_user("alice", "pwd")
+    cid = db.create_conversation(uid, title="对话1")
+    db.add_message(cid, "user", "什么是向量数据库？")
+    results = db.search_conversations(uid, "向量")
+    assert len(results) >= 1
+
+
+def test_search_conversations_no_result(db):
+    """无匹配应返回空列表。"""
+    uid = db.create_user("alice", "pwd")
+    results = db.search_conversations(uid, "不存在的关键词xyz")
+    assert len(results) == 0
+
+
+def test_search_conversations_pagination(db):
+    """搜索应支持分页。"""
+    uid = db.create_user("alice", "pwd")
+    for i in range(25):
+        cid = db.create_conversation(uid, title=f"对话 {i}")
+        db.add_message(cid, "user", f"消息内容 {i}")
+    results = db.search_conversations(uid, "消息内容", page=1, size=10)
+    assert len(results) == 10
+
+
 # ── Phase 2: shared 档 + 共享机制 ──────────────────────────────────
 
 

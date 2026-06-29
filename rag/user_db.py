@@ -501,6 +501,25 @@ class UserDB:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def search_conversations(self, user_id: int | str, q: str, page: int = 1, size: int = 20) -> list[dict[str, Any]]:
+        """搜索对话（标题 + 消息内容）。返回匹配的对话列表。"""
+        uid = int(user_id)
+        offset = (page - 1) * size
+        pattern = f"%{q}%"
+        with self._lock:
+            rows = self._conn.execute("""
+                SELECT DISTINCT c.id, c.title, c.created_at,
+                       (SELECT m.content FROM chat_messages m
+                        WHERE m.conversation_id = c.id AND m.content LIKE ?
+                        LIMIT 1) as matched_snippet
+                FROM conversations c
+                LEFT JOIN chat_messages m ON m.conversation_id = c.id
+                WHERE c.user_id = ? AND (c.title LIKE ? OR m.content LIKE ?)
+                ORDER BY c.created_at DESC
+                LIMIT ? OFFSET ?
+            """, (pattern, uid, pattern, pattern, size, offset)).fetchall()
+        return [dict(r) for r in rows]
+
     # ------------------------------------------------------------------
     # Messages
     # ------------------------------------------------------------------
