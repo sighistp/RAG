@@ -1098,6 +1098,7 @@ class KBResponse(BaseModel):
     doc_count: int
     scope: str = "public"
     is_owner: bool = False
+    shared_users: list = Field(default_factory=list, description="共享用户列表（仅 owner 可见）")
 
 
 @app.get("/knowledge-bases", summary="列出知识库", description="获取所有知识库列表")
@@ -1121,9 +1122,14 @@ async def list_knowledge_bases(authorization: str = Header(default="")):
             is_owner = user_dict and owner_id == user_dict["id"]
             if not is_admin and scope == "private" and not is_owner:
                 continue
+            # 获取共享用户列表（仅 owner 或 admin 可见）
+            shared_users = []
+            if is_owner or is_admin:
+                shares = user_db.list_kb_shared_users(kb.kb_id)
+                shared_users = [{"username": s["username"], "permission": s["permission"]} for s in shares]
             result.append(KBResponse(
                 kb_id=kb.kb_id, name=kb.name, doc_count=kb.doc_count,
-                scope=scope, is_owner=is_owner,
+                scope=scope, is_owner=is_owner, shared_users=shared_users,
             ))
         return result
     return await asyncio.to_thread(_list)

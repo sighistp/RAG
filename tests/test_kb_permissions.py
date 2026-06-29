@@ -828,3 +828,53 @@ def test_download_file_not_found():
     res = client.get("/files/nonexistent.txt/download",
                      headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 404
+
+
+# ── 方案 A：共享时自动切换 scope ────────────────────────────────────
+
+
+def test_share_kb_auto_changes_scope_to_shared(db):
+    """共享 KB 时应自动把 scope 改为 'shared'。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    # 共享前 scope 是 private
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["scope"] == "private"
+
+    # 共享后 scope 自动变为 shared
+    db.share_kb("kb_test", viewer, owner)
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["scope"] == "shared"
+
+
+def test_unshare_last_user_reverts_scope_to_private(db):
+    """取消最后一个共享用户后，scope 应自动变回 'private'。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="private")
+
+    # 添加共享（scope 自动变 shared）
+    db.share_kb("kb_test", viewer, owner)
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["scope"] == "shared"
+
+    # 取消共享（scope 自动变回 private）
+    db.unshare_kb("kb_test", viewer)
+    meta = db.get_kb_metadata("kb_test")
+    assert meta["scope"] == "private"
+
+
+def test_list_kb_shares_returns_users(db):
+    """查看共享列表应返回用户信息。"""
+    owner = db.create_user("alice", "pwd")
+    viewer = db.create_user("bob", "pwd")
+    db.create_kb_metadata("kb_test", "测试库", owner_id=owner, scope="shared")
+
+    db.share_kb("kb_test", viewer, owner, permission="view")
+    shares = db.list_kb_shared_users("kb_test")
+
+    assert len(shares) == 1
+    assert shares[0]["username"] == "bob"
+    assert shares[0]["permission"] == "view"

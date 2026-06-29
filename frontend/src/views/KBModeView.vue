@@ -10,12 +10,18 @@ import ShareDialog from '../components/ShareDialog.vue'
 const router = useRouter()
 const authStore = useAuthStore()
 
+interface SharedUser {
+  username: string
+  permission: string
+}
+
 interface KnowledgeBase {
   kb_id: string
   name: string
   doc_count: number
   scope: string
   is_owner: boolean
+  shared_users: SharedUser[]
 }
 
 const knowledgeBases = ref<KnowledgeBase[]>([])
@@ -140,10 +146,15 @@ async function selectKB(kb: KnowledgeBase) {
             <div class="kb-name">
               {{ kb.name }}
               <span :class="['scope-tag', kb.scope]">
-                {{ kb.scope === 'private' ? '私有' : '公开' }}
+                {{ kb.scope === 'private' ? '私有' : kb.scope === 'shared' ? '共享' : '公开' }}
               </span>
             </div>
-            <div class="kb-meta">{{ kb.doc_count }} 个文档</div>
+            <div class="kb-meta">
+              {{ kb.doc_count }} 个文档
+              <span v-if="kb.scope === 'shared' && kb.shared_users?.length" class="shared-hint">
+                · 共享给 {{ kb.shared_users.map(u => u.username).join('、') }}
+              </span>
+            </div>
           </div>
         </div>
         <div class="kb-card-footer">
@@ -483,6 +494,17 @@ async function selectKB(kb: KnowledgeBase) {
 .scope-tag.public {
   background: #d1fae5;
   color: #065f46;
+}
+
+.scope-tag.shared {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.shared-hint {
+  font-size: 12px;
+  color: var(--color-secondary);
+  margin-left: 4px;
 }
 
 @keyframes shimmer {

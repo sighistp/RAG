@@ -929,20 +929,37 @@ class UserDB:
     # ------------------------------------------------------------------
 
     def share_kb(self, kb_id: str, user_id: int, granted_by: int, permission: str = "view") -> int:
+        """共享 KB 给指定用户，并自动将 scope 设为 'shared'。"""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO kb_shares (kb_id, user_id, permission, granted_by) VALUES (?, ?, ?, ?)",
                 (kb_id, user_id, permission, granted_by),
             )
+            # 自动将 scope 设为 shared
+            self._conn.execute(
+                "UPDATE kb_metadata SET scope = 'shared' WHERE kb_id = ? AND scope != 'shared'",
+                (kb_id,),
+            )
             self._conn.commit()
             return cur.lastrowid
 
     def unshare_kb(self, kb_id: str, user_id: int) -> None:
+        """取消 KB 共享，如果没有剩余共享用户则自动将 scope 设回 'private'。"""
         with self._lock:
             self._conn.execute(
                 "DELETE FROM kb_shares WHERE kb_id = ? AND user_id = ?",
                 (kb_id, user_id),
             )
+            # 检查是否还有其他共享用户
+            remaining = self._conn.execute(
+                "SELECT COUNT(*) as cnt FROM kb_shares WHERE kb_id = ?",
+                (kb_id,),
+            ).fetchone()
+            if remaining["cnt"] == 0:
+                self._conn.execute(
+                    "UPDATE kb_metadata SET scope = 'private' WHERE kb_id = ? AND scope = 'shared'",
+                    (kb_id,),
+                )
             self._conn.commit()
 
     def list_kb_shared_users(self, kb_id: str) -> list[dict[str, Any]]:
