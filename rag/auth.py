@@ -72,12 +72,20 @@ def create_token(payload: dict, expires_seconds: int = 86400) -> str:
     return jwt.encode(to_encode, _JWT_SECRET, algorithm=_JWT_ALGORITHM)
 
 
-def decode_token(token: str) -> dict | None:
-    """Decode a JWT token. Returns the payload dict, or *None* if invalid/expired."""
+def decode_token(token: str, password_changed_at: float = None) -> dict | None:
+    """Decode a JWT token. Returns the payload dict, or *None* if invalid/expired.
+
+    password_changed_at: 如果非 None，检查 token.iat < password_changed_at 则返回 None。
+    NULL 跳过检查（迁移后不踢用户）。
+    """
     try:
-        return jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
+        payload = jwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
     except JWTError:
         return None
+    # NULL 跳过检查（迁移后不踢用户）
+    if password_changed_at and payload.get("iat", 0) < password_changed_at:
+        return None
+    return payload
 
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)

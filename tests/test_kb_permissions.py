@@ -438,6 +438,27 @@ def test_change_password_updates_password_changed_at(db):
     assert user["password_changed_at"] is not None
 
 
+# ── Task 3: token 验证检查 password_changed_at ─────────────────────
+
+
+def test_decode_token_with_password_changed_at():
+    """decode_token 应支持 password_changed_at 参数。"""
+    from rag.auth import create_token, decode_token
+
+    token = create_token({"user_id": 1, "username": "alice"})
+    payload = decode_token(token)
+    iat = payload["iat"]
+
+    # password_changed_at 为 None → 跳过检查
+    assert decode_token(token, password_changed_at=None) is not None
+
+    # password_changed_at 在 iat 之前 → token 有效
+    assert decode_token(token, password_changed_at=iat - 100) is not None
+
+    # password_changed_at 在 iat 之后 → token 失效
+    assert decode_token(token, password_changed_at=iat + 100) is None
+
+
 # ── Phase 2: shared 档 + 共享机制 ──────────────────────────────────
 
 
