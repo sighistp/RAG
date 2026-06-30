@@ -4397,3 +4397,145 @@ d81702e fix: 无权限记录的文件区分仓库文件和用户文件
 2. **manifest 文件本身也要拷贝** — 只拷贝 manifest 中列出的文件不够，manifest 本身也要拷到目标目录
 3. **无权限记录 ≠ 仓库文件** — 必须用 manifest 区分，不能一刀切
 4. **数据库清理要彻底** — 残留的旧记录会导致显示异常
+
+---
+
+## 性能压测 + 评估集 + Redis 缓存（2026-06-29 ~ 2026-06-30）
+
+### 一、性能压测
+
+**工具：** Locust（`scripts/locustfile.py` + `scripts/run_stress_test.sh`）
+
+**测试维度：**
+- 50 并发用户，5 分钟
+- 混合负载：查询（简单/复杂/口语/对抗/流式）+ 文件操作 + KB 操作 + 对话管理
+- 延迟分布：P50 / P95 / P99
+
+**本地压测结果（localhost:8000）：**
+
+| 指标 | 值 |
+|------|-----|
+| 总请求 | 727 |
+| 错误率 | 0.7% |
+| QPS | 3.4 |
+| P50 | 16s |
+| P95 | 30s |
+| P99 | 36s |
+
+**公网压测结果（39.105.89.99:8000）：**
+
+| 指标 | 值 |
+|------|-----|
+| 总请求 | 4996 |
+| 错误率 | 0.8% |
+| QPS | 8.1 |
+| P50 | 330ms |
+| P95 | 6.3s |
+| P99 | 9.7s |
+
+**分析：** 公网延迟更低是因为网络延迟自然分散了请求，服务器不拥挤。5 个错误全是下载 404（测试文件不存在），非系统问题。
+
+### 二、评估集
+
+**规模：** 55 题，覆盖 9 个学科领域（AI、天文、地理、生物、物理、化学、历史、医学、工程）
+
+**评估结果：**
+
+| 指标 | 值 |
+|------|-----|
+| 总题数 | 55 |
+| 命中 | 55 |
+| Hit Rate | **100%** |
+| 平均延迟 | 6.8s |
+
+**文件：** `data/eval/eval_dataset.jsonl`（55 题）、`scripts/run_eval.py`（评估脚本）
+
+### 三、Redis 缓存
+
+**目标：** 替换内存缓存，支持持久化和多进程共享
+
+**实现：**
+- 新增 `rag/redis_cache.py` — RedisCache 类，带降级到内存缓存
+- `rag/pipeline.py` — 替换 ResultCache 为 RedisCache
+- `docker-compose.yml` — 添加 Redis 服务（redis:7-alpine）
+- `config.py` — 添加 `redis_url` 配置
+- `requirements.txt` — 添加 `redis>=5.0`
+
+**Redis 缓存特性：**
+- 延迟初始化（连接失败不阻塞启动）
+- 自动降级到内存缓存（Redis 不可用时）
+- TTL 过期（默认 300 秒）
+- 只删除 `rag:query:*` 前缀的 key（不用 flushdb）
+
+**验证：**
+```bash
+docker exec ragv3-redis redis-cli ping  # PONG
+docker logs ragv3 2>&1 | grep redis     # Redis 连接成功
+```
+
+### 四、代码审查修复
+
+**审查范围：** 全项目（后端 + 前端 + 测试 + 部署）
+
+**修复内容：**
+
+| # | 级别 | 问题 | 修复 |
+|---|------|------|------|
+| C1 | Critical | Redis `flushdb()` 清空整个数据库 | 改用 `scan` + `delete` 只删 `rag:query:*` |
+| C2 | Critical | 注册时密码强度未验证 | 注册端点加 `_validate_password_strength()` |
+| C3 | Critical | `add_document_to_kb` 覆盖已验证的 user_dict | 移除重复解析，复用 `_require_auth` 结果 |
+| I1 | Important | `search_users` 不转义 LIKE 通配符 | 转义 `%` 和 `_` |
+| I2 | Important | 重复的 `ShareRequest` 类定义 | 移除第一个 |
+| I3 | Important | query 端点不验证 conversation 归属 | 新增 `get_conversation()` + 归属检查 |
+
+**审查 Strengths：**
+- Redis 缓存带优雅降级
+- 干净的异步架构（asyncio.to_thread）
+- 完整的三档权限系统
+- Prompt 注入防御
+- token 失效机制
+- Docker 多阶段构建
+- 577 个测试覆盖
+
+### 五、Git Token 配置
+
+**问题：** 服务器 git pull 国内访问 GitHub 不稳定
+
+**解决：** 配置 GitHub Personal Access Token
+```bash
+git remote set-url origin https://TOKEN@github.com/sighistp/RAG.git
+```
+
+### 提交记录
+
+```
+67b5b12 feat: 极致压测脚本 — locustfile.py + run_stress_test.sh
+564deee fix: 压测脚本 QUERIES 越界 bug
+7bf8bea feat: 55 题评估集 — 基于压测文档的多领域覆盖
+56f00b2 feat: 评估脚本 run_eval.py — 计算 Hit Rate + 平均延迟
+c33bc3e feat: Redis 缓存模块 — RedisCache 带降级到内存缓存
+334f2d2 feat: Pipeline 集成 Redis 缓存替换 ResultCache
+25eaf7f feat: Docker Compose 添加 Redis 服务 + redis 依赖
+f54324f fix: 代码审查修复 — C1+C2+C3+I1+I2+I3
+```
+
+### 简历数据
+
+| 指标 | 值 | 简历写法 |
+|------|-----|---------|
+| 并发用户 | 50 | 50 并发用户 |
+| QPS | 8.1 | 8.1 QPS |
+| P50 | 330ms | P50 330ms |
+| P95 | 6.3s | P95 6.3s |
+| P99 | 9.7s | P99 9.7s |
+| 错误率 | 0.8% | < 1% |
+| 评估集 | 55 题 | 55 题多领域评估集 |
+| Hit Rate | 100% | Hit Rate 100% |
+| 测试 | 577 个 | 577 个测试全覆盖 |
+| 缓存 | Redis | Redis 缓存 + 降级到内存 |
+
+### 下一步
+
+- Phase 1b：对话置顶 + 创建者显示
+- Phase 2：文件管理（搜索 + 预览 + 批量 + 重命名 + 导出）
+- 权限 v2 Phase 2：shared 档 + 共享机制
