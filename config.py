@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # BM25 倒排索引
     bm25_db_path: str = str(Path(__file__).resolve().parent / "data" / "bm25_index.db")
 
+    # Redis 缓存
+    redis_url: str = "redis://localhost:6379/0"
+
     # 分块与检索
     chunk_size: int = 500
     chunk_overlap: int = 80

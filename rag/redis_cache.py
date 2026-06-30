@@ -1,0 +1,136 @@
+"""Redis 缓存模块。
+
+替换内存缓存，支持持久化和多进程共享。
+Redis 不可用时自动降级到内存缓存。
+"""
+
+import hashlib
+import json
+import logging
+import threading
+import time
+from typing import Any
+
+from config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class RedisCache:
+    """Redis 缓存，带降级到内存缓存的能力。"""
+
+    def __init__(self, ttl_seconds: int = 300, max_size: int = 1000):
+        self.ttl = ttl_seconds
+        self.max_size = max_size
+        self._redis = None
+        self._fallback: dict[str, tuple[str, float]] = {}  # 内存降级缓存
+        self._lock = threading.Lock()
+        self._connected = False
+
+    def _get_redis(self):
+        """延迟初始化 Redis 连接。"""
+        if self._redis is None:
+            try:
+                import redis
+                self._redis = redis.from_url(settings.redis_url, decode_responses=True)
+                # 测试连接
+                self._redis.ping()
+                self._connected = True
+                logger.info("Redis 连接成功: %s", settings.redis_url)
+            except Exception as e:
+                logger.warning("Redis 连接失败，降级到内存缓存: %s", e)
+                self._redis = None
+                self._connected = False
+        return self._redis
+
+    def _key(self, question: str) -> str:
+        """生成缓存 key。"""
+        return f"rag:query:{hashlib.md5(question.encode()).hexdigest()}"
+
+    def get(self, question: str) -> str | None:
+        """获取缓存。未命中返回 None。"""
+        key = self._key(question)
+        redis = self._get_redis()
+
+        if redis:
+            try:
+                data = redis.get(key)
+                if data:
+                    return json.loads(data).get("answer")
+                return None
+            except Exception as e:
+                logger.warning("Redis get 失败，降级到内存: %s", e)
+                return self._fallback_get(key)
+        else:
+            return self._fallback_get(key)
+
+    def set(self, question: str, answer: str) -> None:
+        """设置缓存，带 TTL。"""
+        key = self._key(question)
+        data = json.dumps({"answer": answer}, ensure_ascii=False)
+
+        redis = self._get_redis()
+        if redis:
+            try:
+                redis.set(key, data, ex=self.ttl)
+                return
+            except Exception as e:
+                logger.warning("Redis set 失败，降级到内存: %s", e)
+
+        self._fallback_set(key, data)
+
+    def delete(self, question: str) -> None:
+        """删除缓存。"""
+        key = self._key(question)
+        redis = self._get_redis()
+        if redis:
+            try:
+                redis.delete(key)
+                return
+            except Exception:
+                pass
+        self._fallback_delete(key)
+
+    def clear(self) -> None:
+        """清空所有缓存。"""
+        redis = self._get_redis()
+        if redis:
+            try:
+                redis.flushdb()
+                return
+            except Exception:
+                pass
+        with self._lock:
+            self._fallback.clear()
+
+    def _fallback_get(self, key: str) -> str | None:
+        """内存降级获取。"""
+        with self._lock:
+            if key in self._fallback:
+                data, expire_time = self._fallback[key]
+                if time.time() < expire_time:
+                    return json.loads(data).get("answer")
+                else:
+                    del self._fallback[key]
+        return None
+
+    def _fallback_set(self, key: str, data: str) -> None:
+        """内存降级设置。"""
+        with self._lock:
+            # 容量限制
+            if len(self._fallback) >= self.max_size:
+                # 删除最旧的
+                oldest_key = min(self._fallback, key=lambda k: self._fallback[k][1])
+                del self._fallback[oldest_key]
+            self._fallback[key] = (data, time.time() + self.ttl)
+
+    def _fallback_delete(self, key: str) -> None:
+        """内存降级删除。"""
+        with self._lock:
+            self._fallback.pop(key, None)
+
+    @property
+    def is_redis_connected(self) -> bool:
+        """是否连接到 Redis。"""
+        self._get_redis()
+        return self._connected
