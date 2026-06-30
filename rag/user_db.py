@@ -280,10 +280,12 @@ class UserDB:
 
     def search_users(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         """按用户名搜索用户。返回 [{id, username}]，最多 limit 条。"""
+        # 轶义 LIKE 通配符
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, username FROM users WHERE username LIKE ? LIMIT ?",
-                (f"%{query}%", limit),
+                "SELECT id, username FROM users WHERE username LIKE ? ESCAPE '\\' LIMIT ?",
+                (f"%{escaped}%", limit),
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -480,6 +482,18 @@ class UserDB:
                     (uid,),
                 ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_conversation(self, conversation_id: int, user_id: int | str) -> dict[str, Any] | None:
+        """获取对话（仅 owner 可见）。"""
+        uid = int(user_id)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, user_id, title, mode, created_at FROM conversations WHERE id = ? AND user_id = ?",
+                (conversation_id, uid),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
 
     def delete_conversation(self, conversation_id: int, user_id: int | str) -> bool:
         """Delete a conversation (only if owned by user_id). Returns True if deleted."""

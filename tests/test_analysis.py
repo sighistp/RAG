@@ -33,7 +33,7 @@ def client(tmp_path):
     api_mod.user_db = original_db
 
 
-def _register_and_login(client, username="analysis_user", password="pass123456"):
+def _register_and_login(client, username="analysis_user", password="Pass12345"):
     """Helper: register a user and return the JWT token."""
     client.post("/register", json={"username": username, "password": password})
     resp = client.post("/login", json={"username": username, "password": password})
@@ -217,7 +217,7 @@ class TestAnalysisCardsAPI:
     """Test analysis card API endpoints with JWT auth."""
 
     def test_create_card(self, client):
-        token = _register_and_login(client, "api_create", "pass123456")
+        token = _register_and_login(client, "api_create", "Pass12345")
         resp = client.post(
             "/analysis/cards",
             json={"name": "My Analysis"},
@@ -229,7 +229,7 @@ class TestAnalysisCardsAPI:
         assert data["name"] == "My Analysis"
 
     def test_list_cards(self, client):
-        token = _register_and_login(client, "api_list", "pass123456")
+        token = _register_and_login(client, "api_list", "Pass12345")
         client.post(
             "/analysis/cards",
             json={"name": "Card A"},
@@ -249,7 +249,7 @@ class TestAnalysisCardsAPI:
         assert len(data) == 2
 
     def test_delete_card(self, client):
-        token = _register_and_login(client, "api_delete", "pass123456")
+        token = _register_and_login(client, "api_delete", "Pass12345")
         create_resp = client.post(
             "/analysis/cards",
             json={"name": "Temp"},
@@ -264,7 +264,7 @@ class TestAnalysisCardsAPI:
         assert resp.json()["status"] == "deleted"
 
     def test_delete_card_not_found(self, client):
-        token = _register_and_login(client, "api_del_nf", "pass123456")
+        token = _register_and_login(client, "api_del_nf", "Pass12345")
         resp = client.delete(
             "/analysis/cards/9999",
             headers={"Authorization": f"Bearer {token}"},
@@ -272,7 +272,7 @@ class TestAnalysisCardsAPI:
         assert resp.status_code == 404
 
     def test_rename_card(self, client):
-        token = _register_and_login(client, "api_rename", "pass123456")
+        token = _register_and_login(client, "api_rename", "Pass12345")
         create_resp = client.post(
             "/analysis/cards",
             json={"name": "Old"},
@@ -288,7 +288,7 @@ class TestAnalysisCardsAPI:
         assert resp.json()["name"] == "New"
 
     def test_add_question(self, client):
-        token = _register_and_login(client, "api_addq", "pass123456")
+        token = _register_and_login(client, "api_addq", "Pass12345")
         create_resp = client.post(
             "/analysis/cards",
             json={"name": "Card"},
@@ -306,7 +306,7 @@ class TestAnalysisCardsAPI:
         assert data["question"] == "What is AI?"
 
     def test_delete_question(self, client):
-        token = _register_and_login(client, "api_delq", "pass123456")
+        token = _register_and_login(client, "api_delq", "Pass12345")
         create_resp = client.post(
             "/analysis/cards",
             json={"name": "Card"},
@@ -390,7 +390,7 @@ class TestConversationModeAPI:
     """Test conversation mode at the API level."""
 
     def test_create_conversation_with_mode(self, client):
-        token = _register_and_login(client, "mode_create", "pass123456")
+        token = _register_and_login(client, "mode_create", "Pass12345")
         resp = client.post(
             "/conversations",
             json={"mode": "analysis"},
@@ -401,7 +401,7 @@ class TestConversationModeAPI:
         assert data["mode"] == "analysis"
 
     def test_create_conversation_default_mode(self, client):
-        token = _register_and_login(client, "mode_default", "pass123456")
+        token = _register_and_login(client, "mode_default", "Pass12345")
         resp = client.post(
             "/conversations",
             headers={"Authorization": f"Bearer {token}"},
@@ -410,7 +410,7 @@ class TestConversationModeAPI:
         assert resp.json()["mode"] == "file"
 
     def test_list_conversations_with_mode_filter(self, client):
-        token = _register_and_login(client, "mode_list", "pass123456")
+        token = _register_and_login(client, "mode_list", "Pass12345")
         # Create conversations with different modes
         client.post(
             "/conversations",
@@ -598,7 +598,7 @@ class TestCreateConversationModeAPI:
 
     def test_create_conversation_returns_mode_field(self, client):
         """POST /conversations with mode should return mode in response."""
-        token = _register_and_login(client, "mode_resp_user", "pass123456")
+        token = _register_and_login(client, "mode_resp_user", "Pass12345")
         resp = client.post(
             "/conversations",
             json={"mode": "kb"},
@@ -611,7 +611,7 @@ class TestCreateConversationModeAPI:
 
     def test_create_conversation_default_mode_is_file(self, client):
         """POST /conversations without mode should default to 'file'."""
-        token = _register_and_login(client, "mode_default_user", "pass123456")
+        token = _register_and_login(client, "mode_default_user", "Pass12345")
         resp = client.post(
             "/conversations",
             headers={"Authorization": f"Bearer {token}"},
@@ -664,7 +664,7 @@ class TestAnalysisCardSummaryAPI:
     """Test summary API endpoints."""
 
     def test_get_summary(self, client):
-        token = _register_and_login(client, "sum_get", "pass123456")
+        token = _register_and_login(client, "sum_get", "Pass12345")
         create_resp = client.post(
             "/analysis/cards",
             json={"name": "Card"},
@@ -679,7 +679,7 @@ class TestAnalysisCardSummaryAPI:
         assert resp.json()["summary"] == ""
 
     def test_get_summary_not_found(self, client):
-        token = _register_and_login(client, "sum_404", "pass123456")
+        token = _register_and_login(client, "sum_404", "Pass12345")
         resp = client.get(
             "/analysis/cards/9999/summary",
             headers={"Authorization": f"Bearer {token}"},
@@ -687,7 +687,7 @@ class TestAnalysisCardSummaryAPI:
         assert resp.status_code == 404
 
     def test_update_summary(self, client):
-        token = _register_and_login(client, "sum_put", "pass123456")
+        token = _register_and_login(client, "sum_put", "Pass12345")
         create_resp = client.post(
             "/analysis/cards",
             json={"name": "Card"},
@@ -709,7 +709,7 @@ class TestAnalysisCardSummaryAPI:
         assert get_resp.json()["summary"] == "Updated summary text"
 
     def test_update_summary_not_found(self, client):
-        token = _register_and_login(client, "sum_put_404", "pass123456")
+        token = _register_and_login(client, "sum_put_404", "Pass12345")
         resp = client.put(
             "/analysis/cards/9999/summary",
             json={"summary": "x"},
@@ -719,7 +719,7 @@ class TestAnalysisCardSummaryAPI:
 
     def test_generate_summary(self, client):
         """POST /analysis/cards/{id}/summary/generate should call LLM and return summary."""
-        token = _register_and_login(client, "sum_gen", "pass123456")
+        token = _register_and_login(client, "sum_gen", "Pass12345")
         create_resp = client.post(
             "/analysis/cards",
             json={"name": "Card"},
@@ -753,7 +753,7 @@ class TestAnalysisCardSummaryAPI:
                     del api_mod._generate_summary_llm
 
     def test_generate_summary_not_found(self, client):
-        token = _register_and_login(client, "sum_gen_404", "pass123456")
+        token = _register_and_login(client, "sum_gen_404", "Pass12345")
         resp = client.post(
             "/analysis/cards/9999/summary/generate",
             headers={"Authorization": f"Bearer {token}"},
@@ -779,7 +779,7 @@ class TestSuggestCardAPI:
 
     def test_suggest_card_returns_cards(self, client):
         """suggest-card should return all_cards list and suggested match."""
-        token = _register_and_login(client, "suggest1", "pass123456")
+        token = _register_and_login(client, "suggest1", "Pass12345")
         # Create cards
         c1 = client.post(
             "/analysis/cards",
@@ -830,7 +830,7 @@ class TestSuggestCardAPI:
 
     def test_suggest_card_no_cards(self, client):
         """suggest-card with no cards should return empty all_cards."""
-        token = _register_and_login(client, "suggest2", "pass123456")
+        token = _register_and_login(client, "suggest2", "Pass12345")
         resp = client.post(
             "/analysis/suggest-card",
             json={"question": "test", "answer": "test"},
@@ -860,7 +860,7 @@ class TestExportCardAPI:
 
     def test_export_markdown_basic(self, client):
         """Export card with questions and summary should return proper markdown."""
-        token = _register_and_login(client, "export1", "pass123456")
+        token = _register_and_login(client, "export1", "Pass12345")
         card_id = client.post(
             "/analysis/cards",
             json={"name": "测试卡片组"},
@@ -898,7 +898,7 @@ class TestExportCardAPI:
 
     def test_export_markdown_no_summary(self, client):
         """Export card without summary should omit the summary block."""
-        token = _register_and_login(client, "export_nosum", "pass123456")
+        token = _register_and_login(client, "export_nosum", "Pass12345")
         card_id = client.post(
             "/analysis/cards",
             json={"name": "No Summary"},
@@ -921,7 +921,7 @@ class TestExportCardAPI:
 
     def test_export_markdown_no_questions(self, client):
         """Export card with no questions should still produce valid markdown."""
-        token = _register_and_login(client, "export_noq", "pass123456")
+        token = _register_and_login(client, "export_noq", "Pass12345")
         card_id = client.post(
             "/analysis/cards",
             json={"name": "Empty Card"},
@@ -937,7 +937,7 @@ class TestExportCardAPI:
         assert "## 问题列表" in text
 
     def test_export_not_found(self, client):
-        token = _register_and_login(client, "export_404", "pass123456")
+        token = _register_and_login(client, "export_404", "Pass12345")
         resp = client.get(
             "/analysis/cards/9999/export?format=markdown",
             headers={"Authorization": f"Bearer {token}"},
@@ -949,7 +949,7 @@ class TestExportCardAPI:
         assert resp.status_code in (401, 403, 422)
 
     def test_export_invalid_format(self, client):
-        token = _register_and_login(client, "export_bad", "pass123456")
+        token = _register_and_login(client, "export_bad", "Pass12345")
         card_id = client.post(
             "/analysis/cards",
             json={"name": "Card"},
@@ -963,7 +963,7 @@ class TestExportCardAPI:
 
     def test_export_markdown_source_with_answer(self, client):
         """Export should include source_mode for each question."""
-        token = _register_and_login(client, "export_src", "pass123456")
+        token = _register_and_login(client, "export_src", "Pass12345")
         card_id = client.post(
             "/analysis/cards",
             json={"name": "Sources Card"},

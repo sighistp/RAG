@@ -35,7 +35,7 @@ def client(tmp_path):
     api_mod.user_db = original_db
 
 
-def _register_and_login(client, username="test_user", password="test_pass_123"):
+def _register_and_login(client, username="test_user", password="Test_pass_123"):
     """Helper: register a user and return the JWT token."""
     client.post("/register", json={"username": username, "password": password})
     resp = client.post("/login", json={"username": username, "password": password})
@@ -44,7 +44,7 @@ def _register_and_login(client, username="test_user", password="test_pass_123"):
 
 def test_query_saves_messages(client):
     """POST /query with conversation_id should save user + assistant messages."""
-    token = _register_and_login(client, "query_saver", "pass123456")
+    token = _register_and_login(client, "query_saver", "Pass12345")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create a conversation
@@ -74,7 +74,7 @@ def test_query_saves_messages(client):
 
 def test_submit_feedback(client):
     """POST /feedback should return 200 and record feedback."""
-    token = _register_and_login(client, "feedback_user", "pass123456")
+    token = _register_and_login(client, "feedback_user", "Pass12345")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create conversation and add a message directly so we have a message_id

@@ -21,7 +21,7 @@ def client(tmp_path):
 
 def test_register(client):
     """POST /register with valid data returns 200 and a token."""
-    resp = client.post("/register", json={"username": "alice", "password": "secret123"})
+    resp = client.post("/register", json={"username": "alice", "password": "Secret123"})
     assert resp.status_code == 200
     data = resp.json()
     assert "token" in data
@@ -30,15 +30,15 @@ def test_register(client):
 
 def test_register_duplicate(client):
     """Registering the same username twice returns 400."""
-    client.post("/register", json={"username": "bob", "password": "secret123"})
-    resp = client.post("/register", json={"username": "bob", "password": "secret123"})
+    client.post("/register", json={"username": "bob", "password": "Secret123"})
+    resp = client.post("/register", json={"username": "bob", "password": "Secret123"})
     assert resp.status_code == 400
 
 
 def test_login(client):
     """Register then login returns 200 and a token."""
-    client.post("/register", json={"username": "charlie", "password": "secret123"})
-    resp = client.post("/login", json={"username": "charlie", "password": "secret123"})
+    client.post("/register", json={"username": "charlie", "password": "Secret123"})
+    resp = client.post("/login", json={"username": "charlie", "password": "Secret123"})
     assert resp.status_code == 200
     data = resp.json()
     assert "token" in data
@@ -47,6 +47,6 @@ def test_login(client):
 
 def test_login_wrong_password(client):
     """Login with wrong password returns 401."""
-    client.post("/register", json={"username": "dave", "password": "secret123"})
+    client.post("/register", json={"username": "dave", "password": "Secret123"})
     resp = client.post("/login", json={"username": "dave", "password": "wrongpassword"})
     assert resp.status_code == 401

@@ -19,7 +19,7 @@ def client(tmp_path):
     api_mod.user_db = original_db
 
 
-def _register_and_login(client, username="conv_user", password="conv_pass_123"):
+def _register_and_login(client, username="conv_user", password="Conv_pass_123"):
     """Helper: register a user and return the JWT token."""
     client.post("/register", json={"username": username, "password": password})
     resp = client.post("/login", json={"username": username, "password": password})
@@ -27,7 +27,7 @@ def _register_and_login(client, username="conv_user", password="conv_pass_123"):
 
 
 def test_create_conversation(client):
-    token = _register_and_login(client, "conv_create", "pass123456")
+    token = _register_and_login(client, "conv_create", "Pass12345")
     resp = client.post(
         "/conversations",
         headers={"Authorization": f"Bearer {token}"},
@@ -39,7 +39,7 @@ def test_create_conversation(client):
 
 
 def test_list_conversations(client):
-    token = _register_and_login(client, "conv_list", "pass123456")
+    token = _register_and_login(client, "conv_list", "Pass12345")
     # Create two conversations
     client.post("/conversations", headers={"Authorization": f"Bearer {token}"})
     client.post("/conversations", headers={"Authorization": f"Bearer {token}"})
@@ -53,7 +53,7 @@ def test_list_conversations(client):
 
 
 def test_delete_conversation(client):
-    token = _register_and_login(client, "conv_delete", "pass123456")
+    token = _register_and_login(client, "conv_delete", "Pass12345")
     create_resp = client.post(
         "/conversations",
         headers={"Authorization": f"Bearer {token}"},

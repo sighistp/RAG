@@ -58,10 +58,12 @@ def test_redis_cache_delete(cache_with_mock_redis):
 
 
 def test_redis_cache_clear(cache_with_mock_redis):
-    """Redis 缓存应支持 clear。"""
+    """Redis 缓存应支持 clear（使用 scan + delete，不用 flushdb）。"""
     cache, mock_redis = cache_with_mock_redis
+    mock_redis.scan.return_value = (0, [b"rag:query:abc", b"rag:query:def"])
     cache.clear()
-    mock_redis.flushdb.assert_called_once()
+    mock_redis.scan.assert_called_once()
+    mock_redis.delete.assert_called_once()
 
 
 def test_redis_cache_connection_error_fallback():

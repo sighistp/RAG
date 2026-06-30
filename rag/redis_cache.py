@@ -92,11 +92,18 @@ class RedisCache:
         self._fallback_delete(key)
 
     def clear(self) -> None:
-        """清空所有缓存。"""
+        """清空 RAG 缓存（只删除 rag:query:* 前缀的 key，不影响其他数据）。"""
         redis = self._get_redis()
         if redis:
             try:
-                redis.flushdb()
+                # 只删除 rag:query:* 前缀的 key，不用 flushdb
+                cursor = 0
+                while True:
+                    cursor, keys = redis.scan(cursor=cursor, match="rag:query:*", count=100)
+                    if keys:
+                        redis.delete(*keys)
+                    if cursor == 0:
+                        break
                 return
             except Exception:
                 pass

@@ -29,7 +29,7 @@ def client(tmp_path):
     api_mod.user_db = original_db
 
 
-def _register_and_login(client, username=None, password="test_pass_123"):
+def _register_and_login(client, username=None, password="Test_pass_123"):
     """Helper: register a user and return the JWT token."""
     if username is None:
         username = f"test_user_{uuid.uuid4().hex[:8]}"
