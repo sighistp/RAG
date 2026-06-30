@@ -15,7 +15,7 @@ from rag.loader import load
 from rag.models import Chunk
 from rag.query_rewriter import rewrite_query
 from rag.reranker import Reranker
-from rag.resilience import ResultCache
+from rag.redis_cache import RedisCache
 from rag.retriever import Retriever
 from rag.tracker import ExecutionTrace, ExecutionTracker, ToolCall
 from rag.vector_store import add, clear
@@ -62,7 +62,7 @@ class RAGPipeline:
 
         self.agent = RAGAgent(retriever=self.retriever)
         self.tracker = ExecutionTracker(db_path=memory_db_path)
-        self._cache = ResultCache()
+        self._cache = RedisCache()
         self._agent_lock = threading.Lock()
         self._async_agent_lock = asyncio.Lock()
 
