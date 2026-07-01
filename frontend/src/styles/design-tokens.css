@@ -1,37 +1,46 @@
 /* ═══ RAGv3 Design System ═══
- * Style: Minimalism & Swiss Style
- * Typography: Poppins (headings) + Open Sans (body)
- * Colors: Neutral grey-blue + accent blue
- * Key: Subtle hover (200-250ms), smooth transitions, sharp type hierarchy
+ * Style: Linear-inspired dark theme
+ * Typography: Inter (closest free substitute for Linear Sans)
+ * Colors: Near-black canvas + lavender-blue accent
+ * Key: Surface ladder, hairline borders, no shadows
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  /* ── Colors ─────────────────────────────────────────── */
-  --color-primary: #475569;
-  --color-on-primary: #FFFFFF;
-  --color-secondary: #64748B;
-  --color-accent: #2563EB;
-  --color-accent-hover: #1D4ED8;
-  --color-accent-light: #EFF6FF;
-  --color-accent-subtle: #DBEAFE;
-  --color-background: #F8FAFC;
-  --color-surface: #FFFFFF;
-  --color-foreground: #1E293B;
-  --color-muted: #F1F5F9;
-  --color-border: #E2E8F0;
-  --color-border-hover: #CBD5E1;
-  --color-destructive: #DC2626;
-  --color-destructive-light: #FEF2F2;
-  --color-success: #059669;
-  --color-success-light: #ECFDF5;
-  --color-warning: #D97706;
-  --color-warning-light: #FFFBEB;
+  /* ── Colors (Linear-inspired) ─────────────────────────── */
+  --color-primary: #5e6ad2;
+  --color-on-primary: #ffffff;
+  --color-primary-hover: #828fff;
+  --color-primary-focus: #5e69d1;
 
-  /* ── Typography ─────────────────────────────────────── */
-  --font-heading: 'Poppins', system-ui, -apple-system, sans-serif;
-  --font-body: 'Open Sans', system-ui, -apple-system, sans-serif;
+  --color-secondary: #8a8f98;
+  --color-accent: #5e6ad2;
+  --color-accent-hover: #828fff;
+  --color-accent-light: rgba(94, 106, 210, 0.1);
+  --color-accent-subtle: rgba(94, 106, 210, 0.05);
+
+  --color-background: #010102;
+  --color-surface: #0f1011;
+  --color-surface-2: #141516;
+  --color-surface-3: #18191a;
+  --color-surface-4: #191a1b;
+  --color-foreground: #f7f8f8;
+  --color-muted: #f7f8f8;
+  --color-border: #23252a;
+  --color-border-hover: #34343a;
+  --color-border-strong: #3e3e44;
+
+  --color-destructive: #ef4444;
+  --color-destructive-light: rgba(239, 68, 68, 0.1);
+  --color-success: #27a644;
+  --color-success-light: rgba(39, 166, 68, 0.1);
+  --color-warning: #d97706;
+  --color-warning-light: rgba(217, 119, 6, 0.1);
+
+  /* ── Typography (Inter) ─────────────────────────────── */
+  --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   --text-xs: 0.75rem;
@@ -53,7 +62,7 @@
   --leading-normal: 1.5;
   --leading-relaxed: 1.75;
 
-  /* ── Spacing (8px grid) ─────────────────────────────── */
+  /* ── Spacing (4px grid) ─────────────────────────────── */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -65,20 +74,22 @@
   --space-12: 3rem;
   --space-16: 4rem;
 
-  /* ── Radius ─────────────────────────────────────────── */
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* ── Radius (Linear scale) ──────────────────────────── */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
   --radius-full: 9999px;
 
-  /* ── Shadows ────────────────────────────────────────── */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
-  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
-  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
-  --shadow-accent: 0 4px 14px rgba(37, 99, 235, 0.15);
+  /* ── Shadows (Linear: no shadows, use surface ladder) ── */
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-accent: none;
 
   /* ── Transitions ────────────────────────────────────── */
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
@@ -89,7 +100,7 @@
 
   /* ── Layout ─────────────────────────────────────────── */
   --sidebar-width: 280px;
-  --topbar-height: 60px;
+  --topbar-height: 56px;
   --content-max-width: 768px;
 }
 
@@ -114,28 +125,28 @@ body {
   background-color: var(--color-background);
 }
 
-/* ── Scrollbar ────────────────────────────────────────── */
+/* ── Scrollbar (Linear style) ──────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: var(--radius-full);
 }
-::-webkit-scrollbar-thumb:hover { background: var(--color-secondary); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-hover); }
 
-/* ── Focus ────────────────────────────────────────────── */
+/* ── Focus (Linear: lavender focus ring) ────────────────── */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-primary-focus);
   outline-offset: 2px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
 }
 
 ::selection {
-  background-color: var(--color-accent-subtle);
-  color: var(--color-accent-hover);
+  background-color: var(--color-accent-light);
+  color: var(--color-foreground);
 }
 
-/* ── Element Plus Overrides ───────────────────────────── */
+/* ── Element Plus Overrides (Linear style) ───────────────── */
 .el-input__wrapper {
   border-radius: var(--radius) !important;
   box-shadow: 0 0 0 1px var(--color-border) !important;
@@ -149,7 +160,7 @@ body {
 }
 
 .el-input__wrapper.is-focus {
-  box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 4px var(--color-accent-light) !important;
+  box-shadow: 0 0 0 2px var(--color-primary-focus) !important;
 }
 
 .el-input__inner {
@@ -160,7 +171,7 @@ body {
 
 .el-input__inner::placeholder {
   color: var(--color-secondary) !important;
-  font-weight: var(--font-light) !important;
+  font-weight: var(--font-regular) !important;
 }
 
 .el-button {
@@ -172,16 +183,15 @@ body {
 }
 
 .el-button--primary {
-  background: var(--color-accent) !important;
-  border-color: var(--color-accent) !important;
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
   box-shadow: none !important;
 }
 
 .el-button--primary:hover {
-  background: var(--color-accent-hover) !important;
-  border-color: var(--color-accent-hover) !important;
-  box-shadow: var(--shadow-accent) !important;
-  transform: translateY(-1px);
+  background: var(--color-primary-hover) !important;
+  border-color: var(--color-primary-hover) !important;
+  box-shadow: none !important;
 }
 
 .el-button--default {
@@ -192,7 +202,7 @@ body {
 
 .el-button--default:hover {
   border-color: var(--color-border-hover) !important;
-  background: var(--color-muted) !important;
+  background: var(--color-surface-2) !important;
 }
 
 .el-table {
@@ -202,7 +212,7 @@ body {
 }
 
 .el-table th.el-table__cell {
-  background: var(--color-muted) !important;
+  background: var(--color-surface) !important;
   font-weight: var(--font-semibold) !important;
   color: var(--color-secondary) !important;
   font-size: var(--text-sm) !important;
@@ -223,7 +233,8 @@ body {
 .el-dropdown-menu {
   border-radius: var(--radius) !important;
   border: 1px solid var(--color-border) !important;
-  box-shadow: var(--shadow-md) !important;
+  box-shadow: none !important;
+  background: var(--color-surface) !important;
 }
 
 .el-message {

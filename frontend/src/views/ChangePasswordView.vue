@@ -194,14 +194,14 @@ async function handleSubmit() {
 
 .errors {
   padding: var(--space-3);
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: var(--radius);
 }
 
 .error-item {
   font-size: var(--text-xs);
-  color: #dc2626;
+  color: #fca5a5;
   margin: 0;
 }
 

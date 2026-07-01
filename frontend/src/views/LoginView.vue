@@ -141,7 +141,7 @@ async function handleSubmit() {
   align-items: center;
   justify-content: center;
   padding: var(--space-12);
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  background: var(--color-surface);
   position: relative;
   z-index: 1;
 }
