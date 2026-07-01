@@ -60,7 +60,6 @@ async function toggleVisibility(fileName: string) {
     })
     if (!resp.ok) throw new Error('切换失败')
     const data = await resp.json()
-    // Update local state
     const file = filesStore.files.find(f => f.name === fileName)
     if (file) file.is_public = data.is_public
     ElMessage.success(data.is_public ? '已切换为共享' : '已切换为私有')
@@ -100,7 +99,6 @@ async function handleDelete(name: string) {
   try {
     await ElMessageBox.confirm(`确定删除文件 "${name}"？`, '确认删除', { type: 'warning' })
     await filesStore.deleteFile(name)
-    // Clear selected file if it was deleted
     if (chatStore.selectedFile === name) {
       chatStore.selectFile(null)
     }
@@ -142,7 +140,6 @@ async function onSearchSelect(conversationId: number) {
 
 onMounted(async () => {
   await chatStore.loadConversations('file')
-  // Auto-select the most recent conversation if exists
   if (chatStore.conversations.length > 0 && !chatStore.currentConvId) {
     await chatStore.selectConversation(chatStore.conversations[0].id)
   }
@@ -195,7 +192,7 @@ function askSuggested(q: string) {
     <aside class="conv-sidebar">
       <div class="conv-sidebar-header">
         <span class="conv-sidebar-title">对话历史</span>
-        <button class="new-chat-btn" @click="newConversation">
+        <button class="new-chat-btn" @click="newConversation" aria-label="新建对话">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="8" y1="2" x2="8" y2="14"/>
             <line x1="2" y1="8" x2="14" y2="8"/>
@@ -222,7 +219,7 @@ function askSuggested(q: string) {
             <div class="conv-title">{{ conv.title || '新对话' }}</div>
             <div class="conv-time">{{ formatTime(conv.created_at) }}</div>
           </div>
-          <button class="conv-delete" @click.stop="deleteConversation(conv.id)" title="删除">
+          <button class="conv-delete" @click.stop="deleteConversation(conv.id)" title="删除" aria-label="删除对话">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
               <line x1="3" y1="3" x2="11" y2="11"/>
               <line x1="11" y1="3" x2="3" y2="11"/>
@@ -247,14 +244,12 @@ function askSuggested(q: string) {
     <div class="file-panel">
       <div class="file-panel-header">
         <h1 class="file-panel-title">文件管理</h1>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <el-upload :show-file-list="false" :before-upload="() => false" :on-change="async (f: any) => { try { await filesStore.uploadFile(f.raw!); ElMessage.success('上传成功') } catch (e: any) { ElMessage.error(e?.response?.data?.detail || '上传失败') } }" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
-            <el-button size="small" type="primary">
-              <el-icon><Upload /></el-icon>
-              上传
-            </el-button>
-          </el-upload>
-        </div>
+        <el-upload :show-file-list="false" :before-upload="() => false" :on-change="async (f: any) => { try { await filesStore.uploadFile(f.raw!); ElMessage.success('上传成功') } catch (e: any) { ElMessage.error(e?.response?.data?.detail || '上传失败') } }" accept=".txt,.md,.pdf,.docx,.xlsx,.csv">
+          <el-button size="small" type="primary">
+            <el-icon><Upload /></el-icon>
+            上传
+          </el-button>
+        </el-upload>
       </div>
 
       <!-- Drop zone -->
@@ -274,7 +269,6 @@ function askSuggested(q: string) {
 
       <!-- File list -->
       <div class="file-list">
-        <!-- "All files" option -->
         <div :class="['file-item', { selected: !chatStore.selectedFile }]" @click="chatStore.selectFile(null)">
           <div class="file-item-icon">📁</div>
           <div class="file-item-info">
@@ -282,7 +276,6 @@ function askSuggested(q: string) {
             <div class="file-item-size">搜索所有文件</div>
           </div>
         </div>
-        <!-- Individual files (filtered) -->
         <div v-for="file in filteredFiles" :key="file.name"
              :class="['file-item', { selected: chatStore.selectedFile === file.name }]"
              @click="chatStore.selectFile(file.name)">
@@ -316,7 +309,6 @@ function askSuggested(q: string) {
     <!-- Chat area (right) -->
     <div class="chat-area">
       <div ref="messagesContainer" class="messages">
-        <!-- No conversations at all -->
         <div v-if="!chatStore.conversations.length" class="empty-chat">
           <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
           <h3>开始你的第一个对话</h3>
@@ -327,7 +319,6 @@ function askSuggested(q: string) {
           </el-button>
         </div>
 
-        <!-- Conversation selected but no messages -->
         <div v-else-if="!chatStore.messages.length" class="empty-chat">
           <el-icon :size="48" style="color: var(--color-border);"><ChatDotRound /></el-icon>
           <h3>开始对话</h3>
@@ -407,20 +398,19 @@ function askSuggested(q: string) {
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1) var(--space-3);
-  background: var(--color-foreground);
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   font-size: var(--text-xs);
   font-weight: var(--font-medium);
   font-family: var(--font-body);
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all var(--duration-fast) var(--ease-out);
 }
 
 .new-chat-btn:hover {
-  background: var(--color-primary);
-  transform: translateY(-1px);
+  background: var(--color-primary-hover);
 }
 
 .conv-list {
@@ -443,7 +433,7 @@ function askSuggested(q: string) {
 }
 
 .conv-item:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-2);
 }
 
 .conv-item.active {
@@ -453,7 +443,7 @@ function askSuggested(q: string) {
 .conv-icon {
   width: 28px;
   height: 28px;
-  background: var(--color-muted);
+  background: var(--color-surface-2);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -463,8 +453,8 @@ function askSuggested(q: string) {
 }
 
 .conv-item.active .conv-icon {
-  background: var(--color-accent);
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .conv-info {
@@ -568,7 +558,7 @@ function askSuggested(q: string) {
 }
 
 .drop-zone:hover, .drop-zone.active {
-  border-color: var(--color-accent);
+  border-color: var(--color-primary);
   background: var(--color-accent-light);
 }
 
@@ -619,14 +609,14 @@ function askSuggested(q: string) {
 }
 
 .filter-tab:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-2);
   border-color: var(--color-border-hover);
 }
 
 .filter-tab.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: white;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .file-item {
@@ -640,7 +630,7 @@ function askSuggested(q: string) {
 }
 
 .file-item:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-2);
 }
 
 .file-item.selected {
@@ -672,12 +662,6 @@ function askSuggested(q: string) {
   margin-top: 1px;
 }
 
-.protected-badge {
-  font-size: 12px;
-  margin-left: 4px;
-  vertical-align: middle;
-}
-
 .file-item-actions {
   display: flex;
   align-items: center;
@@ -686,7 +670,7 @@ function askSuggested(q: string) {
 }
 
 .file-item-more {
-  opacity: 1;
+  opacity: 0;
   width: 24px;
   height: 24px;
   display: flex;
@@ -703,35 +687,13 @@ function askSuggested(q: string) {
   font-weight: bold;
 }
 
+.file-item:hover .file-item-more {
+  opacity: 1;
+}
+
 .file-item-more:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-2);
   color: var(--color-foreground);
-}
-
-.file-item-download {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: none;
-  color: var(--color-secondary);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--duration-fast);
-  flex-shrink: 0;
-  font-size: 14px;
-}
-
-.file-item-download:hover:not(:disabled) {
-  background: var(--color-muted);
-  color: var(--color-accent);
-}
-
-.file-item-download:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
 }
 
 .empty-files {
@@ -757,7 +719,6 @@ function askSuggested(q: string) {
   background: var(--color-background);
 }
 
-/* ── Messages ─────────────────────────────────────────── */
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -794,7 +755,6 @@ function askSuggested(q: string) {
   max-width: var(--content-max-width);
   margin: 0 auto;
   padding: var(--space-3) var(--space-6);
-  animation: slideUp 0.3s var(--ease-out);
 }
 
 .msg-avatar {
@@ -810,8 +770,8 @@ function askSuggested(q: string) {
 }
 
 .ai-avatar {
-  background: var(--color-foreground);
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   font-family: var(--font-mono);
   font-size: 13px;
 }
@@ -852,7 +812,6 @@ function askSuggested(q: string) {
   max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 0 var(--space-6) var(--space-4);
-  animation: slideUp 0.3s var(--ease-out);
 }
 
 .suggest-btn {
@@ -868,9 +827,7 @@ function askSuggested(q: string) {
 }
 
 .suggest-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 </style>
