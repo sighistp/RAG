@@ -35,31 +35,29 @@ async function handleSubmit() {
 
 <template>
   <div class="login-page">
-    <!-- Decorative grid pattern -->
-    <div class="grid-pattern"></div>
-
     <!-- Left brand panel -->
     <div class="brand-panel">
       <div class="brand-content">
-        <div class="brand-badge">RAGv3</div>
+        <div class="brand-logo">
+          <div class="logo-icon">R</div>
+          <span class="logo-text">RAGv3</span>
+        </div>
         <h1 class="brand-title">智能知识库<br>问答系统</h1>
         <p class="brand-desc">
-          基于检索增强生成的企业级知识库，<br>
-          支持多轮对话、Agent 工具调用、<br>
-          多知识库管理。
+          基于检索增强生成的企业级知识库，支持多轮对话、Agent 工具调用、多知识库管理。
         </p>
         <div class="brand-stats">
           <div class="stat">
-            <div class="stat-value">304</div>
+            <div class="stat-value">577</div>
             <div class="stat-label">测试用例</div>
           </div>
           <div class="stat">
-            <div class="stat-value">24</div>
-            <div class="stat-label">核心模块</div>
+            <div class="stat-value">100%</div>
+            <div class="stat-label">Hit Rate</div>
           </div>
           <div class="stat">
-            <div class="stat-value">91%</div>
-            <div class="stat-label">Hit Rate</div>
+            <div class="stat-value">8.1</div>
+            <div class="stat-label">QPS</div>
           </div>
         </div>
       </div>
@@ -68,8 +66,10 @@ async function handleSubmit() {
     <!-- Right login panel -->
     <div class="login-panel">
       <div class="login-card">
-        <h2 class="login-title">{{ isLogin ? '欢迎回来' : '创建账号' }}</h2>
-        <p class="login-subtitle">{{ isLogin ? '登录以继续使用知识库' : '注册以开始使用' }}</p>
+        <div class="login-header">
+          <h2 class="login-title">{{ isLogin ? '欢迎回来' : '创建账号' }}</h2>
+          <p class="login-subtitle">{{ isLogin ? '登录以继续使用知识库' : '注册以开始使用' }}</p>
+        </div>
 
         <div class="tabs">
           <button
@@ -126,18 +126,7 @@ async function handleSubmit() {
   min-height: 100vh;
   position: relative;
   overflow: hidden;
-}
-
-/* ── Grid Pattern Background ──────────────────────────── */
-.grid-pattern {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
-  background-size: 60px 60px;
-  pointer-events: none;
-  z-index: 0;
+  background: var(--color-background);
 }
 
 /* ── Brand Panel (Left) ───────────────────────────────── */
@@ -147,7 +136,7 @@ async function handleSubmit() {
   align-items: center;
   justify-content: center;
   padding: var(--space-12);
-  background: var(--color-foreground);
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   position: relative;
   z-index: 1;
 }
@@ -157,7 +146,7 @@ async function handleSubmit() {
   position: absolute;
   top: 0;
   right: 0;
-  width: 200px;
+  width: 120px;
   height: 100%;
   background: linear-gradient(to right, transparent, var(--color-background));
   z-index: 2;
@@ -168,22 +157,38 @@ async function handleSubmit() {
   animation: slideUp 0.6s var(--ease-out);
 }
 
-.brand-badge {
-  display: inline-block;
-  padding: var(--space-2) var(--space-4);
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+}
+
+.logo-icon {
+  width: 40px;
+  height: 40px;
   background: var(--color-accent);
   color: white;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
   border-radius: var(--radius-sm);
-  letter-spacing: 0.1em;
-  margin-bottom: var(--space-8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: var(--font-bold);
+}
+
+.logo-text {
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: white;
+  letter-spacing: -0.02em;
 }
 
 .brand-title {
   font-family: var(--font-heading);
-  font-size: clamp(2rem, 4vw, 3rem);
+  font-size: clamp(2rem, 4vw, 2.75rem);
   font-weight: var(--font-bold);
   color: white;
   line-height: 1.2;
@@ -192,7 +197,7 @@ async function handleSubmit() {
 }
 
 .brand-desc {
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   color: rgba(255, 255, 255, 0.6);
   line-height: var(--leading-relaxed);
   margin-bottom: var(--space-10);
@@ -209,7 +214,7 @@ async function handleSubmit() {
 
 .stat-value {
   font-family: var(--font-mono);
-  font-size: var(--text-3xl);
+  font-size: var(--text-2xl);
   font-weight: var(--font-bold);
   color: var(--color-accent);
 }
@@ -242,6 +247,10 @@ async function handleSubmit() {
   animation-fill-mode: both;
 }
 
+.login-header {
+  margin-bottom: var(--space-8);
+}
+
 .login-title {
   font-family: var(--font-heading);
   font-size: var(--text-3xl);
@@ -253,7 +262,6 @@ async function handleSubmit() {
 .login-subtitle {
   font-size: var(--text-base);
   color: var(--color-secondary);
-  margin-bottom: var(--space-8);
 }
 
 /* ── Tabs ─────────────────────────────────────────────── */
@@ -347,6 +355,18 @@ async function handleSubmit() {
 
   .login-panel {
     padding: var(--space-8) var(--space-6);
+  }
+}
+
+/* ── Animations ───────────────────────────────────────── */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>
