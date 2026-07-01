@@ -201,8 +201,8 @@ function formatTime(ts: string) {
 }
 
 .result-snippet :deep(mark) {
-  background: rgba(94, 106, 210, 0.2);
-  color: #a5b4fc;
+  background: #fef9c3;
+  color: #854d0e;
   border-radius: 2px;
   padding: 0 2px;
 }

@@ -78,12 +78,17 @@ function handleLogout() {
           </div>
         </div>
         <div class="user-actions">
-          <button class="action-btn" @click="router.push('/settings/password')" title="修改密码">
-            ⚙️
-          </button>
-          <button class="action-btn" @click="handleLogout" title="退出登录">
-            🚪
-          </button>
+          <el-dropdown trigger="click">
+            <button class="action-btn" title="设置">
+              ⚙️
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="router.push('/settings/password')">修改密码</el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
     </aside>

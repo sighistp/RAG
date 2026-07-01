@@ -35,6 +35,13 @@ async function handleSubmit() {
 
 <template>
   <div class="login-page">
+    <!-- Background decoration -->
+    <div class="bg-decoration">
+      <div class="bg-circle bg-circle-1"></div>
+      <div class="bg-circle bg-circle-2"></div>
+      <div class="bg-circle bg-circle-3"></div>
+    </div>
+
     <div class="login-container">
       <!-- Brand -->
       <div class="brand">
@@ -48,11 +55,6 @@ async function handleSubmit() {
 
       <!-- Form -->
       <div class="form-card">
-        <div class="form-header">
-          <h2 class="form-title">{{ isLogin ? '登录' : '注册' }}</h2>
-          <p class="form-subtitle">{{ isLogin ? '使用您的账号登录' : '创建新账号' }}</p>
-        </div>
-
         <div class="tabs">
           <button :class="['tab', { active: isLogin }]" @click="isLogin = true">登录</button>
           <button :class="['tab', { active: !isLogin }]" @click="isLogin = false">注册</button>
@@ -96,15 +98,66 @@ async function handleSubmit() {
   justify-content: center;
   background: var(--color-background);
   padding: var(--space-4);
+  position: relative;
+  overflow: hidden;
 }
 
+/* ── Background decoration ──────────────────────────── */
+.bg-decoration {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-circle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.08;
+}
+
+.bg-circle-1 {
+  width: 400px;
+  height: 400px;
+  background: var(--color-primary);
+  top: -100px;
+  right: -100px;
+  animation: float 8s ease-in-out infinite;
+}
+
+.bg-circle-2 {
+  width: 300px;
+  height: 300px;
+  background: var(--color-success);
+  bottom: -80px;
+  left: -80px;
+  animation: float 10s ease-in-out infinite reverse;
+}
+
+.bg-circle-3 {
+  width: 200px;
+  height: 200px;
+  background: var(--color-warning);
+  top: 50%;
+  left: 10%;
+  animation: float 12s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(20px, -20px); }
+}
+
+/* ── Container ──────────────────────────────────────── */
 .login-container {
   width: 100%;
   max-width: 400px;
-  animation: fadeIn 0.3s ease-out;
+  position: relative;
+  z-index: 1;
+  animation: slideUp 0.5s var(--ease-out);
 }
 
-/* ── Brand ────────────────────────────────────────────── */
+/* ── Brand ──────────────────────────────────────────── */
 .brand {
   text-align: center;
   margin-bottom: var(--space-8);
@@ -153,40 +206,23 @@ async function handleSubmit() {
   margin: 0;
 }
 
-/* ── Form Card ────────────────────────────────────────── */
+/* ── Form Card ──────────────────────────────────────── */
 .form-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   padding: var(--space-8);
+  box-shadow: var(--shadow-lg);
 }
 
-.form-header {
-  margin-bottom: var(--space-6);
-}
-
-.form-title {
-  font-family: var(--font-heading);
-  font-size: var(--text-xl);
-  font-weight: var(--font-bold);
-  color: var(--color-foreground);
-  margin: 0 0 var(--space-1);
-}
-
-.form-subtitle {
-  font-size: var(--text-sm);
-  color: var(--color-secondary);
-  margin: 0;
-}
-
-/* ── Tabs ─────────────────────────────────────────────── */
+/* ── Tabs ────────────────────────────────────────────── */
 .tabs {
   display: flex;
   gap: var(--space-1);
   margin-bottom: var(--space-6);
   background: var(--color-surface-2);
   border-radius: var(--radius);
-  padding: 2px;
+  padding: 3px;
 }
 
 .tab {
@@ -206,9 +242,10 @@ async function handleSubmit() {
 .tab.active {
   background: var(--color-surface);
   color: var(--color-foreground);
+  box-shadow: var(--shadow-xs);
 }
 
-/* ── Form ─────────────────────────────────────────────── */
+/* ── Form ────────────────────────────────────────────── */
 .form {
   display: flex;
   flex-direction: column;
@@ -230,22 +267,23 @@ async function handleSubmit() {
 .input {
   width: 100%;
   padding: var(--space-3) var(--space-4);
-  background: var(--color-surface-2);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   color: var(--color-foreground);
   font-family: var(--font-body);
   font-size: var(--text-base);
   outline: none;
-  transition: border-color var(--duration-fast) var(--ease-out);
+  transition: all var(--duration-fast) var(--ease-out);
 }
 
 .input:focus {
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-accent-light);
 }
 
 .input::placeholder {
-  color: var(--color-secondary);
+  color: var(--color-muted);
 }
 
 .submit-btn {
@@ -265,6 +303,8 @@ async function handleSubmit() {
 
 .submit-btn:hover:not(:disabled) {
   background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
 
 .submit-btn:disabled {
@@ -272,16 +312,10 @@ async function handleSubmit() {
   cursor: not-allowed;
 }
 
-/* ── Responsive ───────────────────────────────────────── */
+/* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 480px) {
   .form-card {
     padding: var(--space-6);
   }
-}
-
-/* ── Animations ───────────────────────────────────────── */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 </style>

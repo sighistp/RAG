@@ -1,42 +1,43 @@
 /* ═══ RAGv3 Design System ═══
- * Style: Linear-inspired dark theme
- * Typography: Inter (closest free substitute for Linear Sans)
- * Colors: Near-black canvas + lavender-blue accent
- * Key: Surface ladder, hairline borders, no shadows
+ * Style: Clean light theme with accent colors
+ * Typography: Inter
+ * Colors: White canvas + blue accent + soft shadows
+ * Key: Subtle animations, rounded corners, modern feel
  */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  /* ── Colors (Linear-inspired) ─────────────────────────── */
-  --color-primary: #5e6ad2;
+  /* ── Colors (Light theme) ───────────────────────────── */
+  --color-primary: #3b82f6;
   --color-on-primary: #ffffff;
-  --color-primary-hover: #828fff;
-  --color-primary-focus: #5e69d1;
+  --color-primary-hover: #2563eb;
+  --color-primary-focus: #1d4ed8;
+  --color-primary-light: #eff6ff;
 
-  --color-secondary: #8a8f98;
-  --color-accent: #5e6ad2;
-  --color-accent-hover: #828fff;
-  --color-accent-light: rgba(94, 106, 210, 0.1);
-  --color-accent-subtle: rgba(94, 106, 210, 0.05);
+  --color-secondary: #6b7280;
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-accent-light: #eff6ff;
+  --color-accent-subtle: #f0f7ff;
 
-  --color-background: #010102;
-  --color-surface: #0f1011;
-  --color-surface-2: #141516;
-  --color-surface-3: #18191a;
-  --color-surface-4: #191a1b;
-  --color-foreground: #f7f8f8;
-  --color-muted: #555a63;
-  --color-border: #23252a;
-  --color-border-hover: #34343a;
-  --color-border-strong: #3e3e44;
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5f9;
+  --color-surface-3: #e2e8f0;
+  --color-surface-4: #cbd5e1;
+  --color-foreground: #0f172a;
+  --color-muted: #94a3b8;
+  --color-border: #e2e8f0;
+  --color-border-hover: #cbd5e1;
+  --color-border-strong: #94a3b8;
 
   --color-destructive: #ef4444;
-  --color-destructive-light: rgba(239, 68, 68, 0.1);
-  --color-success: #27a644;
-  --color-success-light: rgba(39, 166, 68, 0.1);
-  --color-warning: #d97706;
-  --color-warning-light: rgba(217, 119, 6, 0.1);
+  --color-destructive-light: #fef2f2;
+  --color-success: #10b981;
+  --color-success-light: #ecfdf5;
+  --color-warning: #f59e0b;
+  --color-warning-light: #fffbeb;
 
   /* ── Typography (Inter) ─────────────────────────────── */
   --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
@@ -74,7 +75,7 @@
   --space-12: 3rem;
   --space-16: 4rem;
 
-  /* ── Radius (Linear scale) ──────────────────────────── */
+  /* ── Radius ─────────────────────────────────────────── */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius: 8px;
@@ -83,13 +84,12 @@
   --radius-2xl: 24px;
   --radius-full: 9999px;
 
-  /* ── Shadows (Linear: no shadows, use surface ladder) ── */
-  --shadow-xs: none;
-  --shadow-sm: none;
-  --shadow: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-accent: none;
+  /* ── Shadows (subtle, modern) ────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
 
   /* ── Transitions ────────────────────────────────────── */
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
@@ -99,7 +99,7 @@
   --duration-slow: 250ms;
 
   /* ── Layout ─────────────────────────────────────────── */
-  --sidebar-width: 280px;
+  --sidebar-width: 240px;
   --topbar-height: 56px;
   --content-max-width: 768px;
 }
@@ -125,18 +125,18 @@ body {
   background-color: var(--color-background);
 }
 
-/* ── Scrollbar (Linear style) ──────────────────────────── */
+/* ── Scrollbar ────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: var(--radius-full);
 }
-::-webkit-scrollbar-thumb:hover { background: var(--color-border-hover); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
 
-/* ── Focus (Linear: lavender focus ring) ────────────────── */
+/* ── Focus ────────────────────────────────────────────── */
 :focus-visible {
-  outline: 2px solid var(--color-primary-focus);
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
@@ -146,7 +146,7 @@ body {
   color: var(--color-foreground);
 }
 
-/* ── Element Plus Overrides (Linear style) ───────────────── */
+/* ── Element Plus Overrides ───────────────────────────── */
 .el-input__wrapper {
   border-radius: var(--radius) !important;
   box-shadow: 0 0 0 1px var(--color-border) !important;
@@ -160,7 +160,7 @@ body {
 }
 
 .el-input__wrapper.is-focus {
-  box-shadow: 0 0 0 2px var(--color-primary-focus) !important;
+  box-shadow: 0 0 0 2px var(--color-primary) !important;
 }
 
 .el-input__inner {
@@ -170,8 +170,7 @@ body {
 }
 
 .el-input__inner::placeholder {
-  color: var(--color-secondary) !important;
-  font-weight: var(--font-regular) !important;
+  color: var(--color-muted) !important;
 }
 
 .el-button {
@@ -179,19 +178,16 @@ body {
   font-family: var(--font-body) !important;
   font-weight: var(--font-medium) !important;
   transition: all var(--duration-normal) var(--ease-out) !important;
-  letter-spacing: 0.01em;
 }
 
 .el-button--primary {
   background: var(--color-primary) !important;
   border-color: var(--color-primary) !important;
-  box-shadow: none !important;
 }
 
 .el-button--primary:hover {
   background: var(--color-primary-hover) !important;
   border-color: var(--color-primary-hover) !important;
-  box-shadow: none !important;
 }
 
 .el-button--default {
@@ -212,12 +208,10 @@ body {
 }
 
 .el-table th.el-table__cell {
-  background: var(--color-surface) !important;
+  background: var(--color-surface-2) !important;
   font-weight: var(--font-semibold) !important;
   color: var(--color-secondary) !important;
   font-size: var(--text-sm) !important;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .el-table td.el-table__cell {
@@ -233,7 +227,7 @@ body {
 .el-dropdown-menu {
   border-radius: var(--radius) !important;
   border: 1px solid var(--color-border) !important;
-  box-shadow: none !important;
+  box-shadow: var(--shadow-lg) !important;
   background: var(--color-surface) !important;
 }
 

@@ -506,18 +506,18 @@ async function selectKB(kb: KnowledgeBase) {
 }
 
 .scope-tag.private {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
+  background: #fef2f2;
+  color: #dc2626;
 }
 
 .scope-tag.public {
-  background: rgba(39, 166, 68, 0.1);
-  color: #86efac;
+  background: #ecfdf5;
+  color: #059669;
 }
 
 .scope-tag.shared {
-  background: rgba(94, 106, 210, 0.1);
-  color: #a5b4fc;
+  background: #eff6ff;
+  color: #3b82f6;
 }
 
 .shared-hint {
