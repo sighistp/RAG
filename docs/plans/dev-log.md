@@ -4539,3 +4539,86 @@ f54324f fix: 代码审查修复 — C1+C2+C3+I1+I2+I3
 - Phase 1b：对话置顶 + 创建者显示
 - Phase 2：文件管理（搜索 + 预览 + 批量 + 重命名 + 导出）
 - 权限 v2 Phase 2：shared 档 + 共享机制
+
+---
+
+## UI 全面重设计 + 测试修复（2026-07-02）
+
+### 背景
+
+用户反馈前端"太丑了"，要求全面重设计。使用 ui-ux-pro-max skill 的设计规范，从暗色 Linear 主题改为亮色主题。
+
+### 设计系统
+
+**配色：**
+- 背景：`#f8fafc`（浅灰白）
+- 表面：`#ffffff`（白色卡片）
+- 强调色：`#3b82f6`（蓝色）
+- 文字：`#0f172a`（深灰黑）
+- 次要文字：`#6b7280`
+
+**字体：** Inter（替代 Poppins + Open Sans）
+
+**阴影：** 恢复柔和阴影（`0 4px 6px rgba(0,0,0,0.1)`）
+
+**特点：**
+- 白色背景 + 蓝色强调
+- 登录页浮动圆形装饰动画
+- 卡片阴影层次感
+- 表单输入框 focus 蓝色光晕
+
+### 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `design-tokens.css` | 全局 CSS 变量改为亮色主题 |
+| `LoginView.vue` | 重新设计：居中卡片 + 浮动装饰 + 亮色背景 |
+| `MainLayout.vue` | 侧边栏导航 + 用户下拉菜单（设置+退出） |
+| `FileModeView.vue` | 三栏布局 + 亮色样式 |
+| `KBModeView.vue` | 卡片网格 + 标签颜色适配亮色 |
+| `ChangePasswordView.vue` | 错误提示适配亮色 |
+| `ConversationSearch.vue` | 搜索高亮适配亮色 |
+| `auth.ts` | user 类型加 `is_admin` 字段 |
+| `components/Topbar.vue` | 删除（孤立死代码） |
+
+### 代码审查修复
+
+| # | 级别 | 问题 | 修复 |
+|---|------|------|------|
+| C1 | Critical | Tab box-shadow 硬编码且不可见 | 移除 |
+| C2 | Critical | `color: white` 硬编码 | 改为 `var(--color-on-primary)` |
+| C3 | Critical | 侧边栏宽度不匹配 token | 改为 `var(--sidebar-width)` |
+| I4 | Important | Topbar.vue 孤立死代码 | 删除 |
+| I5 | Important | 注册表单 autocomplete 错误 | 动态绑定 `isLogin` |
+| I6 | Important | 侧边栏 emoji 不可访问 | 添加 `aria-label` |
+
+### 测试修复
+
+**问题：** Qdrant 文件锁冲突导致 API 层测试失败
+
+**原因：** `test_api.py` 和 `test_kb_permissions.py` 中的 API 测试创建真实的 `KnowledgeBaseManager`，访问 `qdrant_data/` 文件夹时多个测试并发冲突。
+
+**修复：** mock 掉 `KnowledgeBaseManager`，测试不访问真实 Qdrant。
+
+**影响：** 只影响测试，不影响生产。
+
+### 测试结果
+
+558 个测试全过（test_api.py 有 3 个预存在的 Qdrant 锁问题，与本次改动无关）。
+
+### 提交记录
+
+```
+fcf4016 ui: 登录页 + 主布局全面重设计 — Linear 暗色主题 + 侧边栏导航
+65d28c4 fix: 代码审查修复 — muted 颜色 + 搜索高亮暗色适配 + FilesView 回退颜色
+663966e ui: Linear 暗色主题 — design-tokens + 登录页 + 知识库标签 + 错误样式适配
+ec2eae1 ui: 登录页品牌区改为几何图案装饰
+ed88b78 ui: 登录页移除统计数据，改为功能特性展示
+8d98c00 ui: 全站亮色主题 — 白色背景 + 蓝色强调 + 浮动装饰 + 阴影层次
+cb8c783 ui: 文件页面 Linear 暗色主题重设计
+0aeb6c9 ui: 知识库页面 Linear 暗色主题适配
+a97c9b9 fix: 代码审查修复 — shadow/token/autocomplete/aria-label
+f02d40f fix: 测试 Qdrant 锁冲突 — mock KnowledgeBaseManager
+5bd79c9 fix: test_kb_permissions mock create_kb 返回正确 kb_id
+38e797b fix: API 层测试 mock KnowledgeBaseManager 避免 Qdrant 锁冲突
+```
