@@ -76,7 +76,7 @@ async function handleSubmit() {
               type="password"
               class="input"
               placeholder="输入密码"
-              autocomplete="current-password"
+              :autocomplete="isLogin ? 'current-password' : 'new-password'"
             />
           </div>
           <button type="submit" class="submit-btn" :disabled="loading">
@@ -122,7 +122,7 @@ async function handleSubmit() {
   width: 40px;
   height: 40px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
   border-radius: var(--radius);
   display: flex;
   align-items: center;
@@ -206,7 +206,6 @@ async function handleSubmit() {
 .tab.active {
   background: var(--color-surface);
   color: var(--color-foreground);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 /* ── Form ─────────────────────────────────────────────── */

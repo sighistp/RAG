@@ -45,6 +45,7 @@ function handleLogout() {
         <button
           :class="['nav-item', { active: activeMenu === 'files' }]"
           @click="handleMenuSelect('files')"
+          aria-label="文件管理"
         >
           <span class="nav-icon">📄</span>
           <span class="nav-label">文件</span>
@@ -52,6 +53,7 @@ function handleLogout() {
         <button
           :class="['nav-item', { active: activeMenu === 'kb' }]"
           @click="handleMenuSelect('kb')"
+          aria-label="知识库管理"
         >
           <span class="nav-icon">📚</span>
           <span class="nav-label">知识库</span>
@@ -59,6 +61,7 @@ function handleLogout() {
         <button
           :class="['nav-item', { active: activeMenu === 'analysis' }]"
           @click="handleMenuSelect('analysis')"
+          aria-label="分析"
         >
           <span class="nav-icon">📊</span>
           <span class="nav-label">分析</span>
@@ -102,7 +105,7 @@ function handleLogout() {
 
 /* ── Sidebar ──────────────────────────────────────────── */
 .sidebar {
-  width: 240px;
+  width: var(--sidebar-width);
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   display: flex;
@@ -125,7 +128,7 @@ function handleLogout() {
   width: 32px;
   height: 32px;
   background: var(--color-primary);
-  color: white;
+  color: var(--color-on-primary);
   border-radius: var(--radius);
   display: flex;
   align-items: center;
