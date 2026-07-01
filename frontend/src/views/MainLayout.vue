@@ -7,7 +7,6 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-// Ensure user info is loaded on page refresh
 onMounted(() => {
   authStore.fetchUser()
 })
@@ -22,59 +21,71 @@ const activeMenu = computed(() => {
 function handleMenuSelect(index: string) {
   router.push(`/${index}`)
 }
+
+function handleLogout() {
+  authStore.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
   <div class="layout">
-    <header class="topbar">
-      <div class="topbar-left">
-        <div class="brand">
-          <div class="brand-icon">R</div>
-          <span class="brand-name">RAG 知识库</span>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <div class="logo-icon">R</div>
+          <span class="logo-text">RAG</span>
         </div>
       </div>
 
-      <el-menu
-        :default-active="activeMenu"
-        mode="horizontal"
-        class="topbar-menu"
-        @select="handleMenuSelect"
-      >
-        <el-menu-item index="files">
-          <span class="menu-icon">📄</span>
-          <span>文件</span>
-        </el-menu-item>
-        <el-menu-item index="kb">
-          <span class="menu-icon">📚</span>
-          <span>知识库</span>
-        </el-menu-item>
-        <el-menu-item index="analysis">
-          <span class="menu-icon">📊</span>
-          <span>分析</span>
-        </el-menu-item>
-      </el-menu>
+      <!-- Navigation -->
+      <nav class="sidebar-nav">
+        <button
+          :class="['nav-item', { active: activeMenu === 'files' }]"
+          @click="handleMenuSelect('files')"
+        >
+          <span class="nav-icon">📄</span>
+          <span class="nav-label">文件</span>
+        </button>
+        <button
+          :class="['nav-item', { active: activeMenu === 'kb' }]"
+          @click="handleMenuSelect('kb')"
+        >
+          <span class="nav-icon">📚</span>
+          <span class="nav-label">知识库</span>
+        </button>
+        <button
+          :class="['nav-item', { active: activeMenu === 'analysis' }]"
+          @click="handleMenuSelect('analysis')"
+        >
+          <span class="nav-icon">📊</span>
+          <span class="nav-label">分析</span>
+        </button>
+      </nav>
 
-      <div class="topbar-right">
-        <el-dropdown trigger="click">
-          <button class="user-btn">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 8a3 3 0 100-6 3 3 0 000 6zm5 6a5 5 0 00-10 0h10z"/>
-            </svg>
-            <span class="user-name">{{ authStore.user?.username || '用户' }}</span>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M3 5l3 3 3-3"/>
-            </svg>
+      <!-- User -->
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar">{{ authStore.user?.username?.[0]?.toUpperCase() || 'U' }}</div>
+          <div class="user-details">
+            <div class="user-name">{{ authStore.user?.username || '用户' }}</div>
+            <div class="user-role">{{ authStore.user?.is_admin ? '管理员' : '用户' }}</div>
+          </div>
+        </div>
+        <div class="user-actions">
+          <button class="action-btn" @click="router.push('/settings/password')" title="修改密码">
+            ⚙️
           </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="router.push('/settings/password')">修改密码</el-dropdown-item>
-              <el-dropdown-item divided @click="authStore.logout(); router.push('/login')">退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+          <button class="action-btn" @click="handleLogout" title="退出登录">
+            🚪
+          </button>
+        </div>
       </div>
-    </header>
+    </aside>
 
+    <!-- Main Content -->
     <main class="main">
       <router-view />
     </main>
@@ -84,43 +95,38 @@ function handleMenuSelect(index: string) {
 <style scoped>
 .layout {
   display: flex;
-  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   background: var(--color-background);
 }
 
-/* ── Top Bar ─────────────────────────────────────────── */
-.topbar {
-  height: var(--topbar-height);
+/* ── Sidebar ──────────────────────────────────────────── */
+.sidebar {
+  width: 240px;
   background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-brand {
+  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--space-6);
-  flex-shrink: 0;
-  z-index: 10;
 }
 
-.topbar-left {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.brand {
+.brand-logo {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.brand-icon {
+.logo-icon {
   width: 32px;
   height: 32px;
-  background: var(--color-foreground);
+  background: var(--color-primary);
   color: white;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -129,83 +135,173 @@ function handleMenuSelect(index: string) {
   font-weight: var(--font-bold);
 }
 
-.brand-name {
+.logo-text {
   font-family: var(--font-heading);
-  font-size: var(--text-base);
-  font-weight: var(--font-semibold);
+  font-size: var(--text-lg);
+  font-weight: var(--font-bold);
   color: var(--color-foreground);
 }
 
-/* ── Menu ────────────────────────────────────────────── */
-.topbar-menu {
-  border-bottom: none !important;
-  background: transparent !important;
-  --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: var(--color-muted);
-  --el-menu-active-color: var(--color-accent);
-  --el-menu-text-color: var(--color-secondary);
-  --el-menu-item-font-size: var(--text-sm);
+/* ── Navigation ───────────────────────────────────────── */
+.sidebar-nav {
+  flex: 1;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
-:deep(.el-menu--horizontal > .el-menu-item) {
-  height: 40px;
-  line-height: 40px;
-  border-radius: var(--radius);
-  margin: 0 var(--space-1);
-  padding: 0 var(--space-4);
-  border: none;
+.nav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-}
-
-:deep(.el-menu--horizontal > .el-menu-item.is-active) {
-  background: var(--color-accent-light) !important;
-  color: var(--color-accent) !important;
-  font-weight: var(--font-semibold);
-}
-
-:deep(.el-menu--horizontal > .el-menu-item:hover) {
-  background: var(--color-muted) !important;
-}
-
-.menu-icon {
-  font-size: 14px;
-}
-
-/* ── User ────────────────────────────────────────────── */
-.topbar-right {
-  flex-shrink: 0;
-}
-
-.user-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: none;
-  border: 1px solid var(--color-border);
+  border: none;
   border-radius: var(--radius);
   color: var(--color-secondary);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
   font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  width: 100%;
+  text-align: left;
 }
 
-.user-btn:hover {
-  background: var(--color-muted);
-  border-color: var(--color-border-hover);
+.nav-item:hover {
+  background: var(--color-surface-2);
   color: var(--color-foreground);
+}
+
+.nav-item.active {
+  background: var(--color-accent-light);
+  color: var(--color-primary);
+}
+
+.nav-icon {
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.nav-label {
+  flex: 1;
+}
+
+/* ── Footer ───────────────────────────────────────────── */
+.sidebar-footer {
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  background: var(--color-surface-2);
+  color: var(--color-foreground);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
 }
 
 .user-name {
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
+  color: var(--color-foreground);
 }
 
-/* ── Main ─────────────────────────────────────────────── */
+.user-role {
+  font-size: var(--text-xs);
+  color: var(--color-secondary);
+}
+
+.user-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.action-btn {
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.action-btn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-foreground);
+}
+
+/* ── Main Content ─────────────────────────────────────── */
 .main {
   flex: 1;
   overflow: hidden;
+  background: var(--color-background);
+}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 60px;
+  }
+
+  .sidebar-brand {
+    padding: var(--space-3);
+    display: flex;
+    justify-content: center;
+  }
+
+  .logo-text {
+    display: none;
+  }
+
+  .nav-label {
+    display: none;
+  }
+
+  .nav-item {
+    justify-content: center;
+    padding: var(--space-3);
+  }
+
+  .sidebar-footer {
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .user-details {
+    display: none;
+  }
+
+  .user-actions {
+    flex-direction: column;
+  }
 }
 </style>

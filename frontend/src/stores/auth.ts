@@ -6,7 +6,7 @@ const API = ''
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('rag_token') || '')
-  const user = ref<{ id: number; username: string } | null>(null)
+  const user = ref<{ id: number; username: string; is_admin?: boolean } | null>(null)
 
   const isAuthenticated = computed(() => !!token.value)
 
