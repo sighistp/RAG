@@ -46,19 +46,24 @@ async function handleSubmit() {
         <p class="brand-desc">
           基于检索增强生成的企业级知识库，支持多轮对话、Agent 工具调用、多知识库管理。
         </p>
-        <div class="brand-features">
-          <div class="feature">
-            <span class="feature-icon">🔍</span>
-            <span class="feature-text">智能检索</span>
-          </div>
-          <div class="feature">
-            <span class="feature-icon">🤖</span>
-            <span class="feature-text">Agent 工具调用</span>
-          </div>
-          <div class="feature">
-            <span class="feature-icon">📚</span>
-            <span class="feature-text">多知识库管理</span>
-          </div>
+        <div class="brand-pattern">
+          <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="100" cy="100" r="80" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+            <circle cx="100" cy="100" r="60" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+            <circle cx="100" cy="100" r="40" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+            <circle cx="100" cy="100" r="20" fill="rgba(255,255,255,0.05)"/>
+            <circle cx="100" cy="100" r="6" fill="rgba(255,255,255,0.3)"/>
+            <line x1="100" y1="20" x2="100" y2="180" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+            <line x1="20" y1="100" x2="180" y2="100" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
+            <circle cx="100" cy="20" r="3" fill="rgba(255,255,255,0.2)"/>
+            <circle cx="100" cy="180" r="3" fill="rgba(255,255,255,0.2)"/>
+            <circle cx="20" cy="100" r="3" fill="rgba(255,255,255,0.2)"/>
+            <circle cx="180" cy="100" r="3" fill="rgba(255,255,255,0.2)"/>
+            <circle cx="43" cy="43" r="3" fill="rgba(255,255,255,0.15)"/>
+            <circle cx="157" cy="43" r="3" fill="rgba(255,255,255,0.15)"/>
+            <circle cx="43" cy="157" r="3" fill="rgba(255,255,255,0.15)"/>
+            <circle cx="157" cy="157" r="3" fill="rgba(255,255,255,0.15)"/>
+          </svg>
         </div>
       </div>
     </div>
@@ -203,27 +208,16 @@ async function handleSubmit() {
   margin-bottom: var(--space-10);
 }
 
-.brand-features {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+.brand-pattern {
+  width: 200px;
+  height: 200px;
+  opacity: 0.6;
+  animation: spin 30s linear infinite;
 }
 
-.feature {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-}
-
-.feature-icon {
-  font-size: 18px;
-}
-
-.feature-text {
-  font-size: var(--text-sm);
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: var(--font-medium);
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ── Login Panel (Right) ──────────────────────────────── */
