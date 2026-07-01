@@ -266,6 +266,26 @@ async function selectKB(kb: KnowledgeBase) {
   color: var(--color-secondary);
   margin-top: var(--space-1);
 }
+.kb-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-8);
+}
+
+.kb-page-title {
+  font-family: var(--font-heading);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-foreground);
+  line-height: var(--leading-tight);
+}
+
+.kb-page-subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+  margin-top: var(--space-1);
+}
 
 /* ── Grid ── */
 .kb-grid {
@@ -289,8 +309,7 @@ async function selectKB(kb: KnowledgeBase) {
 }
 
 .kb-card:hover {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
   transform: translateY(-2px);
 }
 
@@ -307,12 +326,12 @@ async function selectKB(kb: KnowledgeBase) {
 .kb-icon {
   width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover));
+  background: var(--color-primary);
   border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--color-on-primary);
   font-size: 24px;
   flex-shrink: 0;
 }
@@ -355,7 +374,7 @@ async function selectKB(kb: KnowledgeBase) {
   font-size: var(--text-2xl);
   font-weight: var(--font-bold);
   font-family: var(--font-mono);
-  color: var(--color-accent);
+  color: var(--color-primary);
 }
 
 .kb-stat-label {
