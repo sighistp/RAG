@@ -309,8 +309,13 @@ def test_api_delete_kb_non_owner_returns_403(mock_kb_cls):
     assert res.status_code == 200
 
 
-def test_api_query_private_kb_non_owner_returns_403():
+@patch("rag.api.KnowledgeBaseManager")
+def test_api_query_private_kb_non_owner_returns_403(mock_kb_cls):
     """非 owner 查询私有 KB 应返回 403。"""
+    mock_manager = MagicMock()
+    mock_manager.create_kb.return_value = "kb_priv_test"
+    mock_kb_cls.return_value = mock_manager
+
     from fastapi.testclient import TestClient
     from rag.api import app, user_db
     from rag.auth import create_token
@@ -340,8 +345,6 @@ def test_api_query_private_kb_non_owner_returns_403():
                       json={"question": "test"},
                       headers={"Authorization": f"Bearer {other_token}"})
     assert res.status_code == 403
-
-    # 清理
     client.delete(f"/knowledge-bases/{kb_id}",
                   headers={"Authorization": f"Bearer {owner_token}"})
 
