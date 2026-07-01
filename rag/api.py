@@ -246,7 +246,7 @@ class RegenerateRequest(BaseModel):
 
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=20)
-    password: str = Field(..., min_length=8, description="密码至少8位，含大小写字母和数字")
+    password: str = Field(..., min_length=8, description="密码至少8位，需含大写字母、小写字母和数字")
 
 
 class LoginRequest(BaseModel):
@@ -1151,6 +1151,8 @@ async def query(req: QueryRequest, user_id: str = Security(verify_api_key), auth
         if conv:
             await asyncio.to_thread(user_db.add_message, req.conversation_id, "user", req.question)
             await asyncio.to_thread(user_db.add_message, req.conversation_id, "assistant", result.answer)
+        else:
+            logger.warning("对话 %s 不存在或不属于用户 %s，跳过消息保存", req.conversation_id, user["id"])
 
     return QueryResponse(answer=result.answer, sources=result.sources)
 
@@ -1201,6 +1203,8 @@ async def query_stream(
             if conv:
                 await asyncio.to_thread(user_db.add_message, req.conversation_id, "user", req.question)
                 await asyncio.to_thread(user_db.add_message, req.conversation_id, "assistant", answer_buffer)
+            else:
+                logger.warning("对话 %s 不存在或不属于用户 %s，跳过消息保存", req.conversation_id, user["id"])
 
     return StreamingResponse(
         event_generator(),

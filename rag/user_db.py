@@ -526,16 +526,18 @@ class UserDB:
         """搜索对话（标题 + 消息内容）。返回匹配的对话列表。"""
         uid = int(user_id)
         offset = (page - 1) * size
-        pattern = f"%{q}%"
+        # 转义 LIKE 通配符
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         with self._lock:
             rows = self._conn.execute("""
                 SELECT DISTINCT c.id, c.title, c.created_at,
                        (SELECT m.content FROM chat_messages m
-                        WHERE m.conversation_id = c.id AND m.content LIKE ?
+                        WHERE m.conversation_id = c.id AND m.content LIKE ? ESCAPE '\\'
                         LIMIT 1) as matched_snippet
                 FROM conversations c
                 LEFT JOIN chat_messages m ON m.conversation_id = c.id
-                WHERE c.user_id = ? AND (c.title LIKE ? OR m.content LIKE ?)
+                WHERE c.user_id = ? AND (c.title LIKE ? ESCAPE '\\' OR m.content LIKE ? ESCAPE '\\')
                 ORDER BY c.created_at DESC
                 LIMIT ? OFFSET ?
             """, (pattern, uid, pattern, pattern, size, offset)).fetchall()
