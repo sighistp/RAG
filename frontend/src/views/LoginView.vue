@@ -46,18 +46,18 @@ async function handleSubmit() {
         <p class="brand-desc">
           基于检索增强生成的企业级知识库，支持多轮对话、Agent 工具调用、多知识库管理。
         </p>
-        <div class="brand-stats">
-          <div class="stat">
-            <div class="stat-value">577</div>
-            <div class="stat-label">测试用例</div>
+        <div class="brand-features">
+          <div class="feature">
+            <span class="feature-icon">🔍</span>
+            <span class="feature-text">智能检索</span>
           </div>
-          <div class="stat">
-            <div class="stat-value">100%</div>
-            <div class="stat-label">Hit Rate</div>
+          <div class="feature">
+            <span class="feature-icon">🤖</span>
+            <span class="feature-text">Agent 工具调用</span>
           </div>
-          <div class="stat">
-            <div class="stat-value">8.1</div>
-            <div class="stat-label">QPS</div>
+          <div class="feature">
+            <span class="feature-icon">📚</span>
+            <span class="feature-text">多知识库管理</span>
           </div>
         </div>
       </div>
@@ -203,28 +203,27 @@ async function handleSubmit() {
   margin-bottom: var(--space-10);
 }
 
-.brand-stats {
+.brand-features {
   display: flex;
-  gap: var(--space-8);
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.stat {
-  text-align: left;
+.feature {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
 }
 
-.stat-value {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xl);
-  font-weight: var(--font-bold);
-  color: var(--color-accent);
+.feature-icon {
+  font-size: 18px;
 }
 
-.stat-label {
-  font-size: var(--text-xs);
-  color: rgba(255, 255, 255, 0.4);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-top: var(--space-1);
+.feature-text {
+  font-size: var(--text-sm);
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: var(--font-medium);
 }
 
 /* ── Login Panel (Right) ──────────────────────────────── */
