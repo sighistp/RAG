@@ -269,6 +269,7 @@ def test_query_old_kb_allowed(db):
 def test_api_delete_kb_non_owner_returns_403(mock_kb_cls):
     """非 owner 删除 KB 应返回 403。"""
     mock_manager = MagicMock()
+    mock_manager.create_kb.return_value = "kb_perm_test"
     mock_manager.delete_kb.return_value = None
     mock_kb_cls.return_value = mock_manager
 
