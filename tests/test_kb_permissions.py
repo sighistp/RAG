@@ -1,6 +1,7 @@
 """Phase 1 tests: KB ownership and scope-based access control."""
 
 import pytest
+from unittest.mock import patch, MagicMock
 from rag.user_db import UserDB
 
 
@@ -264,8 +265,13 @@ def test_query_old_kb_allowed(db):
 # ── API 层权限测试 ─────────────────────────────────────────────────
 
 
-def test_api_delete_kb_non_owner_returns_403():
+@patch("rag.api.KnowledgeBaseManager")
+def test_api_delete_kb_non_owner_returns_403(mock_kb_cls):
     """非 owner 删除 KB 应返回 403。"""
+    mock_manager = MagicMock()
+    mock_manager.delete_kb.return_value = None
+    mock_kb_cls.return_value = mock_manager
+
     from fastapi.testclient import TestClient
     from rag.api import app, user_db
     from rag.auth import create_token
